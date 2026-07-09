@@ -33,7 +33,7 @@ git tag -a vX.Y.Z -m "ReproAssert vX.Y.Z"
 git push origin vX.Y.Z
 ```
 
-Pushing the tag is the release authorization. A read-only verification job reruns locked Python checks, the Docker boundary, and the site contract. A separate read-only job builds with the checked-in uv lock and pinned setuptools backend, then uploads the distributions. Only a no-checkout attestation job receives job-scoped OIDC and attestation permissions; only after attestation passes does a no-checkout publishing job receive `contents: write` to create the GitHub release. The workflow does not run on pull requests, does not use `pull_request_target`, use dependency caches in privileged jobs, or receive package registry credentials.
+Pushing the tag is the release authorization. A read-only verification job reruns locked Python checks, the Docker boundary, and the site contract. A separate read-only job builds with the checked-in uv lock and pinned setuptools backend, then uploads the distributions. Only a no-checkout attestation job receives job-scoped OIDC and attestation permissions; only after attestation passes does a no-checkout publishing job receive `contents: write`. Immediately before publication that job peels the current remote tag through GitHub's API and refuses the release unless it still resolves to the initiating `GITHUB_SHA`. The repository must also keep matching tag rules and immutable releases enabled; this workflow check narrows but does not replace those server-side controls. The workflow does not run on pull requests, does not use `pull_request_target`, use dependency caches in privileged jobs, or receive package registry credentials.
 
 After completion:
 
