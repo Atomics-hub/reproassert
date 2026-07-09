@@ -1,0 +1,91 @@
+[build-system]
+requires = ["setuptools==83.0.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "reproassert"
+version = "0.1.0"
+description = "Turn GitHub issues into repeatable, sandbox-verified failing pytest tests."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [{ name = "Atomics Hub" }]
+keywords = ["pytest", "github", "bug-reproduction", "testing", "developer-tools"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Operating System :: MacOS",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Software Development :: Testing",
+]
+dependencies = [
+  "click>=8.1,<9",
+  "defusedxml>=0.7,<1",
+  "rich>=13.9,<16",
+]
+
+[project.optional-dependencies]
+dev = [
+  "build>=1.2,<2",
+  "jsonschema>=4.23,<5",
+  "mypy>=1.15,<2",
+  "pytest>=9.0,<10",
+  "pytest-cov>=6.0,<8",
+  "ruff>=0.11,<1",
+  "setuptools==83.0.0",
+  "types-defusedxml>=0.7,<1",
+]
+
+[project.scripts]
+reproassert = "reproassert.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/Atomics-hub/reproassert"
+Issues = "https://github.com/Atomics-hub/reproassert/issues"
+Documentation = "https://atomics-hub.github.io/reproassert/"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+reproassert = ["assets/*", "schemas/*.json"]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-config --strict-markers"
+testpaths = ["tests"]
+markers = ["integration: requires a running Docker engine and sandbox image"]
+
+[tool.coverage.run]
+branch = true
+source = ["reproassert"]
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S", "SIM", "RUF"]
+ignore = ["S603", "S607"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S108"]
+"examples/fixtures/**" = ["S101"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+warn_unreachable = true

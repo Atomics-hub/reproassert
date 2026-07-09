@@ -1,0 +1,437 @@
+from __future__ import annotations
+
+import platform
+import shlex
+import shutil
+import uuid
+from collections.abc import Mapping
+from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+
+from reproassert import __version__
+from reproassert.candidate import (
+    ValidatedCandidate,
+    candidate_path,
+    render_new_file_patch,
+    validate_candidate_payload,
+)
+from reproassert.context import build_source_context
+from reproassert.errors import PolicyRejection
+from reproassert.generator import CandidateGenerator, GenerationRequest
+from reproassert.intake import (
+    ExtractionLimits,
+    download_source_archive,
+    extract_source_archive,
+    fetch_issue,
+    parse_issue_url,
+    resolve_commit_sha,
+)
+from reproassert.report import REPORT_SCHEMA_VERSION, load_replay_spec, write_report
+from reproassert.safeio import (
+    create_private_run_dir,
+    open_regular_file,
+    sha256_text,
+    write_text_exclusive,
+)
+from reproassert.sandbox import DockerRunResult, DockerSandbox
+from reproassert.verifier import VerificationOutcome, verify_candidate
+
+
+@dataclass(frozen=True)
+class WorkflowResult:
+    run_dir: Path
+    report_path: Path
+    patch_path: Path
+    claim_level: str
+    outcome: str
+    replay_command: str
+
+
+def run_issue_workflow(
+    issue_url: str,
+    *,
+    requested_ref: str,
+    generator: CandidateGenerator,
+    sandbox: DockerSandbox,
+    run_base: Path,
+    repeats: int = 3,
+) -> WorkflowResult:
+    report_id = uuid.uuid4().hex
+    run_dir = create_private_run_dir(run_base, prefix="issue-")
+    archive_path: Path | None = None
+    extraction_path: Path | None = None
+    try:
+        issue = fetch_issue(issue_url)
+        sha = resolve_commit_sha(issue.ref.owner, issue.ref.repo, requested_ref)
+        archive = download_source_archive(issue.ref.owner, issue.ref.repo, sha, run_dir)
+        archive_path = archive.path
+        extracted = extract_source_archive(archive.path, run_dir, limits=ExtractionLimits())
+        extraction_path = extracted.destination
+        context = build_source_context(
+            extracted.source_root, issue_title=issue.ref.title, issue_body=issue.body
+        )
+        candidate = generator.generate(
+            GenerationRequest(
+                issue_url=issue.ref.url,
+                issue_number=issue.ref.number,
+                issue_title=issue.ref.title,
+                issue_body=issue.body,
+                source_sha=sha,
+                source_context=context,
+            )
+        )
+        generation_metadata = getattr(generator, "metadata", {})
+        if not isinstance(generation_metadata, Mapping):
+            raise PolicyRejection("generator_metadata", "Generator metadata must be an object.")
+        result = _verify_and_write(
+            run_dir=run_dir,
+            report_id=report_id,
+            issue_url=issue.ref.url,
+            issue_title=issue.ref.title,
+            issue_body_sha256=issue.ref.body_sha256,
+            repository_url=f"https://github.com/{issue.ref.owner}/{issue.ref.repo}",
+            requested_ref=requested_ref,
+            sha=sha,
+            archive_sha256=archive.sha256,
+            file_count=extracted.file_count,
+            unpacked_bytes=extracted.unpacked_bytes,
+            source_root=extracted.source_root,
+            candidate=candidate,
+            generator_name=generator.name,
+            generation_metadata=generation_metadata,
+            sandbox=sandbox,
+            repeats=repeats,
+        )
+        return result
+    finally:
+        sandbox.cleanup()
+        if extraction_path is not None:
+            shutil.rmtree(extraction_path, ignore_errors=True)
+        if archive_path is not None:
+            archive_path.unlink(missing_ok=True)
+
+
+def run_replay_workflow(
+    report_path: Path,
+    *,
+    sandbox: DockerSandbox,
+    run_base: Path,
+) -> WorkflowResult:
+    spec = load_replay_spec(report_path)
+    report_id = uuid.uuid4().hex
+    run_dir = create_private_run_dir(run_base, prefix="replay-")
+    archive_path: Path | None = None
+    extraction_path: Path | None = None
+    try:
+        archive = download_source_archive(
+            spec.issue.owner, spec.issue.repo, spec.source_sha, run_dir
+        )
+        archive_path = archive.path
+        extracted = extract_source_archive(archive.path, run_dir)
+        extraction_path = extracted.destination
+        return _verify_and_write(
+            run_dir=run_dir,
+            report_id=report_id,
+            issue_url=spec.issue.url,
+            issue_title=spec.issue_title,
+            issue_body_sha256=spec.issue_body_sha256,
+            repository_url=spec.issue.repository_url,
+            requested_ref=spec.source_sha,
+            sha=spec.source_sha,
+            archive_sha256=archive.sha256,
+            file_count=extracted.file_count,
+            unpacked_bytes=extracted.unpacked_bytes,
+            source_root=extracted.source_root,
+            candidate=spec.candidate,
+            generator_name="replay",
+            generation_metadata={},
+            sandbox=sandbox,
+            repeats=spec.repeats,
+        )
+    finally:
+        sandbox.cleanup()
+        if extraction_path is not None:
+            shutil.rmtree(extraction_path, ignore_errors=True)
+        if archive_path is not None:
+            archive_path.unlink(missing_ok=True)
+
+
+def candidate_from_file(
+    path: Path, *, issue_number: int, expected_symptom: str, rationale: str
+) -> ValidatedCandidate:
+    with open_regular_file(path) as stream:
+        encoded = stream.read(32 * 1024 + 1)
+    if len(encoded) > 32 * 1024:
+        raise PolicyRejection("candidate_size", "Candidate file exceeds 32 KiB.")
+    try:
+        content = encoded.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise PolicyRejection("candidate_encoding", "Candidate file must be UTF-8.") from exc
+    return validate_candidate_payload(
+        {
+            "test_content": content,
+            "expected_symptom": expected_symptom,
+            "rationale": rationale,
+        },
+        issue_number=issue_number,
+    )
+
+
+def _verify_and_write(
+    *,
+    run_dir: Path,
+    report_id: str,
+    issue_url: str,
+    issue_title: str,
+    issue_body_sha256: str,
+    repository_url: str,
+    requested_ref: str,
+    sha: str,
+    archive_sha256: str,
+    file_count: int,
+    unpacked_bytes: int,
+    source_root: Path,
+    candidate: ValidatedCandidate,
+    generator_name: str,
+    generation_metadata: Mapping[str, object],
+    sandbox: DockerSandbox,
+    repeats: int,
+) -> WorkflowResult:
+    issue_location = parse_issue_url(issue_url)
+    relative_path = candidate_path(issue_location.number)
+    target_path = source_root.joinpath(*Path(relative_path).parts)
+    target_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    write_text_exclusive(target_path, candidate.test_content)
+
+    status = sandbox.require_ready()
+    runner_facts = sandbox.runner_facts()
+    verification = verify_candidate(
+        sandbox=sandbox,
+        source=source_root,
+        relative_path=relative_path,
+        test_function=candidate.test_function,
+        expected_symptom=candidate.expected_symptom,
+        run_id=report_id,
+        repeats=repeats,
+    )
+    patch = render_new_file_patch(relative_path, candidate.test_content)
+    patch_path = run_dir / "candidate.patch"
+    write_text_exclusive(patch_path, patch)
+    report_path = run_dir / "reproassert-report.json"
+    replay_command = shlex.join(["reproassert", "replay", str(report_path)])
+    report = _report_dict(
+        report_id=report_id,
+        issue_url=issue_url,
+        issue_title=issue_title,
+        issue_body_sha256=issue_body_sha256,
+        repository_url=repository_url,
+        requested_ref=requested_ref,
+        sha=sha,
+        archive_sha256=archive_sha256,
+        file_count=file_count,
+        unpacked_bytes=unpacked_bytes,
+        candidate=candidate,
+        relative_path=relative_path,
+        generator_name=generator_name,
+        generation_metadata=generation_metadata,
+        verification=verification,
+        sandbox=sandbox,
+        image_id=status.image_id,
+        server_version=status.server_version,
+        runner_facts=runner_facts,
+        repeats=repeats,
+        patch=patch,
+        replay_command=replay_command,
+    )
+    write_report(report_path, report)
+    return WorkflowResult(
+        run_dir=run_dir,
+        report_path=report_path,
+        patch_path=patch_path,
+        claim_level=verification.claim_level.value,
+        outcome=verification.outcome,
+        replay_command=replay_command,
+    )
+
+
+def _report_dict(
+    *,
+    report_id: str,
+    issue_url: str,
+    issue_title: str,
+    issue_body_sha256: str,
+    repository_url: str,
+    requested_ref: str,
+    sha: str,
+    archive_sha256: str,
+    file_count: int,
+    unpacked_bytes: int,
+    candidate: ValidatedCandidate,
+    relative_path: str,
+    generator_name: str,
+    generation_metadata: Mapping[str, object],
+    verification: VerificationOutcome,
+    sandbox: DockerSandbox,
+    image_id: str | None,
+    server_version: str | None,
+    runner_facts: dict[str, str],
+    repeats: int,
+    patch: str,
+    replay_command: str,
+) -> dict[str, object]:
+    policy = sandbox.policy
+    return {
+        "schema_version": REPORT_SCHEMA_VERSION,
+        "report_id": report_id,
+        "created_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "tool": {"name": "reproassert", "version": __version__},
+        "claim_level": verification.claim_level.value,
+        "outcome": verification.outcome,
+        "issue": {
+            "url": issue_url,
+            "title": issue_title,
+            "body_sha256": issue_body_sha256,
+        },
+        "source": {
+            "repository_url": repository_url,
+            "requested_ref": requested_ref,
+            "sha": sha,
+            "archive_sha256": archive_sha256,
+            "file_count": file_count,
+            "unpacked_bytes": unpacked_bytes,
+        },
+        "candidate": {
+            "relative_path": relative_path,
+            "test_function": candidate.test_function,
+            "test_content": candidate.test_content,
+            "test_content_sha256": candidate.sha256,
+            "expected_symptom": candidate.expected_symptom,
+            "rationale": candidate.rationale,
+            "generator": generator_name,
+        },
+        "generation": _generation_record(generator_name, generation_metadata),
+        "runner": {
+            "backend": "docker",
+            "server_version": server_version,
+            "image": policy.image,
+            "image_id": image_id,
+            "controller": {
+                "python_version": platform.python_version(),
+                "python_implementation": platform.python_implementation(),
+                "platform_system": platform.system(),
+                "platform_release": platform.release(),
+                "machine": platform.machine(),
+            },
+            "verification_environment": runner_facts,
+        },
+        "policy": {
+            "profile": "strict-python-pytest-v1",
+            "repeats": repeats,
+            "network": {"intake": "github-fixed-hosts", "verification": "none"},
+            "mounts": ["controller-owned Docker volume, read-only during verification"],
+            "environment": {
+                "HOME": "/tmp/home",  # noqa: S108 - path is inside container
+                "LANG": "C.UTF-8",
+                "LC_ALL": "C.UTF-8",
+                "PATH": "/usr/local/bin:/usr/bin:/bin",
+                "PYTHONDONTWRITEBYTECODE": "1",
+                "PYTHONHASHSEED": "0",
+                "PYTHONPATH": "/workspace:/workspace/src:/workspace/.reproassert-deps",
+                "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+                "TZ": "UTC",
+            },
+            "limits": {
+                "timeout_seconds": policy.timeout_seconds,
+                "max_output_bytes": policy.max_output_bytes,
+                "memory_bytes": policy.memory_bytes,
+                "cpus": policy.cpus,
+                "pids": policy.pids,
+                "tmpfs_bytes": policy.tmpfs_bytes,
+                "tmpfs_inodes": policy.tmpfs_inodes,
+            },
+        },
+        "collection": _docker_result(verification.collection),
+        "runs": [_docker_result(run) for run in verification.runs],
+        "failure_fingerprint": verification.fingerprint,
+        "artifacts": {
+            "candidate_patch": "candidate.patch",
+            "candidate_patch_sha256": sha256_text(patch),
+            "report": "reproassert-report.json",
+        },
+        "replay": {
+            "display_command": replay_command,
+            "execution_policy": "controller_regenerates_argv_and_ignores_report_commands",
+        },
+        "limitations": [
+            "Repeatable failure is not semantic correctness or maintainer acceptance.",
+            (
+                "Repository code can forge in-process pytest detail; results are bounded "
+                "evidence, not proof."
+            ),
+            "Docker shares a kernel on Linux; Docker Desktop shares its VM across containers.",
+            (
+                "This strict profile performs no dependency installation and may reject "
+                "valid repositories."
+            ),
+            (
+                "Generation metadata covers only the candidate that reached verification; "
+                "provider work spent on aborted generation attempts is not recorded here."
+            ),
+        ],
+    }
+
+
+def _docker_result(result: DockerRunResult) -> dict[str, object]:
+    values: dict[str, object] = asdict(result)
+    values.pop("junit_xml", None)
+    values.pop("container_name", None)
+    values["argv"] = list(result.argv)
+    return values
+
+
+def _generation_record(adapter: str, metadata: Mapping[str, object]) -> dict[str, object]:
+    record: dict[str, object] = {"adapter": adapter}
+    if not metadata:
+        return record
+    allowed_text = {
+        "provider",
+        "requested_model",
+        "response_model",
+        "endpoint_host",
+        "response_id",
+    }
+    allowed_counts = {
+        "input_tokens",
+        "cached_input_tokens",
+        "output_tokens",
+        "total_tokens",
+    }
+    if set(metadata) - allowed_text - allowed_counts - {"request_duration_seconds"}:
+        raise PolicyRejection("generator_metadata", "Generator metadata contains unknown fields.")
+    for name in allowed_text:
+        value = metadata.get(name)
+        if value is not None:
+            if not isinstance(value, str) or not 1 <= len(value) <= 200:
+                raise PolicyRejection(
+                    "generator_metadata", f"Generator metadata {name} is invalid."
+                )
+            record[name] = value
+    duration = metadata.get("request_duration_seconds")
+    if duration is not None:
+        if (
+            isinstance(duration, bool)
+            or not isinstance(duration, (int, float))
+            or not 0 <= duration <= 600
+        ):
+            raise PolicyRejection("generator_metadata", "Generator request duration is invalid.")
+        record["request_duration_seconds"] = duration
+    for name in allowed_counts:
+        value = metadata.get(name)
+        if value is not None:
+            if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 2**31 - 1:
+                raise PolicyRejection(
+                    "generator_metadata", f"Generator metadata {name} is invalid."
+                )
+            record[name] = value
+    return record

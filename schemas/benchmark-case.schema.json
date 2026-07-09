@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Atomics-hub/reproassert/blob/main/schemas/benchmark-case.schema.json",
+  "title": "ReproAssert public benchmark case",
+  "description": "Generator-visible metadata for one frozen historical issue. Evaluator-only fix and gold-test data are deliberately excluded.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "repo",
+    "issue_url",
+    "base_sha",
+    "difficulty",
+    "title",
+    "smoke"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^rk-v0\\.1-[0-9]{3}$",
+      "description": "Neutral benchmark ID that does not encode a fixing pull request."
+    },
+    "repo": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+    },
+    "issue_url": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/issues/[1-9][0-9]*$"
+    },
+    "base_sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$",
+      "description": "Exact full Git commit SHA of the buggy repository state."
+    },
+    "difficulty": {
+      "type": "string",
+      "enum": [
+        "lt_15m",
+        "15m_to_1h"
+      ],
+      "description": "Upstream human fix-effort bucket; not an estimate of ReproAssert runtime."
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 300
+    },
+    "smoke": {
+      "type": "boolean",
+      "description": "Whether this case belongs to the five-case harness smoke subset."
+    }
+  }
+}

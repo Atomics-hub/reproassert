@@ -1,0 +1,404 @@
+{
+  "benchmark_version": "0.1.0",
+  "name": "ReproAssert historical Python/pytest starter benchmark",
+  "frozen_at": "2026-07-09",
+  "status": "preregistered_no_results",
+  "case_schema": "../../schemas/benchmark-case.schema.json",
+  "run_schema": "../../schemas/benchmark-run.schema.json",
+  "source": {
+    "name": "TDD-Bench-Verified",
+    "paper_url": "https://arxiv.org/abs/2412.02883",
+    "repository_url": "https://github.com/IBM/TDD-Bench-Verified",
+    "upstream_case_count": 449,
+    "relationship": "All cases are members of the upstream verified ID list; fix and gold-test records are intentionally omitted from this public manifest."
+  },
+  "selection": {
+    "method": "judgmental_predeclared_feasibility_sample",
+    "preinference_freeze": true,
+    "case_count": 20,
+    "repository_count": 10,
+    "difficulty_counts": {
+      "lt_15m": 14,
+      "15m_to_1h": 6
+    },
+    "criteria": [
+      "Public GitHub issue in a Python repository with pytest-compatible tests.",
+      "Exact buggy base commit and a human fix/test pair exist in TDD-Bench-Verified.",
+      "The issue body does not contain a complete executable test function with its final assertion.",
+      "The historical environment passed upstream verification and is suitable for containerized replay.",
+      "The set spans exceptions, wrong values, serialization, collection, configuration, mutation, formatting, and validation behavior."
+    ],
+    "exclusions": [
+      "Django cases whose canonical issue is a Trac ticket rather than a GitHub issue.",
+      "Cases requiring a live external service, GPU, or network during verification.",
+      "Cases with a complete copy-paste reproduction test in the issue body.",
+      "Cases estimated by upstream reviewers to require more than one hour to fix.",
+      "Any case inspected using ReproAssert output before this manifest was frozen."
+    ],
+    "smoke_case_ids": [
+      "rk-v0.1-004",
+      "rk-v0.1-006",
+      "rk-v0.1-010",
+      "rk-v0.1-011",
+      "rk-v0.1-018"
+    ],
+    "limitations": [
+      "This is a deliberately small, easy-to-medium feasibility cohort, not a representative sample of all GitHub issues.",
+      "The source issues and their historical fixes are public and may have appeared in model training data.",
+      "Cases must not be replaced after a failed run; corrections require a new benchmark version or a documented erratum."
+    ]
+  },
+  "protocol": {
+    "primary_metric": "semantic_valid_success_at_1",
+    "submitted_candidates_per_case": 1,
+    "candidate_selection_uses_oracle": false,
+    "issue_snapshot": {
+      "fields": [
+        "title",
+        "body"
+      ],
+      "include_comments": false,
+      "cutoff": "pre_fix_source_snapshot",
+      "strip_backlinks_to_fixing_pr": true
+    },
+    "generator_visible_case_fields": [
+      "repo",
+      "issue_url",
+      "base_sha",
+      "issue_snapshot"
+    ],
+    "evaluator_only_fields": [
+      "fixing pull request URL and number",
+      "fixed commit and production fix patch",
+      "developer gold tests",
+      "oracle symptom rubric",
+      "decoy patches and alternative-fix controls"
+    ],
+    "network_after_dependency_prep": "disabled",
+    "clean_environment_per_execution": true,
+    "execution_schedule": [
+      "base",
+      "fixed",
+      "fixed",
+      "base",
+      "base",
+      "fixed"
+    ],
+    "base_repetitions": 3,
+    "fixed_repetitions": 3,
+    "semantic_reviewers": 2,
+    "tie_break_reviewers": 1,
+    "causal_hunk_check": "required_when_fix_hunks_apply_independently",
+    "changed_line_coverage_role": "supporting_signal_only"
+  },
+  "claim_ladder": [
+    {
+      "level": "L0",
+      "name": "executable_candidate",
+      "definition": "The test-only patch applies, compiles or collects, and fails repeatably on the exact buggy base for an issue-aligned observed symptom.",
+      "public_ceiling": "This is the highest claim available before a fix exists."
+    },
+    {
+      "level": "L1",
+      "name": "plausible_f2p",
+      "definition": "L0 plus repeated passing executions after the evaluator applies the hidden human production fix.",
+      "public_ceiling": "Fail-to-pass is necessary evidence but is not semantic correctness."
+    },
+    {
+      "level": "L2",
+      "name": "semantic_valid",
+      "definition": "L1 plus blinded review and causal controls showing that the trigger and oracle encode the issue rather than incidental patch drift.",
+      "public_ceiling": "This is the benchmark's primary success definition."
+    },
+    {
+      "level": "L3",
+      "name": "maintainer_validated",
+      "definition": "A real maintainer independently validates or accepts the generated reproduction.",
+      "public_ceiling": "This claim requires separately authorized outreach and recorded external evidence."
+    }
+  ],
+  "outcome_taxonomy": [
+    {
+      "id": "benchmark_infrastructure_error",
+      "definition": "The benchmark environment or evaluator failed independently of the candidate; repair and rerun before closing the scored run."
+    },
+    {
+      "id": "no_output",
+      "definition": "No candidate patch was produced within budget."
+    },
+    {
+      "id": "invalid_patch",
+      "definition": "The candidate is empty, malformed, or cannot be applied to the base tree."
+    },
+    {
+      "id": "policy_violation",
+      "definition": "The candidate edits forbidden production/configuration/dependency files or contains prohibited test behavior."
+    },
+    {
+      "id": "setup_failure",
+      "definition": "The candidate cannot reach test collection because of its own setup, dependency, or top-level execution error."
+    },
+    {
+      "id": "collect_failure",
+      "definition": "The intended generated test node cannot compile or collect."
+    },
+    {
+      "id": "pass_on_base",
+      "definition": "The candidate runs successfully but does not fail on the buggy base."
+    },
+    {
+      "id": "wrong_failure",
+      "definition": "The candidate fails repeatably on the base for a syntax, import, setup, timeout, generic crash, or other symptom unrelated to the issue."
+    },
+    {
+      "id": "flaky_base",
+      "definition": "The candidate does not produce a consistent issue-aligned failure across all required base repetitions."
+    },
+    {
+      "id": "fail_on_fix",
+      "definition": "The candidate continues to fail after the hidden production fix is applied."
+    },
+    {
+      "id": "flaky_fix",
+      "definition": "The candidate does not pass consistently across all required fixed repetitions."
+    },
+    {
+      "id": "plausible_f2p_semantic_invalid",
+      "definition": "The candidate is mechanically fail-to-pass but review or causal controls show that it does not faithfully reproduce the issue."
+    },
+    {
+      "id": "semantic_valid",
+      "definition": "The candidate meets the L2 definition and counts toward the primary benchmark metric."
+    }
+  ],
+  "gates": {
+    "semantic_valid_minimum": 6,
+    "semantic_valid_denominator": 20,
+    "median_warm_runtime_seconds_max": 600,
+    "target_attributable_cost_per_semantic_valid_usd_max": 1.0,
+    "maintainer_validated_test_minimum": 1,
+    "maintainers_willing_to_reuse_minimum": 3,
+    "external_validation_is_separate": true,
+    "interpretation": "Passing the internal 6/20 gate supports continuing the product bet; it does not establish a stable 30 percent population success rate."
+  },
+  "cost_semantics": {
+    "primary_metric": "total_attributable_cost_usd / semantic_valid_count",
+    "zero_success_value": "undefined",
+    "attributable_cost_includes": [
+      "model inference for all successful and failed attempts",
+      "marginal sandbox compute for generation and verification",
+      "paid storage or artifact transfer incurred by the scored run"
+    ],
+    "reported_separately": [
+      "one-time dependency image construction cost and time",
+      "human benchmark curation and semantic review labor",
+      "cold-cache and warm-cache wall time"
+    ],
+    "required_statistics": [
+      "total cost",
+      "cost per attempted case",
+      "cost per semantic-valid success",
+      "p50 and p90 cost per case",
+      "p50 and p90 generation and verification wall time"
+    ],
+    "warning": "Median cost among successful cases alone is not sufficient because it hides spend on failures."
+  },
+  "contamination": {
+    "classification": "historical_public_contamination_exposed",
+    "caveat": "All issues and fixes are historical public GitHub data. Model pretraining exposure cannot be ruled out, so this benchmark must not be described as contamination-free or state of the art.",
+    "controls": [
+      "Pin the exact buggy base SHA and issue snapshot.",
+      "Disable generator network access after bounded dependency preparation.",
+      "Do not mount evaluator fix, gold-test, source-record, or review artifacts into the generator sandbox.",
+      "Record model/provider/version, prompt hash, configuration hash, and run date.",
+      "Publish every frozen case outcome and never replace a failure post hoc."
+    ],
+    "residual_risks": [
+      "A model may have memorized issue text, repository code, or the human solution during pretraining.",
+      "The manually selected easy-to-medium cohort may overestimate performance on ambiguous or operationally complex issues.",
+      "Public base SHAs and issue URLs make the hidden fix discoverable outside the isolated generation process."
+    ]
+  },
+  "cases": [
+    {
+      "id": "rk-v0.1-001",
+      "repo": "astropy/astropy",
+      "issue_url": "https://github.com/astropy/astropy/issues/14305",
+      "base_sha": "cdb66059a2feb44ee49021874605ba90801f9986",
+      "difficulty": "lt_15m",
+      "title": "IndexError: tuple index out of range in identify_format (io.registry)",
+      "smoke": false
+    },
+    {
+      "id": "rk-v0.1-002",
+      "repo": "astropy/astropy",
+      "issue_url": "https://github.com/astropy/astropy/issues/14978",
+      "base_sha": "b16c7d12ccbc7b2d20364b89fb44285bcbfede54",
+      "difficulty": "lt_15m",
+      "title": "In v5.3, NDDataRef mask propagation fails when one operand does not have a mask",
+      "smoke": false
+    },
+    {
+      "id": "rk-v0.1-003",
+      "repo": "astropy/astropy",
+      "issue_url": "https://github.com/astropy/astropy/issues/7603",
+      "base_sha": "3cedd79e6c121910220f8e6df77c54a0b344ea94",
+      "difficulty": "15m_to_1h",
+      "title": "Unit equality comparison with None raises TypeError for UnrecognizedUnit",
+      "smoke": false
+    },
+    {
+      "id": "rk-v0.1-004",
+      "repo": "matplotlib/matplotlib",
+      "issue_url": "https://github.com/matplotlib/matplotlib/issues/24127",
+      "base_sha": "af39f1edffcd828f05cfdd04f2e59506bb4a27bc",
+      "difficulty": "lt_15m",
+      "title": "ax.bar raises for all-NaN data on matplotlib 3.6.1",
+      "smoke": true
+    },
+    {
+      "id": "rk-v0.1-005",
+      "repo": "matplotlib/matplotlib",
+      "issue_url": "https://github.com/matplotlib/matplotlib/issues/25300",
+      "base_sha": "430fb1db88843300fb4baae3edc499bbfe073b0c",
+      "difficulty": "lt_15m",
+      "title": "Unable to pickle a figure with a draggable legend",
+      "smoke": false
+    },
+    {
+      "id": "rk-v0.1-006",
+      "repo": "scikit-learn/scikit-learn",
+      "issue_url": "https://github.com/scikit-learn/scikit-learn/issues/13070",
+      "base_sha": "1c8668b0a021832386470ddf740d834e02c66f69",
+      "difficulty": "lt_15m",
+      "title": "GaussianMixture predict and fit_predict disagree when n_init is greater than 1",
+      "smoke": true
+    },
+    {
+      "id": "rk-v0.1-007",
+      "repo": "scikit-learn/scikit-learn",
+      "issue_url": "https://github.com/scikit-learn/scikit-learn/issues/13314",
+      "base_sha": "37b0e66c871e8fb032a9c7086b2a1d5419838154",
+      "difficulty": "lt_15m",
+      "title": "TypeError when supplying a boolean X to HuberRegressor.fit",
+      "smoke": false
+    },
+    {
+      "id": "rk-v0.1-008",
+      "repo": "scikit-learn/scikit-learn",
+      "issue_url": "https://github.com/scikit-learn/scikit-learn/issues/13976",
+      "base_sha": "6ab8c86c383dd847a1be7103ad115f174fe23ffd",
+      "difficulty": "15m_to_1h",
+      "title": "IndexError in export_text when a tree has only one feature",
+      "smoke": false
+    },
+    {
+      "id": "rk-v0.1-009",
+      "repo": "pytest-dev/pytest",
+      "issue_url": "https://github.com/pytest-dev/pytest/issues/5606",
+      "base_sha": "cb828ebe70b4fa35cd5f9a7ee024272237eab351",
+      "difficulty": "15m_to_1h",
+      "title": "ValueError while collecting tests that patch an array",
+      "smoke": false
+    },
+    {
+      "id": "rk-v0.1-010",
+      "repo": "pytest-dev/pytest",
+      "issue_url": "https://github.com/pytest-dev/pytest/issues/7981",
+      "base_sha": "a7e38c5c61928033a2dc1915cbee8caa8544a4d0",
+      "difficulty": "lt_15m",
+      "title": "Symlinked directories are not collected since pytest 6.1.0",
+      "smoke": true
+    },
+    {
+      "id": "rk-v0.1-011",
+      "repo": "pydata/xarray",
+      "issue_url": "https://github.com/pydata/xarray/issues/4074",
+      "base_sha": "19b088636eb7d3f65ab7a1046ac672e0689371d8",
+      "difficulty": "lt_15m",
+      "title": "Boolean weights produce incorrect weighted means",
+      "smoke": true
+    },
+    {
+      "id": "rk-v0.1-012",
+      "repo": "pydata/xarray",
+      "issue_url": "https://github.com/pydata/xarray/issues/4049",
+      "base_sha": "a64cf2d5476e7bbda099b34c40b7be1880dbd39a",
+      "difficulty": "lt_15m",
+      "title": "to_unstacked_dataset is broken for single-dimension variables",
+      "smoke": false
+    },
+    {
+      "id": "rk-v0.1-013",
+      "repo": "pydata/xarray",
+      "issue_url": "https://github.com/pydata/xarray/issues/6931",
+      "base_sha": "c4e40d991c28be51de9ac560ce895ac7f9b14924",
+      "difficulty": "15m_to_1h",
+      "title": "swap_dims can modify the original object",
+      "smoke": false
+    },
+    {
+      "id": "rk-v0.1-014",
+      "repo": "psf/requests",
+      "issue_url": "https://github.com/psf/requests/issues/1920",
+      "base_sha": "3c88e520da24ae6f736929a750876e7654accc3d",
+      "difficulty": "lt_15m",
+      "title": "Removing a default header from a session",
+      "smoke": false
+    },
+    {
+      "id": "rk-v0.1-015",
+      "repo": "psf/requests",
+      "issue_url": "https://github.com/psf/requests/issues/2930",
+      "base_sha": "5f7a3a74aab1625c2bb65f643197ee885e3da576",
+      "difficulty": "15m_to_1h",
+      "title": "A request with a binary payload fails during native-string conversion",
+      "smoke": false
+    },
+    {
+      "id": "rk-v0.1-016",
+      "repo": "sympy/sympy",
+      "issue_url": "https://github.com/sympy/sympy/issues/15344",
+      "base_sha": "9ef28fba5b4d6d0168237c9c005a550e6dc27d81",
+      "difficulty": "lt_15m",
+      "title": "mathematica_code produces incorrect output for Max",
+      "smoke": false
+    },
+    {
+      "id": "rk-v0.1-017",
+      "repo": "sympy/sympy",
+      "issue_url": "https://github.com/sympy/sympy/issues/15873",
+      "base_sha": "b506169ad727ee39cb3d60c8b3ff5e315d443d8e",
+      "difficulty": "lt_15m",
+      "title": "is_zero is incorrect on a complex integer expression",
+      "smoke": false
+    },
+    {
+      "id": "rk-v0.1-018",
+      "repo": "pallets/flask",
+      "issue_url": "https://github.com/pallets/flask/issues/5010",
+      "base_sha": "7ee9ceb71e868944a46e1ff00b506772a53a4f1d",
+      "difficulty": "lt_15m",
+      "title": "Blueprints should require a non-empty name",
+      "smoke": true
+    },
+    {
+      "id": "rk-v0.1-019",
+      "repo": "mwaskom/seaborn",
+      "issue_url": "https://github.com/mwaskom/seaborn/issues/3174",
+      "base_sha": "22cdfb0c93f8ec78492d87edb810f10cb7f57a31",
+      "difficulty": "15m_to_1h",
+      "title": "Numeric legends show wrong values for large ranges",
+      "smoke": false
+    },
+    {
+      "id": "rk-v0.1-020",
+      "repo": "pylint-dev/pylint",
+      "issue_url": "https://github.com/pylint-dev/pylint/issues/4901",
+      "base_sha": "40cc2ffd7887959157aaf469e09585ec2be7f528",
+      "difficulty": "lt_15m",
+      "title": "Setting min-similarity-lines to 0 should disable duplicate-code checking",
+      "smoke": false
+    }
+  ]
+}
