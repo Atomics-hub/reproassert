@@ -250,10 +250,24 @@ jobs:
       - name: Create immutable-by-policy GitHub release assets
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_NOTES: |
+            ReproAssert 0.1.0 is a public alpha source release for the bounded Python/pytest workflow.
+
+            Verified scope: canonical public GitHub issue intake at an exact SHA, one policy-screened
+            pytest candidate, hardened Docker collection and repeated base-failure checks, a test-only
+            patch, schema-1.0 JSON report, and bounded replay. The checked-in self-owned fixture reaches
+            the same intended AssertionError fingerprint in 3/3 forward and 3/3 replay runs.
+
+            Claim limits: the frozen historical benchmark remains 0/20 scored, no outside maintainer
+            has validated a candidate or committed to reuse, failed generation-attempt cost is not yet
+            captured, and no accuracy, demand, revenue, or hosted-readiness claim is made. The built-in
+            OpenAI adapter is opt-in and was contract-tested without a live paid request. This release is
+            not published to PyPI.
         run: >-
           gh release create "$GITHUB_REF_NAME"
           dist/*
           --repo "$GITHUB_REPOSITORY"
           --title "ReproAssert $GITHUB_REF_NAME"
+          --notes "$RELEASE_NOTES"
           --generate-notes
           --verify-tag

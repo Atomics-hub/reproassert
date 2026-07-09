@@ -4,6 +4,8 @@ All notable changes to ReproAssert will be documented here. The format follows [
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-07-09
+
 ### Added
 
 - Initial Python and pytest issue-to-reproduction workflow.
@@ -16,4 +18,5 @@ All notable changes to ReproAssert will be documented here. The format follows [
 - Adversarial regressions for false assertions, generic crashes, forged pytest output, and nested
   secret-like context paths.
 
-[Unreleased]: https://github.com/Atomics-hub/reproassert/commits/main
+[Unreleased]: https://github.com/Atomics-hub/reproassert/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/Atomics-hub/reproassert/releases/tag/v0.1.0
