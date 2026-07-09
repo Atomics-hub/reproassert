@@ -4,35 +4,123 @@ on:
   push:
     tags:
       - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing immutable vX.Y.Z tag to verify and publish
+        required: true
+        type: string
 
 permissions: {}
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 env:
   PYTHONDONTWRITEBYTECODE: "1"
 
 jobs:
+  resolve:
+    name: Resolve immutable release tag
+    outputs:
+      release_tag: ${{ steps.tag.outputs.release_tag }}
+      source_sha: ${{ steps.tag.outputs.source_sha }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Require protected main for manual recovery
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          if test "$GITHUB_REF" != refs/heads/main; then
+            echo "Manual release recovery must use the protected main workflow definition." >&2
+            exit 1
+          fi
+      - name: Resolve the existing remote tag to one commit
+        id: tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          if [[ ! "$REQUESTED_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Refusing non-stable release tag: $REQUESTED_TAG" >&2
+            exit 1
+          fi
+          ref_json="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$REQUESTED_TAG")"
+          object_type="$(jq -r '.object.type' <<<"$ref_json")"
+          object_sha="$(jq -r '.object.sha' <<<"$ref_json")"
+          for _ in 1 2 3 4 5; do
+            if test "$object_type" = commit; then
+              break
+            fi
+            if test "$object_type" != tag; then
+              echo "Refusing release: tag points to unsupported object type $object_type." >&2
+              exit 1
+            fi
+            tag_json="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$object_sha")"
+            object_type="$(jq -r '.object.type' <<<"$tag_json")"
+            object_sha="$(jq -r '.object.sha' <<<"$tag_json")"
+          done
+          if test "$object_type" != commit || [[ ! "$object_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Refusing release: tag did not peel to one commit SHA." >&2
+            exit 1
+          fi
+          release_status="$(curl --silent --show-error --retry 2 --retry-all-errors \
+            --output "$RUNNER_TEMP/existing-release.json" \
+            --write-out '%{http_code}' \
+            --header 'Accept: application/vnd.github+json' \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header 'X-GitHub-Api-Version: 2026-03-10' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/tags/$REQUESTED_TAG")"
+          case "$release_status" in
+            404) ;;
+            200)
+              echo "Refusing release: $REQUESTED_TAG already has a GitHub release." >&2
+              exit 1
+              ;;
+            *)
+              echo "Refusing release: release lookup returned HTTP $release_status." >&2
+              exit 1
+              ;;
+          esac
+          echo "release_tag=$REQUESTED_TAG" >> "$GITHUB_OUTPUT"
+          echo "source_sha=$object_sha" >> "$GITHUB_OUTPUT"
+      - name: Check out the resolved source commit
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ steps.tag.outputs.source_sha }}
+      - name: Require the resolved commit to be on main
+        env:
+          SOURCE_SHA: ${{ steps.tag.outputs.source_sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          git merge-base --is-ancestor "$SOURCE_SHA" refs/remotes/origin/main || {
+            echo "Refusing to release a tag whose commit is not on main." >&2
+            exit 1
+          }
+
   verify:
     name: Verify tagged source
+    needs: resolve
+    env:
+      RELEASE_TAG: ${{ needs.resolve.outputs.release_tag }}
+      SOURCE_SHA: ${{ needs.resolve.outputs.source_sha }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       contents: read
     steps:
-      - name: Check out tagged source
+      - name: Check out the exact resolved source
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          fetch-depth: 0
           persist-credentials: false
-      - name: Require the tagged commit to be on main
-        run: |
-          git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main || {
-            echo "Refusing to release a tag whose commit is not on main." >&2
-            exit 1
-          }
+          ref: ${{ needs.resolve.outputs.source_sha }}
+      - name: Require the resolved source commit
+        run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
       - name: Set up Python
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
@@ -51,7 +139,7 @@ jobs:
           import tomllib
           from pathlib import Path
 
-          tag = os.environ["GITHUB_REF_NAME"]
+          tag = os.environ["RELEASE_TAG"]
           if re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", tag) is None:
               raise SystemExit(f"release tag is not an exact stable version: {tag}")
           project_version = tomllib.loads(Path("pyproject.toml").read_text())["project"]["version"]
@@ -97,16 +185,22 @@ jobs:
 
   build:
     name: Build locked distributions
-    needs: verify
+    needs: [resolve, verify]
+    env:
+      RELEASE_TAG: ${{ needs.resolve.outputs.release_tag }}
+      SOURCE_SHA: ${{ needs.resolve.outputs.source_sha }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: read
     steps:
-      - name: Check out tagged source
+      - name: Check out the exact resolved source
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
+          ref: ${{ needs.resolve.outputs.source_sha }}
+      - name: Require the source verified by the preceding job
+        run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
       - name: Set up Python
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
@@ -121,6 +215,7 @@ jobs:
       - name: Build without an isolated live dependency resolution
         run: |
           uv build --no-build-isolation
+          rm -f dist/.gitignore
           python - <<'PY'
           from pathlib import Path
 
@@ -137,6 +232,16 @@ jobs:
       - name: Verify the built wheel reports the tag version
         run: |
           uv venv "$RUNNER_TEMP/wheel-version" --python 3.14
+          uv export \
+            --frozen \
+            --no-dev \
+            --no-emit-project \
+            --format requirements.txt \
+            --output-file "$RUNNER_TEMP/runtime-requirements.txt"
+          uv pip sync \
+            --python "$RUNNER_TEMP/wheel-version/bin/python" \
+            --require-hashes \
+            "$RUNNER_TEMP/runtime-requirements.txt"
           uv pip install --python "$RUNNER_TEMP/wheel-version/bin/python" --no-deps dist/*.whl
           "$RUNNER_TEMP/wheel-version/bin/reproassert" --version
           "$RUNNER_TEMP/wheel-version/bin/reproassert" --help >/dev/null
@@ -148,7 +253,7 @@ jobs:
 
           import reproassert
 
-          expected = os.environ["GITHUB_REF_NAME"].removeprefix("v")
+          expected = os.environ["RELEASE_TAG"].removeprefix("v")
           if reproassert.__version__ != expected:
               raise SystemExit(
                   f"wheel/controller version mismatch: {reproassert.__version__=} {expected=}"
@@ -172,13 +277,16 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-distributions
-          path: dist/
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
+            dist/SHA256SUMS
           if-no-files-found: error
           retention-days: 7
 
   attest:
     name: Attest verified distributions
-    needs: build
+    needs: [build, resolve]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -203,10 +311,27 @@ jobs:
             dist/*.whl
             dist/*.tar.gz
           show-summary: true
+      - name: Attest the exact immutable tag source
+        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
+        with:
+          subject-path: |
+            dist/*.whl
+            dist/*.tar.gz
+          predicate-type: https://github.com/Atomics-hub/reproassert/attestations/tagged-source/v1
+          predicate: |
+            {
+              "source_repository": "https://github.com/${{ github.repository }}",
+              "source_sha": "${{ needs.resolve.outputs.source_sha }}",
+              "tag": "${{ needs.resolve.outputs.release_tag }}"
+            }
+          show-summary: true
 
   publish:
     name: Publish GitHub release
-    needs: attest
+    needs: [attest, resolve]
+    env:
+      RELEASE_TAG: ${{ needs.resolve.outputs.release_tag }}
+      SOURCE_SHA: ${{ needs.resolve.outputs.source_sha }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -216,7 +341,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          ref_json="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$GITHUB_REF_NAME")"
+          ref_json="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG")"
           object_type="$(jq -r '.object.type' <<<"$ref_json")"
           object_sha="$(jq -r '.object.sha' <<<"$ref_json")"
           for _ in 1 2 3 4 5; do
@@ -231,8 +356,8 @@ jobs:
             object_type="$(jq -r '.object.type' <<<"$tag_json")"
             object_sha="$(jq -r '.object.sha' <<<"$tag_json")"
           done
-          if test "$object_type" != commit || test "$object_sha" != "$GITHUB_SHA"; then
-            echo "Refusing release: remote tag no longer resolves to initiating SHA." >&2
+          if test "$object_type" != commit || test "$object_sha" != "$SOURCE_SHA"; then
+            echo "Refusing release: remote tag no longer resolves to the verified source SHA." >&2
             exit 1
           fi
       - name: Download attested distributions
@@ -252,7 +377,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_NOTES: |
-            ReproAssert ${{ github.ref_name }} is a public alpha source release for the bounded
+            ReproAssert ${{ needs.resolve.outputs.release_tag }} is a public alpha source release for the bounded
             Python/pytest workflow.
 
             Verified scope: canonical public GitHub issue intake at an exact SHA, one policy-screened
@@ -262,7 +387,8 @@ jobs:
 
             Supply-chain scope: the tagged source is lockfile-verified, its site dependency graph was
             audited with zero known vulnerabilities at release time, and the wheel and source archive
-            are checksum-verified and receive GitHub artifact attestations before publication.
+            are checksum-verified and receive GitHub workflow-provenance plus exact-tag-source
+            attestations before publication.
 
             Claim limits: the frozen historical benchmark remains 0/20 scored, no outside maintainer
             has validated a candidate or committed to reuse, failed generation-attempt cost is not yet
@@ -270,10 +396,10 @@ jobs:
             OpenAI adapter is opt-in and was contract-tested without a live paid request. This release is
             not published to PyPI.
         run: >-
-          gh release create "$GITHUB_REF_NAME"
+          gh release create "$RELEASE_TAG"
           dist/*
           --repo "$GITHUB_REPOSITORY"
-          --title "ReproAssert $GITHUB_REF_NAME"
+          --title "ReproAssert $RELEASE_TAG"
           --notes "$RELEASE_NOTES"
           --generate-notes
           --verify-tag

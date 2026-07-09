@@ -4,6 +4,12 @@ All notable changes to ReproAssert will be documented here. The format follows [
 
 ## [Unreleased]
 
+### Fixed
+
+- Made tag-release staging remove the `uv build`-generated `dist/.gitignore` sentinel and added a
+  guarded manual recovery path that rebuilds an existing immutable tag at its exact verified commit,
+  with a signed attestation binding the tag to that commit alongside workflow provenance.
+
 ## [0.1.0] - 2026-07-09
 
 ### Added
