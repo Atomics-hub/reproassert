@@ -1,0 +1,325 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atomics-hub.github.io/reproassert/reproassert-report.schema.json",
+  "title": "ReproAssert report v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "report_id",
+    "created_at",
+    "tool",
+    "claim_level",
+    "outcome",
+    "issue",
+    "source",
+    "candidate",
+    "generation",
+    "runner",
+    "policy",
+    "collection",
+    "runs",
+    "failure_fingerprint",
+    "artifacts",
+    "replay",
+    "limitations"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "report_id": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "const": "reproassert" },
+        "version": { "type": "string", "minLength": 1, "maxLength": 100 }
+      }
+    },
+    "claim_level": {
+      "enum": [
+        "rejected",
+        "collected",
+        "repeatable_base_failure",
+        "differential_reproduction",
+        "maintainer_validated"
+      ]
+    },
+    "outcome": { "type": "string", "minLength": 1, "maxLength": 100 },
+    "issue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["url", "title", "body_sha256"],
+      "properties": {
+        "url": {
+          "type": "string",
+          "pattern": "^https://github\\.com/[^/]+/[^/]+/issues/[1-9][0-9]*$"
+        },
+        "title": { "type": "string", "maxLength": 4096 },
+        "body_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository_url",
+        "requested_ref",
+        "sha",
+        "archive_sha256",
+        "file_count",
+        "unpacked_bytes"
+      ],
+      "properties": {
+        "repository_url": {
+          "type": "string",
+          "pattern": "^https://github\\.com/[^/]+/[^/]+$"
+        },
+        "requested_ref": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "archive_sha256": { "$ref": "#/$defs/sha256" },
+        "file_count": { "type": "integer", "minimum": 0, "maximum": 20000 },
+        "unpacked_bytes": { "type": "integer", "minimum": 0, "maximum": 268435456 }
+      }
+    },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "relative_path",
+        "test_function",
+        "test_content",
+        "test_content_sha256",
+        "expected_symptom",
+        "rationale",
+        "generator"
+      ],
+      "properties": {
+        "relative_path": {
+          "type": "string",
+          "pattern": "^tests/reproassert/test_issue_[1-9][0-9]*\\.py$"
+        },
+        "test_function": {
+          "type": "string",
+          "pattern": "^test_issue_[1-9][0-9]*_reproduction$"
+        },
+        "test_content": { "type": "string", "minLength": 1, "maxLength": 32768 },
+        "test_content_sha256": { "$ref": "#/$defs/sha256" },
+        "expected_symptom": { "type": "string", "minLength": 3, "maxLength": 240 },
+        "rationale": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "generator": { "type": "string", "minLength": 1, "maxLength": 200 }
+      }
+    },
+    "generation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["adapter"],
+      "properties": {
+        "adapter": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "provider": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "requested_model": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "response_model": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "endpoint_host": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "response_id": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "request_duration_seconds": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 600
+        },
+        "input_tokens": { "$ref": "#/$defs/tokenCount" },
+        "cached_input_tokens": { "$ref": "#/$defs/tokenCount" },
+        "output_tokens": { "$ref": "#/$defs/tokenCount" },
+        "total_tokens": { "$ref": "#/$defs/tokenCount" }
+      }
+    },
+    "runner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "backend",
+        "server_version",
+        "image",
+        "image_id",
+        "controller",
+        "verification_environment"
+      ],
+      "properties": {
+        "backend": { "const": "docker" },
+        "server_version": { "type": ["string", "null"], "maxLength": 200 },
+        "image": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "image_id": { "type": ["string", "null"], "maxLength": 300 },
+        "controller": { "$ref": "#/$defs/environmentFacts" },
+        "verification_environment": { "$ref": "#/$defs/environmentFacts" }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "repeats", "network", "mounts", "environment", "limits"],
+      "properties": {
+        "profile": { "const": "strict-python-pytest-v1" },
+        "repeats": { "type": "integer", "minimum": 2, "maximum": 10 },
+        "network": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["intake", "verification"],
+          "properties": {
+            "intake": { "const": "github-fixed-hosts" },
+            "verification": { "const": "none" }
+          }
+        },
+        "mounts": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": { "type": "string", "maxLength": 300 }
+        },
+        "environment": { "$ref": "#/$defs/verificationEnvironment" },
+        "limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "timeout_seconds",
+            "max_output_bytes",
+            "memory_bytes",
+            "cpus",
+            "pids",
+            "tmpfs_bytes",
+            "tmpfs_inodes"
+          ],
+          "properties": {
+            "timeout_seconds": { "type": "number", "exclusiveMinimum": 0, "maximum": 3600 },
+            "max_output_bytes": { "type": "integer", "minimum": 1024, "maximum": 1048576 },
+            "memory_bytes": { "type": "integer", "minimum": 67108864 },
+            "cpus": { "type": "number", "exclusiveMinimum": 0, "maximum": 64 },
+            "pids": { "type": "integer", "minimum": 1, "maximum": 4096 },
+            "tmpfs_bytes": { "type": "integer", "minimum": 1048576 },
+            "tmpfs_inodes": { "type": "integer", "minimum": 128 }
+          }
+        }
+      }
+    },
+    "collection": { "$ref": "#/$defs/dockerResult" },
+    "runs": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 10,
+      "items": { "$ref": "#/$defs/dockerResult" }
+    },
+    "failure_fingerprint": {
+      "oneOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }]
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["candidate_patch", "candidate_patch_sha256", "report"],
+      "properties": {
+        "candidate_patch": { "const": "candidate.patch" },
+        "candidate_patch_sha256": { "$ref": "#/$defs/sha256" },
+        "report": { "const": "reproassert-report.json" }
+      }
+    },
+    "replay": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["display_command", "execution_policy"],
+      "properties": {
+        "display_command": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "execution_policy": {
+          "const": "controller_regenerates_argv_and_ignores_report_commands"
+        }
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 20,
+      "items": { "type": "string", "minLength": 1, "maxLength": 1000 }
+    }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "tokenCount": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 2147483647
+    },
+    "environmentFacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "python_version",
+        "python_implementation",
+        "platform_system",
+        "platform_release",
+        "machine"
+      ],
+      "properties": {
+        "python_version": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "python_implementation": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "pytest_version": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "platform_system": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "platform_release": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "machine": { "type": "string", "minLength": 1, "maxLength": 200 }
+      }
+    },
+    "verificationEnvironment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "HOME",
+        "LANG",
+        "LC_ALL",
+        "PATH",
+        "PYTHONDONTWRITEBYTECODE",
+        "PYTHONHASHSEED",
+        "PYTHONPATH",
+        "PYTEST_DISABLE_PLUGIN_AUTOLOAD",
+        "TZ"
+      ],
+      "properties": {
+        "HOME": { "const": "/tmp/home" },
+        "LANG": { "const": "C.UTF-8" },
+        "LC_ALL": { "const": "C.UTF-8" },
+        "PATH": { "const": "/usr/local/bin:/usr/bin:/bin" },
+        "PYTHONDONTWRITEBYTECODE": { "const": "1" },
+        "PYTHONHASHSEED": { "const": "0" },
+        "PYTHONPATH": {
+          "const": "/workspace:/workspace/src:/workspace/.reproassert-deps"
+        },
+        "PYTEST_DISABLE_PLUGIN_AUTOLOAD": { "const": "1" },
+        "TZ": { "const": "UTC" }
+      }
+    },
+    "dockerResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "phase",
+        "exit_code",
+        "duration_seconds",
+        "output",
+        "timed_out",
+        "oom_killed",
+        "output_truncated",
+        "argv"
+      ],
+      "properties": {
+        "phase": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "exit_code": { "type": ["integer", "null"], "minimum": 0, "maximum": 255 },
+        "duration_seconds": { "type": "number", "minimum": 0, "maximum": 3600 },
+        "output": { "type": "string", "maxLength": 65536 },
+        "timed_out": { "type": "boolean" },
+        "oom_killed": { "type": "boolean" },
+        "output_truncated": { "type": "boolean" },
+        "argv": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": { "type": "string", "maxLength": 4096 }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,63 @@
+name: Bug report
+description: Report a reproducible problem in ReproAssert.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve ReproAssert. Remove credentials, tokens, private repository content, and sensitive logs before submitting.
+  - type: input
+    id: version
+    attributes:
+      label: ReproAssert version
+      description: Paste the output of `reproassert --version`.
+      placeholder: reproassert, version 0.1.0
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      description: Operating system, CPU architecture, Python version, and Docker version.
+      placeholder: macOS 15, arm64, Python 3.12.11, Docker 28.1
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Exact command
+      description: Include only a sanitized command. Replace private URLs and paths with placeholders.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior and bounded logs
+      description: Include the smallest useful sanitized excerpt, not an entire report or repository.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Provide safe steps or a public fixture. Never include secrets or private source.
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety check
+      options:
+        - label: I removed secrets, credentials, private source, and sensitive logs from this report.
+          required: true
+        - label: I understand that public issue text is untrusted input and have not included commands others should execute blindly.
+          required: true

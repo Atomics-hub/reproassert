@@ -1,0 +1,47 @@
+name: Feature request
+description: Propose a focused workflow improvement for ReproAssert.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: maintainer_problem
+    attributes:
+      label: Maintainer problem
+      description: What issue-to-reproduction task is difficult today, and for whom?
+    validations:
+      required: true
+  - type: textarea
+    id: workflow
+    attributes:
+      label: Desired workflow
+      description: Show the command or GitHub flow you would expect to use.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence and alternatives
+      description: Link public examples and explain current workarounds. Remove private data.
+    validations:
+      required: true
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Primary surface
+      options:
+        - CLI and local sandbox
+        - pytest adapter
+        - GitHub Action or App
+        - Report and evidence format
+        - Benchmark and evaluation
+        - Documentation
+    validations:
+      required: true
+  - type: checkboxes
+    id: constraints
+    attributes:
+      label: Trust constraints
+      options:
+        - label: This request does not require executing issue instructions directly or weakening the sandbox boundary.
+          required: true
