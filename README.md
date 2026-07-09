@@ -66,7 +66,7 @@ Every issue run requires exactly one candidate source:
 - `--generator-command` for a user-trusted JSON adapter; or
 - `--candidate-file` for a human-authored test.
 
-The issue URL must be canonical `https://github.com/OWNER/REPOSITORY/issues/NUMBER`. `--commit` accepts a ref or commit; GitHub resolves it and ReproAssert records the exact 40-hex SHA. Prefer an explicit buggy SHA over the default `HEAD`.
+The issue URL must be canonical `https://github.com/OWNER/REPOSITORY/issues/NUMBER`. `--commit` accepts a full SHA or ref; ReproAssert normalizes a supplied SHA or resolves the ref and records the exact 40-hex SHA. Prefer an explicit buggy SHA over the default `HEAD`.
 
 ### Built-in OpenAI provider (opt in)
 

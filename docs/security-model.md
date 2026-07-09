@@ -67,9 +67,12 @@ Current intake limits are:
 | Commit JSON | 512 KiB |
 | Compressed source archive | 64 MiB |
 
-A requested branch, tag, `HEAD`, or full SHA is resolved through GitHub to a lowercase 40-hex
-commit SHA. The source URL is then built from that SHA. Public unauthenticated GitHub repositories
-are the only implemented source type; private repositories and GitHub Enterprise are not supported.
+A requested branch, tag, or `HEAD` is resolved through GitHub's commits API to a lowercase 40-hex
+commit SHA. An already-full SHA is normalized locally so a large commit's API diff cannot exhaust
+the bounded metadata response; the subsequent bounded codeload request proves that archive is
+available. The source URL is built only from that exact SHA. Public unauthenticated GitHub
+repositories are the only implemented source type; private repositories and GitHub Enterprise are
+not supported.
 
 ### 2. Host-side source handling without execution
 

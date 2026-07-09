@@ -94,7 +94,7 @@ def sandbox_build(image: str) -> None:
     "--commit",
     default="HEAD",
     show_default=True,
-    help="Commit or ref; GitHub resolves and records the exact 40-hex SHA.",
+    help="Full commit SHA or ref; ReproAssert records the exact 40-hex SHA.",
 )
 @click.option(
     "generator_command",

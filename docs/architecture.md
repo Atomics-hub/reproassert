@@ -52,7 +52,7 @@ https://github.com/OWNER/REPOSITORY/issues/NUMBER
 It rejects alternate schemes, ports, credentials, query strings, fragments, non-canonical paths, pull requests, and mismatched GitHub responses. The controller then:
 
 1. fetches title and body from `api.github.com` with byte limits;
-2. resolves the requested ref through the commits API;
+2. normalizes an already-full SHA or resolves a requested symbolic ref through the commits API;
 3. records the exact 40-hex SHA;
 4. downloads the SHA-pinned archive from `codeload.github.com`; and
 5. safely extracts only bounded regular files into a private `0700` run directory.

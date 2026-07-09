@@ -197,10 +197,15 @@ def resolve_commit_sha(
     *,
     timeout_seconds: float = DEFAULT_HTTP_TIMEOUT_SECONDS,
 ) -> str:
-    """Resolve a GitHub ref through the fixed API endpoint to a full SHA-1."""
+    """Normalize a full SHA or resolve a symbolic GitHub ref to a full SHA-1."""
 
     _validate_repository_parts(owner, repo)
     _validate_requested_ref(requested_ref)
+    if _FULL_SHA_RE.fullmatch(requested_ref) is not None:
+        # The bounded codeload request below is the existence check. Avoid the
+        # commits endpoint here: for large commits it returns the complete file
+        # diff and can legitimately exceed the controller's JSON safety limit.
+        return requested_ref.lower()
     encoded_ref = urllib.parse.quote(requested_ref, safe="")
     api_url = f"https://{GITHUB_API_HOST}/repos/{owner}/{repo}/commits/{encoded_ref}"
     payload = _fetch_json(

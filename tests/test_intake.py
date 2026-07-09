@@ -158,6 +158,17 @@ def test_resolve_commit_uses_fixed_api_and_requires_full_sha(
     assert exc.value.code == "invalid_commit_sha"
 
 
+def test_resolve_commit_normalizes_full_sha_without_fetching_large_commit_json(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def unexpected_fetch(*_args: object, **_kwargs: object) -> dict[str, Any]:
+        raise AssertionError("a supplied full SHA must not fetch commit metadata")
+
+    monkeypatch.setattr(intake, "_fetch_json", unexpected_fetch)
+
+    assert resolve_commit_sha("owner", "repo", "A" * 40) == "a" * 40
+
+
 def test_http_opener_ignores_proxy_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:9999")
     monkeypatch.setenv("SSLKEYLOGFILE", str(monkeypatch))
