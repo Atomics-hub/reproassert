@@ -6,6 +6,7 @@ from pathlib import Path
 import click
 import pytest
 from click.testing import CliRunner
+from rich.console import Console
 
 import reproassert.cli as cli
 from reproassert.cli import main
@@ -38,7 +39,7 @@ def test_issue_requires_a_generator_even_when_openai_key_exists(
     assert "Choose exactly one" in result.output
 
 
-def test_issue_renders_verified_result(tmp_path: Path, monkeypatch: object) -> None:
+def test_issue_renders_verified_result(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     candidate = tmp_path / "candidate.py"
     candidate.write_text(
         "from fixture_project import reproduce\n\n"
@@ -55,6 +56,7 @@ def test_issue_renders_verified_result(tmp_path: Path, monkeypatch: object) -> N
     )
     monkeypatch.setattr(cli, "DockerSandbox", ReadySandbox)  # type: ignore[attr-defined]
     monkeypatch.setattr(cli, "run_issue_workflow", lambda *_args, **_kwargs: result_value)  # type: ignore[attr-defined]
+    monkeypatch.setattr(cli, "console", Console(width=40))
 
     result = CliRunner().invoke(
         main,
@@ -70,11 +72,14 @@ def test_issue_renders_verified_result(tmp_path: Path, monkeypatch: object) -> N
             "--run-base",
             str(tmp_path / "runs"),
         ],
+        terminal_width=40,
     )
 
     assert result.exit_code == 0, result.output
     assert "REPEATABLE BASE FAILURE" in result.output
-    assert "reproassert-report.json" in result.output
+    assert str(result_value.report_path) in result.output
+    assert str(result_value.patch_path) in result.output
+    assert result_value.replay_command in result.output
 
 
 def test_doctor_and_sandbox_build_render_ready(monkeypatch: object) -> None:

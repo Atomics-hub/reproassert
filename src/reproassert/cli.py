@@ -287,15 +287,18 @@ def _render_result(result: WorkflowResult, *, json_output: bool) -> None:
                 [
                     f"claim    {result.claim_level}",
                     f"outcome  {result.outcome}",
-                    f"patch    {result.patch_path}",
-                    f"report   {result.report_path}",
-                    f"replay   {result.replay_command}",
                 ]
             ),
             title=f"[{color}]{title}[/{color}]",
             border_style=color,
         )
     )
+    # Rich intentionally constrains panels to the detected terminal width. Artifact
+    # paths are the durable output contract, so emit them through Click unchanged
+    # rather than allowing a narrow terminal to replace them with an ellipsis.
+    click.echo(f"patch    {result.patch_path}")
+    click.echo(f"report   {result.report_path}")
+    click.echo(f"replay   {result.replay_command}")
 
 
 def _status(ok: bool, detail: str | None = None) -> str:
