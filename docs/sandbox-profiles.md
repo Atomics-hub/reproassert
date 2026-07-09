@@ -85,9 +85,10 @@ Docker context points to a local engine. Docker and its defaults remain trusted.
 
 Source files are first copied into a new controller-labeled Docker volume with `docker cp`; no host
 directory is bind-mounted. The staging container uses `--network none` and a trusted `/bin/true`
-entrypoint. A separate short-lived helper runs trusted `/bin/chown` as root with only `CHOWN` added,
-no-new-privileges, no network, and a read-only root so verification can run as UID 65532. These two
-helpers do not execute repository code, but they are not attested with the full verification policy.
+entrypoint. A separate short-lived helper runs trusted `/bin/chown` as root with only `CHOWN` and
+`DAC_READ_SEARCH` added, no-new-privileges, no network, and a read-only root so it can traverse
+controller-private archive directories and make the volume readable by UID 65532. These two helpers
+do not execute repository code, but they are not attested with the full verification policy.
 
 Normal completion removes containers and volumes in `finally` blocks. Timeout and output overflow
 force-remove the active container. There is not yet a startup janitor for resources left after a

@@ -229,7 +229,12 @@ def test_workspace_owner_and_cleanup_paths(monkeypatch: pytest.MonkeyPatch) -> N
 
     sandbox._set_workspace_owner("volume", run_id="run")
 
-    assert any("CHOWN" in args for args in calls)
+    owner_create = next(args for args in calls if args[0] == "create")
+    assert "CHOWN" in owner_create
+    assert "DAC_READ_SEARCH" in owner_create
+    assert "--network" in owner_create and "none" in owner_create
+    assert "--read-only" in owner_create
+    assert "/bin/chown" in owner_create
     sandbox._containers.add("leftover")
     sandbox._volumes.add("volume")
     sandbox.cleanup()
