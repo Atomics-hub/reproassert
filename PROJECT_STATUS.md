@@ -28,6 +28,25 @@ deferred.**
   source passes. This is infrastructure proof, not benchmark accuracy.
 - Frozen public benchmark manifest: 20 historical cases across 10 repositories; five-case smoke
   subset; strict schemas and validator.
+- Public source milestone on protected `main` at commit `e96ed6585aff6385cc490d53ef8212f13076a26c`:
+  all nine CI jobs pass, including Python 3.10-3.14, distribution smoke tests, and the live Docker
+  integration fixture.
+- Public proof site and canonical report schema are live over HTTPS at
+  <https://atomics-hub.github.io/reproassert/>. The deployed desktop/mobile surface has no detected
+  horizontal overflow, overlap, console errors, or warnings.
+- GitHub rulesets require pull requests, all nine CI contexts, linear history, and immutable `v*`
+  tags. Vulnerability alerts, secret scanning/push protection, and immutable future releases are
+  enabled. Automated security-fix PR creation is intentionally disabled after an initial noisy
+  burst; version updates are grouped monthly and limited to one PR per ecosystem. Actions artifacts
+  and logs retain for seven days; caches retain for seven days under the included 10 GB hard cap;
+  redundant post-merge full CI is disabled; and every external contributor's fork workflow requires
+  maintainer approval before execution. Repository policy requires every referenced Action to use a
+  full-length commit SHA. Extended non-provider and validity-check secret scanning remained disabled
+  after a repository API enablement request; no claim is made that those optional extensions are
+  active.
+- The release-candidate site dependency graph passes both full `npm audit` and
+  `npm audit --omit=dev` with zero known vulnerabilities. This is branch evidence until protected
+  CI merges the candidate into `main` and GitHub rescans it.
 
 ## Evidence still missing
 
@@ -41,7 +60,8 @@ deferred.**
 
 ## Next exact build slice
 
-1. Publish the verified CLI milestone and live self-owned issue-to-test demo.
+1. Publish and independently install/verify the attested `v0.1.0` GitHub release from protected
+   `main`; do not publish to PyPI.
 2. Add a durable benchmark attempt ledger that counts provider spend and time for failures as well
    as candidates that reach verification.
 3. Run the frozen five-case smoke cohort with evaluator/oracle isolation and publish every outcome.
