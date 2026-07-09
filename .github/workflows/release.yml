@@ -90,7 +90,8 @@ jobs:
       - name: Verify the public site from its lockfile
         working-directory: site
         run: |
-          npm ci
+          npm ci --no-audit
+          npm audit --audit-level=low
           npm test
           npm run lint
 
@@ -251,12 +252,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_NOTES: |
-            ReproAssert 0.1.0 is a public alpha source release for the bounded Python/pytest workflow.
+            ReproAssert ${{ github.ref_name }} is a public alpha source release for the bounded
+            Python/pytest workflow.
 
             Verified scope: canonical public GitHub issue intake at an exact SHA, one policy-screened
             pytest candidate, hardened Docker collection and repeated base-failure checks, a test-only
             patch, schema-1.0 JSON report, and bounded replay. The checked-in self-owned fixture reaches
             the same intended AssertionError fingerprint in 3/3 forward and 3/3 replay runs.
+
+            Supply-chain scope: the tagged source is lockfile-verified, its site dependency graph was
+            audited with zero known vulnerabilities at release time, and the wheel and source archive
+            are checksum-verified and receive GitHub artifact attestations before publication.
 
             Claim limits: the frozen historical benchmark remains 0/20 scored, no outside maintainer
             has validated a candidate or committed to reuse, failed generation-attempt cost is not yet

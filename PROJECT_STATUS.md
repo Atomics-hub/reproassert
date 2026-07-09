@@ -35,10 +35,18 @@ deferred.**
   <https://atomics-hub.github.io/reproassert/>. The deployed desktop/mobile surface has no detected
   horizontal overflow, overlap, console errors, or warnings.
 - GitHub rulesets require pull requests, all nine CI contexts, linear history, and immutable `v*`
-  tags. Vulnerability alerts, automated security fixes, secret scanning/push protection, and
-  immutable future releases are enabled. Extended non-provider and validity-check secret scanning
-  remained disabled after a repository API enablement request; no claim is made that those optional
-  extensions are active.
+  tags. Vulnerability alerts, secret scanning/push protection, and immutable future releases are
+  enabled. Automated security-fix PR creation is intentionally disabled after an initial noisy
+  burst; version updates are grouped monthly and limited to one PR per ecosystem. Actions artifacts
+  and logs retain for seven days; caches retain for seven days under the included 10 GB hard cap;
+  redundant post-merge full CI is disabled; and every external contributor's fork workflow requires
+  maintainer approval before execution. Repository policy requires every referenced Action to use a
+  full-length commit SHA. Extended non-provider and validity-check secret scanning remained disabled
+  after a repository API enablement request; no claim is made that those optional extensions are
+  active.
+- The release-candidate site dependency graph passes both full `npm audit` and
+  `npm audit --omit=dev` with zero known vulnerabilities. This is branch evidence until protected
+  CI merges the candidate into `main` and GitHub rescans it.
 
 ## Evidence still missing
 

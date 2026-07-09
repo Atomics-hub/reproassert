@@ -34,7 +34,7 @@ jobs:
           cache-dependency-path: site/package-lock.json
       - name: Install locked dependencies
         working-directory: site
-        run: npm ci
+        run: npm ci --no-audit
       - name: Verify and export the static Pages artifact
         working-directory: site
         run: |

@@ -1,8 +1,6 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -179,7 +177,10 @@ jobs:
           cache-dependency-path: site/package-lock.json
       - name: Install the locked site dependencies
         working-directory: site
-        run: npm ci
+        run: npm ci --no-audit
+      - name: Audit the complete site dependency graph
+        working-directory: site
+        run: npm audit --audit-level=low
       - name: Build and verify rendered HTML
         working-directory: site
         run: npm test
