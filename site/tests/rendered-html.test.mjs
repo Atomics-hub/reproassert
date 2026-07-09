@@ -34,7 +34,8 @@ test("server-renders the ReproAssert proof surface", async () => {
   assert.match(html, /before the/);
   assert.match(html, /repeatable_base_failure/);
   assert.match(html, /Twenty frozen cases\. Zero scored results\./);
-  assert.match(html, /Contract preview · placeholder paths · not benchmark evidence/);
+  assert.match(html, /Self-owned fixture · fresh replay matched · not benchmark evidence/);
+  assert.match(html, /github\.com\/Atomics-hub\/reproassert\/issues\/1/);
   assert.match(html, /candidate\.patch/);
   assert.match(html, /reproassert-report\.json/);
   assert.match(html, /aria-label="Primary navigation"/);

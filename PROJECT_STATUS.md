@@ -22,8 +22,10 @@ deferred.**
 - Candidate collection plus three clean targeted runs, exact failure classification, normalized
   fingerprinting, patch artifact, bounded JSON report, replay that regenerates commands, and
   successful-generation token/latency metadata.
-- Local differential fixture: buggy source reaches `repeatable_base_failure` in 3/3 clean
-  containers; fixed source passes. This is infrastructure proof, not benchmark accuracy.
+- Public self-owned [issue #1](https://github.com/Atomics-hub/reproassert/issues/1) at exact commit
+  `7b03e8f7f4b7312f1785e7853892efa123e48699` reaches `repeatable_base_failure` in 3/3 clean
+  containers; a fresh report replay matches the fingerprint in another 3/3 runs. The local fixed
+  source passes. This is infrastructure proof, not benchmark accuracy.
 - Frozen public benchmark manifest: 20 historical cases across 10 repositories; five-case smoke
   subset; strict schemas and validator.
 

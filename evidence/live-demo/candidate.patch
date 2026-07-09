@@ -1,0 +1,10 @@
+diff --git a/tests/reproassert/test_issue_1.py b/tests/reproassert/test_issue_1.py
+new file mode 100644
+--- /dev/null
++++ b/tests/reproassert/test_issue_1.py
+@@ -0,0 +1,5 @@
++from examples.fixtures.buggy_slug.slugger import slugify
++
++
++def test_issue_1_reproduction() -> None:
++    assert slugify("Alpha  Beta") == "alpha-beta", "duplicate separators remain"

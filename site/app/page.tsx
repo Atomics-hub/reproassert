@@ -95,35 +95,39 @@ export default function Home() {
               Run it locally
               <span aria-hidden="true">↓</span>
             </a>
-            <a className="textLink" href="#proof">
-              Inspect the evidence contract
+            <a
+              className="textLink"
+              href={`${githubUrl}/tree/main/evidence/live-demo`}
+            >
+              Inspect the verified self-fixture
               <span aria-hidden="true">→</span>
             </a>
           </div>
           <p className="heroQualifier">
-            Current maximum claim: <code>repeatable_base_failure</code>. No
+            Self-fixture verified. Current maximum claim: {" "}
+            <code>repeatable_base_failure</code>. Historical benchmark: 0 / 20. No
             semantic-validity claim yet.
           </p>
         </div>
 
-        <div className="terminalPanel" aria-label="ReproAssert CLI contract preview">
+        <div className="terminalPanel" aria-label="Verified ReproAssert public self-fixture">
           <div className="terminalTopline">
             <div className="terminalLights" aria-hidden="true">
               <span />
               <span />
               <span />
             </div>
-            <span>strict profile v1</span>
-            <span className="terminalReady">sandbox required</span>
+            <span>public issue #1 · strict profile v1</span>
+            <span className="terminalReady">verified 2026-07-09</span>
           </div>
           <div className="terminalBody">
-            <p className="terminalComment"># Pin the buggy source. Generate no fix.</p>
+            <p className="terminalComment"># Public self-fixture. Generate no fix.</p>
             <pre>
               <code>
                 <span className="prompt">$</span> reproassert issue \
-                {"\n"}  https://github.com/acme/slugger/issues/42 \
-                {"\n"}  --commit &lt;buggy-sha&gt; \
-                {"\n"}  --generator-command ./trusted-adapter
+                {"\n"}  https://github.com/Atomics-hub/reproassert/issues/1 \
+                {"\n"}  --commit 7b03e8f7f4b7... \
+                {"\n"}  --generator-command ./examples/deterministic_generator.py
               </code>
             </pre>
 
@@ -146,16 +150,16 @@ export default function Home() {
 
             <pre className="artifactList">
               <code>
-                <span className="terminalDim">patch</span>  &lt;run-dir&gt;/candidate.patch
+                <span className="terminalDim">patch</span>  evidence/live-demo/candidate.patch
                 {"\n"}
-                <span className="terminalDim">report</span> &lt;run-dir&gt;/reproassert-report.json
+                <span className="terminalDim">report</span> evidence/live-demo/reproassert-report.json
                 {"\n"}
-                <span className="terminalDim">replay</span> reproassert replay &lt;report&gt;
+                <span className="terminalDim">replay</span> 3 / 3 same fingerprint
               </code>
             </pre>
           </div>
           <div className="terminalFoot">
-            Contract preview · placeholder paths · not benchmark evidence
+            Self-owned fixture · fresh replay matched · not benchmark evidence
           </div>
         </div>
       </section>

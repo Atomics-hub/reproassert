@@ -21,7 +21,7 @@ rejected -> collected -> repeatable_base_failure  [current public ceiling]
 
 An accepted CLI run means one generated test collected and produced the same issue-marked failure on the pinned buggy base across the configured reruns. It does **not** mean the test passes on a fix, captures the issue's true semantics, or has been accepted by a maintainer.
 
-**Benchmark status:** v0.1 is frozen at 20 historical cases and has **0 scored result rows**. That is a preregistration status, not a success result. A local deterministic fixture verifies the base-failure classifier (three repeated failures on the buggy fixture and `pass_on_base` on the fixed fixture); it is not part of the 20-case score.
+**Benchmark status:** v0.1 is frozen at 20 historical cases and has **0 scored result rows**. That is a preregistration status, not a success result. A [public self-owned issue run](evidence/live-demo/README.md) verifies the exact-SHA intake, generation, sandbox, report, and replay path; the local differential fixture also reaches `pass_on_base` on the fixed source. Neither is part of the 20-case score.
 
 ## Install from source
 
