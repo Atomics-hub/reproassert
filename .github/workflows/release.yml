@@ -382,8 +382,10 @@ jobs:
 
             Verified scope: canonical public GitHub issue intake at an exact SHA, one policy-screened
             pytest candidate, hardened Docker collection and repeated base-failure checks, a test-only
-            patch, schema-1.0 JSON report, and bounded replay. The checked-in self-owned fixture reaches
-            the same intended AssertionError fingerprint in 3/3 forward and 3/3 replay runs.
+            patch, schema-1.1 JSON report, and bounded replay. Published v0.2 cases can additionally use
+            canonical exact-SHA replay bundles with optional hash-locked dependency reconstruction and
+            schema-backed replay results. The checked-in self-owned fixture reaches the same intended
+            AssertionError fingerprint in 3/3 forward and 3/3 replay runs.
 
             Supply-chain scope: the tagged source is lockfile-verified, its site dependency graph was
             audited with zero known vulnerabilities at release time, and the wheel and source archive
