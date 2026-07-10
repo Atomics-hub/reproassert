@@ -18,6 +18,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Protocol
 
+from reproassert import __version__
 from reproassert.candidate import ValidatedCandidate, candidate_function, validate_candidate_payload
 from reproassert.context import SourceContext
 from reproassert.errors import ReproAssertError
@@ -559,7 +560,7 @@ def _post_openai_response(request_body: bytes, *, api_key: str, timeout_seconds:
                 "Accept": "application/json",
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
-                "User-Agent": "reproassert/0.1.0",
+                "User-Agent": f"reproassert/{__version__}",
             },
         )
         response = connection.getresponse()

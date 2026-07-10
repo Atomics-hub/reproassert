@@ -6,6 +6,8 @@ on:
     paths:
       - "site/**"
       - "schemas/reproassert-report.schema.json"
+      - "schemas/benchmark-v02-replay-bundle.schema.json"
+      - "schemas/benchmark-v02-replay-result.schema.json"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 

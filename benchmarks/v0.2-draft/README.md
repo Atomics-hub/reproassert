@@ -1,25 +1,30 @@
 # Benchmark v0.2 draft
 
-This directory is a design marker, not a frozen benchmark and not a scored campaign. It contains no
-cohort manifest, model outputs, or results.
+This directory contains the public selection freeze for the unrun v0.2 benchmark. It is not a
+campaign result: model outputs remain 0/20 and maintainer validations remain zero.
 
-The v0.2 preparation contract replaces v0.1's unsubstantiated `pre_fix_source_snapshot` label with
-the independently observable `pre_solution_pr_publication` cutoff. Snapshot receipts separately
-record whether earlier private fix chronology is proven or unproven. That caveat never enters the
-three-field generator projection and must never be turned into a “before anyone attempted a fix”
-claim.
+The v0.2 preparation contract replaces v0.1's unsubstantiated `pre_fix_source_snapshot` claim with
+the bounded `dataset_snapshot_at_pinned_commit` source. Every selected case is explicitly labeled
+`chronology_unproven` and `historical_public_contamination_exposed`. The supported ceiling is
+“generated against the exact buggy base with the historical fix hidden,” never “before anyone
+attempted a fix.” A stronger GraphQL-backed chronology mode remains optional future evidence.
 
 The committed [`upstream-provenance.json`](upstream-provenance.json) is a public, oracle-safe
 projection from a real offline parse of the exact 500-row SWE-bench Verified Parquet artifact and
 an exact join against all 449 TDD-Bench Verified member IDs. It binds both upstream commits, Git
 objects, artifact hashes, parser protocol, PyArrow version, and the shipped worker hash while
 excluding instance IDs, row ordinals, row commitments, production patches, and developer tests.
-This is authentic upstream-input evidence, not a selected 20-case cohort, campaign freeze, model
-run, or benchmark result. The host-native PyArrow step remains evidence preparation only; hosted
-use requires the same parser in a memory-bounded, no-secret, network-disabled container or microVM.
+[`upstream-object-witness.json`](upstream-object-witness.json) independently recomputes the commit,
+root tree, nested path, terminal blob, LFS pointer, and artifact identities. Host-native parsing is
+preparation-only and cannot mint semantic evidence. Production selection was rederived inside the
+hash-locked parser image and recorded in
+[`dataset-parser-boundary-attestation.json`](dataset-parser-boundary-attestation.json).
 
-No v0.2 cohort is frozen yet. Case IDs and receipts used by the draft validator are fixtures until a
-new manifest is preregistered. Benchmark v0.1 remains immutable, blocked, and at 0/20.
+[`leak-audited-cohort-plan.json`](leak-audited-cohort-plan.json) fixes the deterministic 20 cases.
+The 500-row audit quarantined every direct own-fix reference and every production/test added-line
+overlap of at least 40 stripped characters; 64 rows were excluded and the final 20/20 are
+mechanically clean. [`selection-freeze.json`](selection-freeze.json) binds that plan to the parser
+image, boundary receipt, upstream witness, and explicit 0/20 result state.
 
 The offline producer and validator now parse a frozen GitHub GraphQL capture format, require complete
 issue-creation/body and title-rename histories, select the last combined revision strictly before
@@ -27,14 +32,10 @@ the fixing pull request's publication, rerun exact fixing-link redaction, and in
 the safe three-field projection. Synthetic adversarial fixtures exercise the contract. This removes
 the earlier producer-implementation blocker; it does **not** make a campaign ready.
 
-There is no authenticated collector and no v0.2 cohort. GitHub's public REST issue endpoints expose
-current issue text and selected events, but not the complete body revision history required by this
-contract; the supported history shape comes from authenticated GitHub GraphQL. No third-party
-GraphQL capture has been authorized. The evaluator must pre-bind the correct fixing pull request and
-preserve the raw issue-history and publication-basis artifacts outside the generator view. Capture
-authenticity remains trusted-controller evidence rather than a GitHub-signed attestation, and the
-explicit privacy review remains a human semantic gate. The fixture-only override is still not
-evidence, and the cutoff will not be weakened to fit unauthenticated REST data.
+GitHub's public REST issue endpoints do not expose complete body revision history. The selection
+therefore makes no prospective chronology claim. If a future campaign upgrades a case to
+`pre_solution_pr_publication`, the evaluator must preserve complete GraphQL history and the fixing-PR
+publication basis outside the generator view and pass the existing privacy gate.
 
 The offline command never collects from GitHub or chooses the fixing pull request. An evaluator must
 capture the frozen query responses, choose and preserve the publication basis outside the generator
@@ -86,13 +87,11 @@ duplicate upstream instances, fixing targets, base/fix pairs, or private nonces.
 scanner rejects private evaluator identities, patch bytes, and package paths in a proposed public
 tree.
 
-These are structural controls, not evidence producers. Case verification requires an
-application-selected trusted semantic verifier and fails closed without one. Even a structurally
-valid package deliberately returns no live `VerifiedV02EvaluatorCapability`; the cohort audit
-therefore remains `ready: false` until an official application-owned issuer rederives the source,
-dependency, two-tree patch causality, production isolation, and reviewer seal in process. Repository
-code, issue text, model output, plugins, and package-controlled executables must never supply that
-issuer.
+The application-owned issuer now mints nominal dataset evidence only from the revalidated
+Docker-bound parser handoff and cross-binds the image, boundary attestation, private receipt, and
+upstream evidence. Raw receipts and host-native preparation values are ineligible. The scored runner
+then binds that evidence with source, dependency, hidden-fix, isolation, request, pricing,
+authorization, and reviewer-role commitments before provider-capable work.
 
 ## Implemented local evaluator primitives
 
@@ -110,6 +109,9 @@ applies exactly one candidate to separately attested base/fixed trees, and runs 
 failures and three exact fixed passes. Raw fixed stdout/JUnit is reduced to digests before the public
 record. This fixture does not come from an authentic v0.2 package and is not an L1 result.
 
-There are still no authentic v0.2 issue-history captures or case packages, no frozen 20-case
-cohort, no model campaign, and no public L1/L2 result. The upstream provenance record does not
-change those facts or authorize model/provider or GitHub Actions spend.
+The campaign controller is implemented but deliberately unexecuted. It reserves spend before each
+provider call, writes a durable candidate transaction before evaluation, supports zero-provider-call
+crash recovery, requires executed causal controls and two-reviewer/tie-break consensus before L2,
+and emits a 20-case bounded aggregate including no-candidate cases. Published accepted cases are
+replayed with `reproassert benchmark replay-v02-case <bundle>`, which reacquires exact source and
+rebuilds hash-locked dependencies without invoking a model. Authentic results remain 0/20.

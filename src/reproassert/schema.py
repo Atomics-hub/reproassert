@@ -31,6 +31,8 @@ SCHEMA_FILENAMES = {
         "benchmark-v02-dataset-container-attestation.schema.json"
     ),
     "benchmark-v02-selection-freeze": "benchmark-v02-selection-freeze.schema.json",
+    "benchmark-v02-replay-bundle": "benchmark-v02-replay-bundle.schema.json",
+    "benchmark-v02-replay-result": "benchmark-v02-replay-result.schema.json",
     "dependency-execution-receipt": "dependency-execution-receipt.schema.json",
 }
 

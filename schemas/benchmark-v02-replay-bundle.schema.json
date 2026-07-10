@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atomics-hub.github.io/reproassert/benchmark-v02-replay-bundle.schema.json",
+  "title": "ReproAssert v0.2 public replay bundle",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "algorithm", "case", "source", "candidate", "dependency",
+    "tool", "repeats", "expected", "bundle_sha256"
+  ],
+  "properties": {
+    "schema_version": {"const": "0.1.0"},
+    "algorithm": {"const": "reproassert-v02-public-replay-bundle-v1"},
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "repo", "issue_url", "base_sha"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^rk-v0\\.2-[0-9]{3}$"},
+        "repo": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"},
+        "issue_url": {"type": "string", "format": "uri", "maxLength": 500},
+        "base_sha": {"$ref": "#/$defs/gitSha"}
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["archive_sha256", "root_tree_oid", "tree_sha256"],
+      "properties": {
+        "archive_sha256": {"$ref": "#/$defs/sha256"},
+        "root_tree_oid": {"$ref": "#/$defs/gitSha"},
+        "tree_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "relative_path", "test_content", "test_content_sha256",
+        "expected_symptom", "rationale"
+      ],
+      "properties": {
+        "relative_path": {"type": "string", "pattern": "^tests/reproassert/test_issue_[1-9][0-9]*\\.py$"},
+        "test_content": {"type": "string", "minLength": 1, "maxLength": 32768},
+        "test_content_sha256": {"$ref": "#/$defs/sha256"},
+        "expected_symptom": {"type": "string", "minLength": 1, "maxLength": 500},
+        "rationale": {"type": "string", "minLength": 1, "maxLength": 2000}
+      }
+    },
+    "dependency": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["plan", "plan_sha256", "tree_sha256", "image_id"],
+          "properties": {
+            "plan": {"type": "object"},
+            "plan_sha256": {"$ref": "#/$defs/sha256"},
+            "tree_sha256": {"$ref": "#/$defs/sha256"},
+            "image_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+          }
+        }
+      ]
+    },
+    "tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["git_sha"],
+      "properties": {"git_sha": {"$ref": "#/$defs/gitSha"}}
+    },
+    "repeats": {"type": "integer", "minimum": 2, "maximum": 10},
+    "expected": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["outcome", "failure_fingerprint"],
+      "properties": {
+        "outcome": {"const": "repeatable_base_failure"},
+        "failure_fingerprint": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "bundle_sha256": {"$ref": "#/$defs/sha256"}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "gitSha": {"type": "string", "pattern": "^[0-9a-f]{40}$"}
+  }
+}

@@ -105,8 +105,8 @@ export default function Home() {
           </div>
           <p className="heroQualifier">
             Self-fixture verified. Current maximum claim: {" "}
-            <code>repeatable_base_failure</code>. Historical benchmark: 0 / 20. No
-            semantic-validity claim yet.
+            <code>repeatable_base_failure</code>. V0.2 selection frozen; scored
+            benchmark: 0 / 20. No semantic-validity claim yet.
           </p>
         </div>
 
@@ -262,8 +262,8 @@ export default function Home() {
         <div className="benchmarkLedger">
           <div className="ledgerHeader">
             <div>
-              <p className="kicker">Public benchmark ledger · v0.1</p>
-              <h2 id="benchmark-title">Twenty frozen cases. Zero scored results.</h2>
+              <p className="kicker">Public benchmark selection · v0.2</p>
+              <h2 id="benchmark-title">Twenty leak-audited cases. Zero scored results.</h2>
             </div>
             <div className="ledgerScore" aria-label="Zero of twenty cases scored">
               <strong>0</strong>
@@ -282,13 +282,13 @@ export default function Home() {
 
           <div className="ledgerFooter">
             <p>
-              <strong>This is preregistration, not performance.</strong> The
-              manifest is frozen across 10 repositories. Every assigned case,
-              including abstentions and infrastructure failures, stays in the
-              denominator.
+              <strong>This is selection proof, not performance.</strong> The
+              chronology-honest cohort is frozen from pinned upstream objects.
+              Every case, including abstentions and infrastructure failures,
+              stays in the denominator.
             </p>
-            <a className="button buttonOutline" href={`${githubUrl}/tree/main/benchmarks/v0.1`}>
-              Inspect the ledger
+            <a className="button buttonOutline" href={`${githubUrl}/tree/main/benchmarks/v0.2-draft`}>
+              Inspect the selection
               <span aria-hidden="true">↗</span>
             </a>
           </div>
@@ -350,6 +350,13 @@ export default function Home() {
                 <p>Fresh fetch and controller-owned rerun from bounded data.</p>
               </div>
             </div>
+            <div>
+              <span className="artifactNumber">D</span>
+              <div>
+                <code>benchmark replay-v02-case &lt;bundle&gt;</code>
+                <p>Exact source plus hash-locked dependency rebuild; no model call.</p>
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -360,8 +367,9 @@ export default function Home() {
           <h2 id="install-title">Start with the boundary, not a cloud account.</h2>
           <p>
             The alpha supports canonical public GitHub issues and Python/pytest.
-            It does not install repository dependencies, access private
-            repositories, or fall back to executing on your host.
+            Ordinary issue runs do not install repository dependencies. Published
+            v0.2 replay bundles may rebuild reviewed hash-locked wheels. Private
+            repositories and native host execution are unsupported.
           </p>
 
           <div className="installRequirements">

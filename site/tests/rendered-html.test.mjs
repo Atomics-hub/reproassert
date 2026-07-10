@@ -33,7 +33,8 @@ test("server-renders the ReproAssert proof surface", async () => {
   assert.match(html, /The test/);
   assert.match(html, /before the/);
   assert.match(html, /repeatable_base_failure/);
-  assert.match(html, /Twenty frozen cases\. Zero scored results\./);
+  assert.match(html, /Twenty leak-audited cases\. Zero scored results\./);
+  assert.match(html, /benchmark replay-v02-case/);
   assert.match(html, /Self-owned fixture · fresh replay matched · not benchmark evidence/);
   assert.match(html, /github\.com\/Atomics-hub\/reproassert\/issues\/1/);
   assert.match(html, /candidate\.patch/);
@@ -61,4 +62,16 @@ test("keeps public claims and business math bounded in source", async () => {
   assert.match(layout, /title: "ReproAssert — The test before the fix"/);
   assert.doesNotMatch(layout, /codex-preview|_sites-preview|Starter Project/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
+});
+
+test("exports every schema with a public canonical replay URL", async () => {
+  for (const name of [
+    "reproassert-report.schema.json",
+    "benchmark-v02-replay-bundle.schema.json",
+    "benchmark-v02-replay-result.schema.json",
+  ]) {
+    const exported = await readFile(new URL(`../pages/${name}`, import.meta.url), "utf8");
+    const source = await readFile(new URL(`../../schemas/${name}`, import.meta.url), "utf8");
+    assert.equal(exported, source);
+  }
 });

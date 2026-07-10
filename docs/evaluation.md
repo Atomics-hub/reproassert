@@ -8,14 +8,12 @@ and deny-by-default campaign gates. The 20 cases, outcome taxonomy, 6/20 target,
 and 0/20 result state did not change. This amendment closes pre-run validation gaps; it was not made
 in response to model output.
 
-Implementation note (2026-07-10): local code now binds the revalidated candidate overlay to the
-candidate-applied tree staged in Docker, preserves bounded JUnit through an inspected result-volume
-anchor, prepares reviewed wheel dependencies through a causal executor and independently verified
-receipt, and runs the six-phase interleaved differential schedule behind a nominal evaluator
-capability. Those are prerequisite mechanisms, not scored evidence. There is no authentic v0.2
-cohort, application-owned semantic capability issuer, production scored runner, model campaign, L1
-public result, or L2 result. This milestone used zero GitHub Actions runs and zero model/provider
-spend.
+Implementation note (2026-07-10): the v0.2 selection is frozen from an attested parser-container
+derivation of pinned upstream objects. The semantic issuer, scored runner, exact pricing and spend
+authorization barrier, crash recovery, executed causal controls, two-reviewer/tie-break gate,
+bounded publication verifier, and exact-SHA dependency-aware replay are implemented. Those are
+validation-ready mechanisms, not scored evidence: authentic results remain 0/20 and maintainer
+validations remain zero. No model/provider spend or outreach occurred.
 
 The primary result is `semantic_valid_success_at_1`: the number of cases for which the single submitted candidate reaches L2, divided by all 20 frozen cases. Raw patch production, collection, base failure, or fail-to-pass are diagnostic milestones, not the headline success metric.
 
@@ -48,7 +46,7 @@ conservative floor; it cannot pass either the case wall cap or aggregate runtime
 | --- | --- | --- |
 | L0 — executable candidate | Test-only patch applies, compiles or collects, and produces the same issue-aligned failure on all three base executions. | "Verified failing candidate on the pinned buggy base." |
 | L1 — plausible fail-to-pass | L0 plus passes on all three hidden-fixed executions. | "Plausible fail-to-pass reproduction." Do not call it semantically correct. |
-| L2 — semantic valid | L1 plus causal controls and blinded review support a faithful trigger and oracle. | "Semantic-valid reproduction under benchmark v0.1." |
+| L2 — semantic valid | L1 plus executed causal controls and blinded reviewer consensus support a faithful trigger and oracle. | "Semantic-valid reproduction under benchmark v0.2." |
 | L3 — maintainer validated | A real maintainer independently validates or accepts the artifact. | "Maintainer validated," linked to recorded external evidence. |
 
 Before a fix exists, L0 is the public ceiling. Within this historical benchmark, L2 is the primary success definition. L3 is outside the internal benchmark and cannot be inferred from L2.
@@ -78,27 +76,23 @@ fresh workspaces, does not reuse smoke candidates, and does not feed one case's 
 | --- | --- |
 | Repository and canonical issue URL | Fixing pull request URL or number |
 | Exact buggy base SHA and checked-out base tree | Fixed commit and production patch |
-| Provenance-verified historical issue title and body | Developer-written tests and gold patch |
+| Dataset-snapshot issue title and body, with chronology labels hidden from generation | Developer-written tests and gold patch |
 | Repository-owned documentation and tests present at the base SHA | Oracle symptom rubric, decoys, and alternative-fix controls |
 | Declared resource policy and generated-run feedback | Other benchmark cases' hidden artifacts or verdicts |
 
-Issue comments are excluded. Historical text is accepted only from a trusted offline receipt that
-binds its bytes, evidence grade, history-completeness statement, cutoff, capture method, and exact
-redaction decision. A current live issue response is never a historical fallback. Raw revision
-history and fixing-PR identity remain evaluator-only. The v0.1 manifest's stronger
-`pre_fix_source_snapshot` label is currently unsubstantiated, so that campaign remains blocked; see
-[ADR 0004](decisions/0004-historical-snapshot-provenance.md).
+Issue comments are excluded. The frozen v0.2 generator projection comes from the pinned dataset
+snapshot and is explicitly classified `chronology_unproven` and
+`historical_public_contamination_exposed`. Raw patch/test fields, fixing-PR identity, row ordinals,
+leak-audit detail, and chronology labels remain evaluator-only. This supports generation against the
+exact buggy base with the historical fix hidden; it does not support “before anyone attempted a
+fix.” See [ADR 0004](decisions/0004-historical-snapshot-provenance.md).
 
 The v0.2-draft offline producer and default validator now parse the frozen GraphQL capture shape,
 require complete creation/body history and a continuous title-rename chain, select the last revision
 strictly before the fixing pull request's `publishedAt`, and independently rerun exact fixing-link
-redaction. The fixture-only override is not evidence. No v0.2 cohort or authenticated collector
-exists; the evaluator must pre-bind the correct fixing pull request, preserve raw artifacts outside
-the generator view, and complete the human privacy review. Capture authenticity remains a trusted
-controller input rather than a signed GitHub attestation. Public GitHub REST does not provide the
-required complete body-revision history; authenticated GraphQL collection for third-party public
-repositories remains separately authorization-gated. The cutoff is not weakened when that evidence
-is unavailable.
+redaction. This is an optional upgrade for a future stronger chronology claim, not a prerequisite
+for the dataset-snapshot cohort. Capture authenticity would remain trusted-controller evidence
+rather than a GitHub-signed attestation.
 
 The trusted preparation controller resolves the full 40-character base SHA and independently
 reconstructs its Git tree. Codeload is preserved only as bounded bulk transport; missing or changed
@@ -119,12 +113,12 @@ results, causal sequence, tree, and cleanup contract. Real local PyPI, typed-bor
 canaries passed. Bridge egress is still constrained by trusted pip behavior rather than a
 network-layer allowlist, and no authentic case receipt is campaign-ready.
 
-The scored generator/evaluator path must still start every generation and verification execution in
-a fresh container or equivalent real sandbox with network disabled after preparation. The sandbox
+The scored generator/evaluator path starts verification execution in fresh containers with network
+disabled after preparation. The sandbox
 receives no SSH agent, cloud credentials, browser state, GitHub token, unrelated host directory, or
 evaluator artifact. An arbitrary same-user host command is not an acceptable scored generator. The
-structural v0.2 package verifier requires application-selected trusted controller code and
-deliberately issues no live evaluator capability, so the cohort audit defaults to not ready.
+application issuer accepts only nominal, freshly revalidated source/dataset/dependency/isolation
+evidence; raw receipts and repository-controlled booleans cannot mint a live capability.
 
 The model/provider/version, frozen prompt-template hash, per-call rendered-input hash, configuration
 hash, tool commit, image digest, limits, timestamps, token usage, cost, and submitted patch hash are
@@ -151,7 +145,7 @@ Minimality is reviewed, not enforced by an arbitrary line threshold. Fixtures an
 3. **Generate on base.** Run ReproAssert against a fresh extraction of the exact-SHA base archive with only generator-visible inputs. Preserve every started attempt, candidate, bounded log, time, token, and cost record; choose one candidate without oracle feedback.
 4. **Inspect policy and patch.** Reject empty/unapplicable patches and forbidden file or behavior changes before executing code. Parse the diff; do not rely only on filename conventions or model declarations.
 5. **Collect target nodes.** Apply the patch to a clean base tree and collect exactly the declared generated pytest node IDs. Collection must succeed without running unrelated tests.
-6. **Run interleaved verification.** In six fresh clean environments execute the schedule `base, fixed, fixed, base, base, fixed`. Each execution uses the same revalidated candidate and command, with separately attested candidate-applied base/fixed trees. The three base results must share an issue-aligned normalized failure fingerprint; the three fixed results must each contain one exact target pass in bounded JUnit. Interleaving reduces systematic warm-cache and time-order bias. The local capability-gated primitive implements this step, but no official issuer or scored runner invokes it yet.
+6. **Run interleaved verification.** In six fresh clean environments execute the schedule `base, fixed, fixed, base, base, fixed`. Each execution uses the same revalidated candidate and command, with separately attested candidate-applied base/fixed trees. The three base results must share an issue-aligned normalized failure fingerprint; the three fixed results must each contain one exact target pass in bounded JUnit. Interleaving reduces systematic warm-cache and time-order bias. The scored runner invokes this step only through an application-issued one-use evaluator capability.
 7. **Apply causal controls.** When production fix hunks can be separated, `fix minus issue-relevant hunks` should continue to fail and `base plus issue-relevant hunks` should pass. Record `not_available` or `inconclusive` with a reason when hunks are inseparable. Repository-appropriate decoy or alternative-fix controls are supporting evidence and must be declared before unblinding the gold tests.
 8. **Review semantics while blinded.** Two reviewers inspect the frozen issue, candidate, normalized base failure, fixed pass evidence, and declared causal-control results without seeing developer tests or the human test patch. A third reviewer breaks a disagreement. Reviewer identities, binary rubric answers, confidence, rationale, and agreement are recorded.
 9. **Unblind after verdict.** Developer tests and gold artifacts may be inspected only after the semantic verdict is committed. They may explain divergence but cannot retroactively select or rewrite the submitted candidate.

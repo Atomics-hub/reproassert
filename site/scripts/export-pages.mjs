@@ -41,6 +41,12 @@ await cp(
   resolve(root, "../schemas/reproassert-report.schema.json"),
   resolve(output, "reproassert-report.schema.json"),
 );
+for (const name of [
+  "benchmark-v02-replay-bundle.schema.json",
+  "benchmark-v02-replay-result.schema.json",
+]) {
+  await cp(resolve(root, "../schemas", name), resolve(output, name));
+}
 await writeFile(resolve(output, "index.html"), html);
 await writeFile(resolve(output, "404.html"), html);
 await writeFile(resolve(output, ".nojekyll"), "");

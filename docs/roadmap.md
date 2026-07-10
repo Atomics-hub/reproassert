@@ -2,14 +2,12 @@
 
 Date: 2026-07-10
 
-Status: alpha, strict Python/pytest base-failure slice implemented; benchmark preregistered with
-0/20 scored runs. All-attempt accounting is fail-closed and the scored campaign is deliberately
-blocked at a $0 paid-provider cap until exact spend authorization and evaluator prerequisites exist.
-The causal wheel executor, strict receipt verifier, executed-tree/JUnit evidence binding, v0.2
-structural package tooling, and capability-gated differential primitive are implemented locally.
-The application-owned semantic issuer and scored runner that own the full
-attempt-to-cost-to-result lifecycle are not; the campaign cannot transition to `frozen_ready` yet.
-This milestone used zero GitHub Actions runs and zero model/provider spend.
+Status: alpha and validation-ready, with **0/20 scored runs**. The 20-case selection, attested
+dataset parser, exact upstream provenance, causal wheel executor, semantic issuer, scored runner,
+pre-inference pricing/authorization barrier, executed controls, reviewer consensus, bounded
+publication, and exact-SHA dependency-aware replay are implemented. Provider execution remains
+default-deny at a $0 cap until exact authorization and all 20 private case packages pass. No model
+spend or outreach occurred.
 
 This roadmap is ordered by evidence, not feature count. A later phase does not begin because the earlier phase has more code; it begins when the earlier claim is reproducible and useful.
 
@@ -45,31 +43,26 @@ Before the first release is described as usable:
 - keep CLI help, README examples, security docs, and report schema synchronized; and
 - record known failures rather than widening the claim.
 
-## Next: finish preparation without moving the goalposts
+## Next: execute validation without moving the goalposts
 
 The 20-case v0.1 cohort is frozen and
 [`results.jsonl`](../benchmarks/v0.1/results.jsonl) is empty. Its historical snapshot cutoff is not
 currently supportable from trusted evidence, so v0.1 remains blocked rather than being silently
 reinterpreted. Exact-object source preparation now accepts and freshly reverifies 20/20 repositories;
-that transport milestone does not satisfy the historical or evaluator gates. The next evidence
-slice is:
+that transport milestone does not satisfy the historical or evaluator gates. V0.2 therefore uses a
+chronology-honest dataset-snapshot selection rather than relabeling v0.1. The next evidence slice is:
 
-1. complete trusted offline captures, fixing-PR bindings, privacy reviews, and generator-safe
-   projections for a corrected v0.2 cohort, then preregister it before inference;
-2. verify one authentic dependency receipt per case with the implemented causal executor, strict
-   loader, exact image/tree/plan binding, and label-verified cleanup;
-3. implement the application-owned semantic verifier and nominal evaluator-capability issuer, then
-   canary-test the production scored generator/hidden-fix boundary. The scored generator must be a
-   trusted built-in adapter or separate sandbox, not an arbitrary same-user host command;
-4. wire the capability-gated interleaved differential primitive into the scored runner;
-5. submit exactly one candidate per newly frozen case;
-6. apply declared causal controls and blinded semantic review;
-7. append every terminal result, including failures and infrastructure errors; and
-8. publish attributable cost and wall time without excluding failed attempts.
+1. build and independently verify all 20 private source/dependency/hidden-fix case packages;
+2. freeze the exact 20 rendered requests, tool revision, pricing snapshot, provider/model/adapter,
+   per-case and campaign caps, and human approval bytes before provider-capable work;
+3. submit exactly one candidate per frozen case and retain every attempt, failure, and cost event;
+4. execute the declared causal controls and blinded two-reviewer/tie-break protocol;
+5. publish the complete 20-case denominator, attributable cost, wall time, and replay bundles; and
+6. record false reproductions, setup failures, flakiness, and infrastructure errors without hiding
+   them from the denominator.
 
-Complete historical body revision capture is currently blocked on separately authorized,
-least-privilege read-only GitHub GraphQL access for the selected third-party public repositories.
-Public REST is not a substitute, and `pre_solution_pr_publication` will not be weakened to fit it.
+Complete historical body revision capture remains an optional future upgrade to a stronger
+chronology claim. It is not required for the current explicitly `chronology_unproven` cohort.
 
 Continuation requires at least 6/20 semantic-valid cases, median warm runtime below 10 minutes, and attributable cost at or below roughly $1 per semantic-valid reproduction or a measured path there. Passing supports further validation only; it does not establish a population rate or state of the art.
 
