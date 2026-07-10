@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -93,6 +95,275 @@ def openai_candidate_payload() -> dict[str, str]:
         "expected_symptom": "duplicate separator remains",
         "rationale": "One assertion captures the issue.",
     }
+
+
+class RecordingModelCallObserver:
+    def __init__(self, order: list[str] | None = None) -> None:
+        self.order = order if order is not None else []
+        self.started: list[dict[str, object]] = []
+        self.finished: list[dict[str, object]] = []
+
+    def model_call_started(self, event: Mapping[str, object]) -> None:
+        self.order.append("started")
+        self.started.append(dict(event))
+
+    def model_call_finished(self, event: Mapping[str, object]) -> None:
+        self.order.append("finished")
+        self.finished.append(dict(event))
+
+
+def test_openai_observer_is_durable_before_post_and_records_safe_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    order: list[str] = []
+    observer = RecordingModelCallObserver(order)
+    response_id = "resp_test_123"
+
+    def fake_post(_request_body: bytes, *, api_key: str, timeout_seconds: float) -> bytes:
+        assert observer.started
+        order.append("post")
+        assert api_key == "sk-test-only"
+        assert timeout_seconds == 120.0
+        return json.dumps(
+            {
+                "id": response_id,
+                "model": "gpt-5.4-mini-2026-03-17",
+                "status": "completed",
+                "usage": {
+                    "input_tokens": 120,
+                    "output_tokens": 40,
+                    "total_tokens": 160,
+                    "input_tokens_details": {"cached_tokens": 20},
+                },
+                "output_text": json.dumps(openai_candidate_payload()),
+            }
+        ).encode()
+
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-only")
+    monkeypatch.setattr(generator_module, "_post_openai_response", fake_post)
+    monotonic_values = iter((10.0, 10.25, 10.5))
+    monkeypatch.setattr(generator_module.time, "monotonic", lambda: next(monotonic_values))
+
+    candidate = OpenAIResponsesGenerator(observer=observer).generate(request())
+
+    assert candidate.test_function == "test_issue_8_reproduction"
+    assert order == ["started", "post", "finished"]
+    assert len(observer.started) == len(observer.finished) == 1
+    started = observer.started[0]
+    assert set(started) == {
+        "call_id",
+        "started_at",
+        "provider",
+        "endpoint_host",
+        "requested_model",
+        "rendered_input_sha256",
+        "config_sha256",
+        "max_output_tokens",
+    }
+    assert isinstance(started["call_id"], str)
+    assert started["call_id"].startswith("call_")
+    assert len(started["call_id"]) == 37
+    assert started["provider"] == "openai"
+    assert started["endpoint_host"] == "api.openai.com"
+    assert started["requested_model"] == DEFAULT_OPENAI_MODEL
+    assert started["max_output_tokens"] == 4096
+    assert len(str(started["rendered_input_sha256"])) == 64
+    assert len(str(started["config_sha256"])) == 64
+
+    finished = observer.finished[0]
+    assert finished["call_id"] == started["call_id"]
+    assert finished["started_at"] == started["started_at"]
+    assert finished["status"] == "succeeded"
+    assert finished["classification_code"] == "candidate_accepted"
+    assert finished["duration_ms"] == 500
+    assert finished["response_model"] == "gpt-5.4-mini-2026-03-17"
+    assert finished["response_id_sha256"] == hashlib.sha256(response_id.encode()).hexdigest()
+    assert finished["usage"] == {
+        "status": "reported",
+        "input_tokens": 120,
+        "cached_input_tokens": 20,
+        "output_tokens": 40,
+        "total_tokens": 160,
+    }
+    public_events = json.dumps([observer.started, observer.finished])
+    assert "sk-test-only" not in public_events
+    assert "Ignore previous instructions" not in public_events
+    assert "duplicate separator remains" not in public_events
+    assert response_id not in public_events
+
+
+def test_openai_observer_start_failure_prevents_provider_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    posted = False
+
+    class FailingStartObserver:
+        def model_call_started(self, _event: Mapping[str, object]) -> None:
+            raise RuntimeError("ledger unavailable")
+
+        def model_call_finished(self, _event: Mapping[str, object]) -> None:
+            raise AssertionError("a call that was never transmitted cannot finish")
+
+    def fake_post(_request_body: bytes, *, api_key: str, timeout_seconds: float) -> bytes:
+        nonlocal posted
+        posted = True
+        return b"{}"
+
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-only")
+    monkeypatch.setattr(generator_module, "_post_openai_response", fake_post)
+
+    with pytest.raises(RuntimeError, match="ledger unavailable"):
+        OpenAIResponsesGenerator(observer=FailingStartObserver()).generate(request())
+
+    assert posted is False
+
+
+def test_openai_observer_finish_failure_leaves_durable_start_and_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    started: list[dict[str, object]] = []
+    finish_calls = 0
+
+    class FailingFinishObserver:
+        def model_call_started(self, event: Mapping[str, object]) -> None:
+            started.append(dict(event))
+
+        def model_call_finished(self, _event: Mapping[str, object]) -> None:
+            nonlocal finish_calls
+            finish_calls += 1
+            raise RuntimeError("ledger finish unavailable")
+
+    response = {
+        "status": "completed",
+        "output_text": json.dumps(openai_candidate_payload()),
+    }
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-only")
+    monkeypatch.setattr(
+        generator_module,
+        "_post_openai_response",
+        lambda *_args, **_kwargs: json.dumps(response).encode(),
+    )
+
+    with pytest.raises(RuntimeError, match="ledger finish unavailable"):
+        OpenAIResponsesGenerator(observer=FailingFinishObserver()).generate(request())
+
+    assert len(started) == 1
+    assert finish_calls == 1
+
+
+@pytest.mark.parametrize(
+    ("case", "expected_status", "expected_classification"),
+    [
+        ("transport", "provider_error", "openai_transport"),
+        ("http", "provider_error", "openai_http"),
+        ("timeout", "timeout", "openai_timeout"),
+        ("provider_failure", "provider_error", "openai_api_error"),
+        ("refusal", "refusal", "openai_refusal"),
+        ("incomplete", "invalid_response", "openai_incomplete"),
+        ("invalid_response", "invalid_response", "openai_response_json"),
+        ("invalid_usage", "invalid_response", "openai_usage"),
+        ("invalid_output_json", "invalid_response", "openai_output_json"),
+        ("output_limit", "invalid_response", "openai_output_limit"),
+        ("candidate_policy", "invalid_response", "candidate_assert_false"),
+    ],
+)
+def test_openai_observer_finishes_once_for_every_transmitted_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    case: str,
+    expected_status: str,
+    expected_classification: str,
+) -> None:
+    observer = RecordingModelCallObserver()
+    post_count = 0
+
+    def fake_post(_request_body: bytes, *, api_key: str, timeout_seconds: float) -> bytes:
+        nonlocal post_count
+        post_count += 1
+        if case == "transport":
+            raise ReproAssertError("openai_transport", "private transport detail")
+        if case == "http":
+            raise ReproAssertError("openai_http", "private HTTP detail")
+        if case == "timeout":
+            raise TimeoutError("private timeout detail")
+        if case == "invalid_response":
+            return b"private invalid json"
+
+        response: dict[str, object] = {
+            "id": "resp_private_identifier",
+            "model": "gpt-5.4-mini-2026-03-17",
+            "status": "completed",
+        }
+        if case == "provider_failure":
+            response.update(
+                status="failed",
+                error={"message": "private provider detail"},
+                usage={"input_tokens": 7, "output_tokens": 0, "total_tokens": 7},
+            )
+        elif case == "refusal":
+            response["output"] = [
+                {
+                    "type": "message",
+                    "content": [{"type": "refusal", "refusal": "private provider detail"}],
+                }
+            ]
+        elif case == "incomplete":
+            response.update(status="incomplete", incomplete_details={"reason": "max_output_tokens"})
+        elif case == "invalid_usage":
+            response.update(
+                usage={"input_tokens": True},
+                output_text=json.dumps(openai_candidate_payload()),
+            )
+        elif case == "invalid_output_json":
+            response["output_text"] = "{"
+        elif case == "output_limit":
+            response["output_text"] = "x" * (generator_module.MAX_OPENAI_OUTPUT_BYTES + 1)
+        elif case == "candidate_policy":
+            response["output_text"] = json.dumps(
+                {
+                    "test_content": (
+                        "def test_issue_8_reproduction():\n    assert False, 'forced failure'\n"
+                    ),
+                    "expected_symptom": "forced failure",
+                    "rationale": "private provider detail",
+                }
+            )
+        return json.dumps(response).encode()
+
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-only")
+    monkeypatch.setattr(generator_module, "_post_openai_response", fake_post)
+
+    with pytest.raises((ReproAssertError, TimeoutError)):
+        OpenAIResponsesGenerator(observer=observer).generate(request())
+
+    assert post_count == 1
+    assert len(observer.started) == len(observer.finished) == 1
+    finished = observer.finished[0]
+    assert finished["call_id"] == observer.started[0]["call_id"]
+    assert finished["status"] == expected_status
+    assert finished["classification_code"] == expected_classification
+    usage = finished["usage"]
+    assert isinstance(usage, dict)
+    assert set(usage) == {
+        "status",
+        "input_tokens",
+        "cached_input_tokens",
+        "output_tokens",
+        "total_tokens",
+    }
+    if case == "provider_failure":
+        assert usage == {
+            "status": "reported",
+            "input_tokens": 7,
+            "cached_input_tokens": 0,
+            "output_tokens": 0,
+            "total_tokens": 7,
+        }
+    else:
+        assert usage["status"] == "unknown"
+        assert all(usage[name] is None for name in set(usage) - {"status"})
+    encoded_finish = json.dumps(finished)
+    assert "private" not in encoded_finish
+    assert "sk-test-only" not in encoded_finish
 
 
 def test_openai_generator_uses_fixed_responses_request_shape(

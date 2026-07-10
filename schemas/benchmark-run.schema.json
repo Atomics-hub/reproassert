@@ -154,7 +154,8 @@
         "provider",
         "model",
         "model_version",
-        "prompt_sha256",
+        "prompt_template_sha256",
+        "rendered_input_sha256",
         "config_sha256",
         "submitted_candidates"
       ],
@@ -171,7 +172,10 @@
           "type": "string",
           "minLength": 1
         },
-        "prompt_sha256": {
+        "prompt_template_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "rendered_input_sha256": {
           "$ref": "#/$defs/sha256"
         },
         "config_sha256": {
@@ -383,6 +387,7 @@
         "model_usd",
         "sandbox_compute_usd",
         "artifact_transfer_usd",
+        "paid_storage_usd",
         "attributable_total_usd",
         "cold_dependency_prep_usd"
       ],
@@ -405,6 +410,9 @@
           "$ref": "#/$defs/nonNegativeNumber"
         },
         "artifact_transfer_usd": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "paid_storage_usd": {
           "$ref": "#/$defs/nonNegativeNumber"
         },
         "attributable_total_usd": {
@@ -708,6 +716,9 @@
       "additionalProperties": false,
       "required": [
         "reviewer_id",
+        "role",
+        "blinded",
+        "packet_sha256",
         "trigger_faithful",
         "oracle_supported",
         "failure_causal",
@@ -721,6 +732,16 @@
         "reviewer_id": {
           "type": "string",
           "minLength": 1
+        },
+        "role": {
+          "type": "string",
+          "enum": ["primary", "tie_break"]
+        },
+        "blinded": {
+          "const": true
+        },
+        "packet_sha256": {
+          "$ref": "#/$defs/sha256"
         },
         "trigger_faithful": {
           "type": "boolean"

@@ -25,6 +25,7 @@ jobs:
       - name: Check out source
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          fetch-depth: 0
           persist-credentials: false
       - name: Set up Python
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
@@ -41,7 +42,10 @@ jobs:
       - name: Type-check
         run: python -m mypy src
       - name: Validate frozen benchmark metadata
-        run: python scripts/validate_benchmark.py
+        env:
+          BENCHMARK_PREFIX_REF: ${{ github.event.pull_request.base.sha || 'origin/main' }}
+        run: |
+          python scripts/validate_benchmark.py --prefix-ref "$BENCHMARK_PREFIX_REF"
 
   unit:
     name: Unit and wheel smoke (Python ${{ matrix.python-version }})

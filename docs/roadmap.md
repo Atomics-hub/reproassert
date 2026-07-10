@@ -2,7 +2,11 @@
 
 Date: 2026-07-09
 
-Status: alpha, strict Python/pytest base-failure slice implemented; benchmark preregistered with 0/20 scored runs.
+Status: alpha, strict Python/pytest base-failure slice implemented; benchmark preregistered with
+0/20 scored runs. All-attempt accounting is fail-closed and the scored campaign is deliberately
+blocked at a $0 paid-provider cap until exact spend authorization and evaluator prerequisites exist.
+The provider observer and ledger writer are implemented, but the scored runner that owns the full
+attempt-to-cost-to-result lifecycle is not; the campaign cannot transition to `frozen_ready` yet.
 
 This roadmap is ordered by evidence, not feature count. A later phase does not begin because the earlier phase has more code; it begins when the earlier claim is reproducible and useful.
 

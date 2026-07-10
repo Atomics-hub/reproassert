@@ -1,0 +1,73 @@
+{
+  "schema_version": "1.0.0",
+  "benchmark_version": "0.1.0",
+  "status": "blocked_pending_prerequisites",
+  "campaign_id": null,
+  "run_id": null,
+  "lane": "scored",
+  "case_ids": [
+    "rk-v0.1-001",
+    "rk-v0.1-002",
+    "rk-v0.1-003",
+    "rk-v0.1-004",
+    "rk-v0.1-005",
+    "rk-v0.1-006",
+    "rk-v0.1-007",
+    "rk-v0.1-008",
+    "rk-v0.1-009",
+    "rk-v0.1-010",
+    "rk-v0.1-011",
+    "rk-v0.1-012",
+    "rk-v0.1-013",
+    "rk-v0.1-014",
+    "rk-v0.1-015",
+    "rk-v0.1-016",
+    "rk-v0.1-017",
+    "rk-v0.1-018",
+    "rk-v0.1-019",
+    "rk-v0.1-020"
+  ],
+  "configuration": {
+    "tool_git_sha": null,
+    "provider": null,
+    "requested_model": null,
+    "model_version": null,
+    "prompt_template_sha256": null,
+    "request_builder_sha256": null,
+    "config_sha256": null,
+    "context_algorithm_sha256": null,
+    "policy_sha256": null,
+    "pricing_snapshot_sha256": null,
+    "feedback_policy": "base_only_no_oracle",
+    "max_model_calls_per_case": 1,
+    "max_submitted_candidates_per_case": 1,
+    "max_infrastructure_retries_per_case": 1,
+    "max_case_wall_ms": 600000,
+    "max_case_attributable_microusd": 0,
+    "max_campaign_attributable_microusd": 0,
+    "spend_authorization": {
+      "status": "not_authorized",
+      "authorization_ref": null
+    }
+  },
+  "prerequisites": {
+    "historical_issue_snapshots_ready": false,
+    "exact_sha_archives_ready": false,
+    "dependency_images_ready": false,
+    "evaluator_bundle_ready": false,
+    "generator_oracle_isolation_tested": false,
+    "reviewer_roles_sealed": false,
+    "trusted_pricing_calculator_ready": false,
+    "benchmark_runner_ready": false
+  },
+  "started_at": null,
+  "blockers": [
+    "No paid model spend is authorized; the enforceable provider budget is zero.",
+    "Component pricing and trusted worst-case reservation calculation are not implemented.",
+    "No executable benchmark runner yet owns attempt, cost, candidate, and terminal closure.",
+    "Historical pre-fix issue snapshots have not been frozen.",
+    "Exact-SHA source archives and dependency images have not been prepared.",
+    "Evaluator-only fixed snapshots, controls, and reviewer packets are not sealed.",
+    "Generator-to-oracle filesystem isolation has not passed its adversarial canary test."
+  ]
+}

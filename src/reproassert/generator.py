@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import http.client
 import json
 import os
@@ -9,8 +10,10 @@ import shutil
 import subprocess
 import threading
 import time
+import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Protocol
@@ -102,6 +105,14 @@ class CandidateGenerator(Protocol):
     def generate(self, request: GenerationRequest) -> ValidatedCandidate: ...
 
 
+class ModelCallObserver(Protocol):
+    """Receives privacy-safe lifecycle records around a transmitted provider call."""
+
+    def model_call_started(self, event: Mapping[str, object]) -> None: ...
+
+    def model_call_finished(self, event: Mapping[str, object]) -> None: ...
+
+
 class StaticGenerator:
     """Feeds a human-authored candidate through the same verifier contract."""
 
@@ -190,6 +201,7 @@ class OpenAIResponsesGenerator:
         *,
         model: str = DEFAULT_OPENAI_MODEL,
         timeout_seconds: float = DEFAULT_OPENAI_TIMEOUT_SECONDS,
+        observer: ModelCallObserver | None = None,
     ) -> None:
         if _MODEL_NAME.fullmatch(model) is None:
             raise ReproAssertError(
@@ -202,6 +214,7 @@ class OpenAIResponsesGenerator:
         self.model = model
         self.timeout_seconds = timeout_seconds
         self._api_key = _read_openai_api_key()
+        self._observer = observer
         self._metadata: Mapping[str, object] = MappingProxyType({})
         self.name = f"openai-responses:{model}"
 
@@ -238,43 +251,280 @@ class OpenAIResponsesGenerator:
                 "OpenAI request exceeds the 512 KiB provider-input limit.",
             )
 
-        started = time.monotonic()
+        observer = self._observer
+        call_id = ""
+        started_at = ""
+        response_received = False
+        observation = _OpenAIResponseObservation.unknown()
+        if observer is not None:
+            call_id = f"call_{uuid.uuid4().hex}"
+            started_at = _utc_now_text()
+            config_payload = dict(request_payload)
+            del config_payload["input"]
+            started = time.monotonic()
+            observer.model_call_started(
+                MappingProxyType(
+                    {
+                        "call_id": call_id,
+                        "started_at": started_at,
+                        "provider": "openai",
+                        "endpoint_host": OPENAI_API_HOST,
+                        "requested_model": self.model,
+                        "rendered_input_sha256": _sha256_text(input_text),
+                        "config_sha256": _sha256_json(config_payload),
+                        "max_output_tokens": OPENAI_MAX_OUTPUT_TOKENS,
+                    }
+                )
+            )
+        else:
+            started = time.monotonic()
+
         try:
-            encoded_response = _post_openai_response(
-                encoded_request,
-                api_key=self._api_key,
-                timeout_seconds=self.timeout_seconds,
+            try:
+                encoded_response = _post_openai_response(
+                    encoded_request,
+                    api_key=self._api_key,
+                    timeout_seconds=self.timeout_seconds,
+                )
+            finally:
+                request_duration_seconds = time.monotonic() - started
+            response_received = True
+            if len(encoded_response) > MAX_OPENAI_RESPONSE_BYTES:
+                raise ReproAssertError(
+                    "openai_response_limit", "OpenAI response exceeded the 128 KiB limit."
+                )
+            if observer is not None:
+                observation = _observe_openai_response(encoded_response)
+            response_payload = _decode_openai_response(encoded_response)
+            self._metadata = MappingProxyType(
+                _openai_generation_metadata(
+                    response_payload,
+                    model=self.model,
+                    request_duration_seconds=request_duration_seconds,
+                )
             )
-        finally:
-            request_duration_seconds = time.monotonic() - started
-        if len(encoded_response) > MAX_OPENAI_RESPONSE_BYTES:
-            raise ReproAssertError(
-                "openai_response_limit", "OpenAI response exceeded the 128 KiB limit."
+            output_text = _extract_openai_output_text(response_payload)
+            if len(output_text.encode("utf-8")) > MAX_OPENAI_OUTPUT_BYTES:
+                raise ReproAssertError(
+                    "openai_output_limit", "OpenAI output_text exceeded the 64 KiB limit."
+                )
+            try:
+                candidate_payload = json.loads(output_text)
+            except (json.JSONDecodeError, RecursionError) as exc:
+                raise ReproAssertError(
+                    "openai_output_json", "OpenAI output_text was not one JSON object."
+                ) from exc
+            if not isinstance(candidate_payload, Mapping):
+                raise ReproAssertError(
+                    "openai_output_json", "OpenAI output_text must be one JSON object."
+                )
+            candidate = validate_candidate_payload(
+                candidate_payload, issue_number=request.issue_number
             )
-        response_payload = _decode_openai_response(encoded_response)
-        self._metadata = MappingProxyType(
-            _openai_generation_metadata(
-                response_payload,
-                model=self.model,
-                request_duration_seconds=request_duration_seconds,
+        except BaseException as exc:
+            if observer is not None:
+                status, classification_code = _classify_model_call_failure(
+                    exc, response_received=response_received
+                )
+                observer.model_call_finished(
+                    _model_call_finished_event(
+                        call_id=call_id,
+                        started_at=started_at,
+                        started_monotonic=started,
+                        status=status,
+                        classification_code=classification_code,
+                        observation=observation,
+                    )
+                )
+            raise
+
+        if observer is not None:
+            observer.model_call_finished(
+                _model_call_finished_event(
+                    call_id=call_id,
+                    started_at=started_at,
+                    started_monotonic=started,
+                    status="succeeded",
+                    classification_code="candidate_accepted",
+                    observation=observation,
+                )
             )
+        return candidate
+
+
+@dataclass(frozen=True)
+class _OpenAIResponseObservation:
+    response_model: str | None
+    response_id_sha256: str | None
+    usage: Mapping[str, object]
+
+    @classmethod
+    def unknown(cls) -> _OpenAIResponseObservation:
+        return cls(
+            response_model=None,
+            response_id_sha256=None,
+            usage=MappingProxyType(
+                {
+                    "status": "unknown",
+                    "input_tokens": None,
+                    "cached_input_tokens": None,
+                    "output_tokens": None,
+                    "total_tokens": None,
+                }
+            ),
         )
-        output_text = _extract_openai_output_text(response_payload)
-        if len(output_text.encode("utf-8")) > MAX_OPENAI_OUTPUT_BYTES:
-            raise ReproAssertError(
-                "openai_output_limit", "OpenAI output_text exceeded the 64 KiB limit."
-            )
-        try:
-            candidate_payload = json.loads(output_text)
-        except (json.JSONDecodeError, RecursionError) as exc:
-            raise ReproAssertError(
-                "openai_output_json", "OpenAI output_text was not one JSON object."
-            ) from exc
-        if not isinstance(candidate_payload, Mapping):
-            raise ReproAssertError(
-                "openai_output_json", "OpenAI output_text must be one JSON object."
-            )
-        return validate_candidate_payload(candidate_payload, issue_number=request.issue_number)
+
+
+def _utc_now_text() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def _sha256_text(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _sha256_json(value: object) -> str:
+    encoded = json.dumps(
+        value,
+        ensure_ascii=True,
+        allow_nan=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("ascii")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _observe_openai_response(encoded: bytes) -> _OpenAIResponseObservation:
+    try:
+        payload = json.loads(encoded)
+    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError):
+        return _OpenAIResponseObservation.unknown()
+    if not isinstance(payload, Mapping):
+        return _OpenAIResponseObservation.unknown()
+
+    response_model = payload.get("model")
+    if not isinstance(response_model, str) or _MODEL_NAME.fullmatch(response_model) is None:
+        response_model = None
+
+    response_id_sha256: str | None = None
+    response_id = payload.get("id")
+    if (
+        isinstance(response_id, str)
+        and 1 <= len(response_id) <= 128
+        and response_id.isascii()
+        and re.fullmatch(r"[A-Za-z0-9_-]+", response_id) is not None
+    ):
+        response_id_sha256 = _sha256_text(response_id)
+
+    return _OpenAIResponseObservation(
+        response_model=response_model,
+        response_id_sha256=response_id_sha256,
+        usage=_observe_openai_usage(payload.get("usage")),
+    )
+
+
+def _observe_openai_usage(value: object) -> Mapping[str, object]:
+    unknown = _OpenAIResponseObservation.unknown().usage
+    if not isinstance(value, Mapping):
+        return unknown
+
+    counts: dict[str, int] = {}
+    for name in ("input_tokens", "output_tokens", "total_tokens"):
+        valid, count = _observed_token_count(value.get(name))
+        if not valid or count is None:
+            return unknown
+        counts[name] = count
+
+    cached_count = 0
+    input_details = value.get("input_tokens_details")
+    if input_details is not None:
+        if not isinstance(input_details, Mapping):
+            return unknown
+        valid, observed_cached_count = _observed_token_count(input_details.get("cached_tokens"))
+        if not valid:
+            return unknown
+        if observed_cached_count is not None:
+            cached_count = observed_cached_count
+    return MappingProxyType(
+        {
+            "status": "reported",
+            "input_tokens": counts["input_tokens"],
+            "cached_input_tokens": cached_count,
+            "output_tokens": counts["output_tokens"],
+            "total_tokens": counts["total_tokens"],
+        }
+    )
+
+
+def _observed_token_count(value: object) -> tuple[bool, int | None]:
+    if value is None:
+        return True, None
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, int)
+        or not 0 <= value <= MAX_OPENAI_REPORTED_TOKENS
+    ):
+        return False, None
+    return True, value
+
+
+def _model_call_finished_event(
+    *,
+    call_id: str,
+    started_at: str,
+    started_monotonic: float,
+    status: str,
+    classification_code: str,
+    observation: _OpenAIResponseObservation,
+) -> Mapping[str, object]:
+    duration_ms = max(0, round((time.monotonic() - started_monotonic) * 1_000))
+    return MappingProxyType(
+        {
+            "call_id": call_id,
+            "status": status,
+            "started_at": started_at,
+            "completed_at": _utc_now_text(),
+            "duration_ms": duration_ms,
+            "response_model": observation.response_model,
+            "response_id_sha256": observation.response_id_sha256,
+            "classification_code": classification_code,
+            "usage": dict(observation.usage),
+        }
+    )
+
+
+def _classify_model_call_failure(exc: BaseException, *, response_received: bool) -> tuple[str, str]:
+    if _is_timeout_failure(exc):
+        return "timeout", "openai_timeout"
+    if not isinstance(exc, Exception):
+        return "cancelled", "model_call_cancelled"
+    if isinstance(exc, ReproAssertError):
+        classification_code = _safe_classification_code(exc.code)
+        if exc.code == "openai_refusal":
+            return "refusal", classification_code
+        if exc.code in {"openai_api_error", "openai_http", "openai_transport"}:
+            return "provider_error", classification_code
+        return "invalid_response", classification_code
+    if not response_received:
+        return "provider_error", "model_call_provider_error"
+    return "invalid_response", "model_call_invalid_response"
+
+
+def _is_timeout_failure(exc: BaseException) -> bool:
+    current: BaseException | None = exc
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        if isinstance(current, TimeoutError):
+            return True
+        seen.add(id(current))
+        current = current.__cause__ if current.__cause__ is not None else current.__context__
+    return False
+
+
+def _safe_classification_code(value: str) -> str:
+    if re.fullmatch(r"[a-z0-9][a-z0-9_.:-]{0,99}", value) is None:
+        return "model_call_failure"
+    return value
 
 
 def _read_openai_api_key() -> str:
