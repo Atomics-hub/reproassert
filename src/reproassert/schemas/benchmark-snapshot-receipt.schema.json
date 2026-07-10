@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/Atomics-hub/reproassert/blob/main/schemas/benchmark-snapshot-receipt.schema.json",
   "title": "ReproAssert historical issue snapshot receipt",
-  "description": "Draft structural contract for controller-only historical snapshot provenance. Independent producer rederivation is not implemented, so this schema alone is not scoring evidence.",
+  "description": "Draft historical snapshot provenance contract. The controller independently rederives supported offline GitHub edit-history receipts, but this schema alone is not capture authenticity, privacy review, cohort, or scoring evidence.",
   "type": "object",
   "additionalProperties": false,
   "required": [

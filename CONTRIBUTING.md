@@ -59,6 +59,20 @@ REPROASSERT_RUN_DOCKER_TESTS=1 \
   uv run pytest tests/integration/test_docker_sandbox.py -q
 ```
 
+### CI budget
+
+GitHub Actions is the final independent check, not the development loop. Before opening or updating
+a pull request, run the relevant commands above locally and batch a coherent, reviewable change.
+Do not push speculative fixes one at a time, restart a cancelled run, or use “re-run failed jobs” to
+hide a nondeterministic failure. Diagnose the first failure locally, add a regression test when the
+cause is in ReproAssert, then push one corrective update.
+
+New workflows, triggers, matrix entries, service containers, artifact uploads, or scheduled jobs
+must state their expected runner-minute and storage impact in the pull request. Prefer extending an
+existing bounded job when it preserves fault isolation. Paid model calls, hosted runners, and other
+metered services are never an implicit CI dependency; they require a separate explicit budget and a
+deny-by-default gate.
+
 ## Change rules
 
 ### Preserve the trust boundary

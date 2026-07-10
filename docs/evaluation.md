@@ -80,20 +80,30 @@ history and fixing-PR identity remain evaluator-only. The v0.1 manifest's strong
 `pre_fix_source_snapshot` label is currently unsubstantiated, so that campaign remains blocked; see
 [ADR 0004](decisions/0004-historical-snapshot-provenance.md).
 
-The v0.2-draft receipt validator currently checks only structural consistency and external byte
-commitments. It does not yet parse raw issue-edit history, select the revision, and rerun the exact
-fix-link redaction itself. Its default API therefore rejects projection as
-`benchmark_snapshot_producer_unverified`; the fixture-only override is not evidence and cannot make
-a campaign ready.
+The v0.2-draft offline producer and default validator now parse the frozen GraphQL capture shape,
+require complete creation/body history and a continuous title-rename chain, select the last revision
+strictly before the fixing pull request's `publishedAt`, and independently rerun exact fixing-link
+redaction. The fixture-only override is not evidence. No v0.2 cohort or authenticated collector
+exists; the evaluator must pre-bind the correct fixing pull request, preserve raw artifacts outside
+the generator view, and complete the human privacy review. Capture authenticity remains a trusted
+controller input rather than a signed GitHub attestation.
 
-The trusted preparation controller resolves the full 40-character base SHA and creates a content-addressed source archive from exactly that commit. Generation receives a fresh extraction of that archive, never the repository clone used to create it. Before launch, the controller verifies that the archive and extraction contain no `.git` directory or file, remote configuration, refs, reflogs, object database, alternates, linked-worktree metadata, or future commit history. It records the archive digest, extracted-tree digest, source SHA, and preparation tool version. The fixed archive, production patch, and any clone containing later history remain in a separate evaluator-only trust domain.
+The trusted preparation controller resolves the full 40-character base SHA and independently
+reconstructs its Git tree. Codeload is preserved only as bounded bulk transport; missing or changed
+archive blobs are fetched by exact planned Git OID. A fresh metadata-free workspace preserves only
+root-confined tracked symlinks and empty uninitialized gitlinks, is rechecked, and is removed before
+the preparation receipt is written. Generation must receive a newly materialized/staged view from
+that exact object plan, never a repository clone. The fixed source, production patch, and any clone
+containing later history remain in a separate evaluator-only trust domain. The 20/20 preparation
+baseline proves source compatibility, not that this path is wired into the scored runner yet.
 
-Dependency preparation is a separate bounded phase. It may access approved package indexes and the
-exact-SHA archive, never a repository clone or VCS object store, records the resulting image digest
-and lock evidence, and exposes no host credentials. Every generation and verification execution
-starts from a fresh container or equivalent real sandbox. Network access is disabled after
-dependency preparation. The sandbox receives no SSH agent, cloud credentials, browser state,
-GitHub token, unrelated host directory, or evaluator artifact.
+Dependency preparation is a separate bounded phase. Strict reviewed wheel plans, fixed source-free
+download/offline-install argv, archive bounds, and a read-only dependency mount exist, but their
+causal executor does not. Before scoring, it must prove fresh labeled volumes, inspected images and
+phase outcomes, wheelhouse-before-install and tree-after-install identities, cleanup, and bounded
+egress/disk. Every generation and verification execution then starts from a fresh container or
+equivalent real sandbox with network disabled. The sandbox receives no SSH agent, cloud credentials,
+browser state, GitHub token, unrelated host directory, or evaluator artifact.
 
 The model/provider/version, frozen prompt-template hash, per-call rendered-input hash, configuration
 hash, tool commit, image digest, limits, timestamps, token usage, cost, and submitted patch hash are

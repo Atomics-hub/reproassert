@@ -57,10 +57,14 @@ Reports are in scope when they show or plausibly enable:
 - a container or Docker Desktop VM escape;
 - cross-run data access or executable cache poisoning;
 - unsafe archive extraction, symlink following, path traversal, or output overwrite;
+- acceptance of a truncated/inconsistent Git tree, unplanned raw-blob fetch, escaping tracked
+  symlink chain, or materialized bytes/modes that do not match the recorded Git objects;
 - authentication or proxy inheritance in unauthenticated public-GitHub intake;
 - the built-in OpenAI key being sent anywhere except the fixed `api.openai.com` endpoint after
   explicit `--provider openai` selection;
 - resource controls being absent despite a report claiming they were applied;
+- a dependency-preparation receipt claiming fresh/inspected/causally bound execution that the
+  current primitives did not actually prove;
 - terminal escape, clipboard, or control-sequence injection in trusted output;
 - report replay executing data-supplied commands or using an unvalidated source; or
 - a repeatable-failure claim being elevated beyond the evidence actually collected.

@@ -206,7 +206,14 @@ def test_container_policy_inspection_accepts_exact_hardening(
             "Binds": None,
         },
         "Config": {"User": "65532:65532"},
-        "Mounts": [{"Name": "volume", "Destination": "/workspace", "RW": False}],
+        "Mounts": [
+            {
+                "Type": "volume",
+                "Name": "volume",
+                "Destination": "/workspace",
+                "RW": False,
+            }
+        ],
     }
     monkeypatch.setattr(sandbox, "_inspect", lambda _name: inspected)
     sandbox._assert_container_policy("container", volume="volume")
@@ -215,6 +222,53 @@ def test_container_policy_inspection_accepts_exact_hardening(
     monkeypatch.setattr(sandbox, "_remove_container", lambda _name: None)
     with pytest.raises(ReproAssertError, match="network_none"):
         sandbox._assert_container_policy("container", volume="volume")
+
+
+def test_container_policy_requires_exact_read_only_dependency_volume(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sandbox = DockerSandbox()
+    inspected = {
+        "HostConfig": {
+            "NetworkMode": "none",
+            "ReadonlyRootfs": True,
+            "CapDrop": ["ALL"],
+            "SecurityOpt": ["no-new-privileges=true"],
+            "Privileged": False,
+            "PidMode": "",
+            "IpcMode": "private",
+            "PidsLimit": 128,
+            "Memory": 1024 * 1024 * 1024,
+            "MemorySwap": 1024 * 1024 * 1024,
+            "NanoCpus": 1_000_000_000,
+            "Devices": [],
+            "Binds": None,
+        },
+        "Config": {"User": "65532:65532"},
+        "Mounts": [
+            {
+                "Type": "volume",
+                "Name": "source",
+                "Destination": "/workspace",
+                "RW": False,
+            },
+            {
+                "Type": "volume",
+                "Name": "dependencies",
+                "Destination": "/dependencies",
+                "RW": False,
+            },
+        ],
+    }
+    monkeypatch.setattr(sandbox, "_inspect", lambda _name: inspected)
+    sandbox._assert_container_policy("container", volume="source", dependency_volume="dependencies")
+
+    inspected["Mounts"][1]["RW"] = True
+    monkeypatch.setattr(sandbox, "_remove_container", lambda _name: None)
+    with pytest.raises(ReproAssertError, match="dependencies_ro"):
+        sandbox._assert_container_policy(
+            "container", volume="source", dependency_volume="dependencies"
+        )
 
 
 def test_workspace_owner_and_cleanup_paths(monkeypatch: pytest.MonkeyPatch) -> None:

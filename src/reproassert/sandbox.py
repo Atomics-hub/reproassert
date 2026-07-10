@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import math
+import re
 import shutil
 import stat
 import subprocess
@@ -21,6 +23,16 @@ DEFAULT_IMAGE = "reproassert-sandbox:0.1.0"
 RUN_LABEL = "io.reproassert.run"
 OWNER_LABEL = "io.reproassert.owner=controller-v1"
 ONE_GIB = 1024 * 1024 * 1024
+_IMAGE_REFERENCE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/:@+-]{0,199}")
+_MAX_TIMEOUT_SECONDS = 60 * 60
+_MAX_OUTPUT_BYTES = 16 * 1024 * 1024
+_MIN_MEMORY_BYTES = 64 * 1024 * 1024
+_MAX_MEMORY_BYTES = 16 * ONE_GIB
+_MAX_CPUS = 64.0
+_MAX_PIDS = 4_096
+_MIN_TMPFS_BYTES = 1024 * 1024
+_MAX_TMPFS_BYTES = ONE_GIB
+_MAX_TMPFS_INODES = 1_048_576
 
 
 @dataclass(frozen=True)
@@ -33,6 +45,42 @@ class SandboxPolicy:
     pids: int = 128
     tmpfs_bytes: int = 64 * 1024 * 1024
     tmpfs_inodes: int = 4_096
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.image, str) or _IMAGE_REFERENCE.fullmatch(self.image) is None:
+            raise ValueError("image must be a bounded Docker image reference")
+        _bounded_number(
+            self.timeout_seconds,
+            "timeout_seconds",
+            minimum=0,
+            maximum=_MAX_TIMEOUT_SECONDS,
+        )
+        _bounded_integer(
+            self.max_output_bytes,
+            "max_output_bytes",
+            minimum=0,
+            maximum=_MAX_OUTPUT_BYTES,
+        )
+        _bounded_integer(
+            self.memory_bytes,
+            "memory_bytes",
+            minimum=_MIN_MEMORY_BYTES,
+            maximum=_MAX_MEMORY_BYTES,
+        )
+        _bounded_number(self.cpus, "cpus", minimum=0.1, maximum=_MAX_CPUS)
+        _bounded_integer(self.pids, "pids", minimum=1, maximum=_MAX_PIDS)
+        _bounded_integer(
+            self.tmpfs_bytes,
+            "tmpfs_bytes",
+            minimum=_MIN_TMPFS_BYTES,
+            maximum=_MAX_TMPFS_BYTES,
+        )
+        _bounded_integer(
+            self.tmpfs_inodes,
+            "tmpfs_inodes",
+            minimum=1,
+            maximum=_MAX_TMPFS_INODES,
+        )
 
 
 @dataclass(frozen=True)
@@ -257,6 +305,7 @@ class DockerSandbox:
         self,
         *,
         volume: str,
+        dependency_volume: str | None = None,
         target: str,
         phase: str,
         run_id: str,
@@ -264,6 +313,8 @@ class DockerSandbox:
     ) -> DockerRunResult:
         if volume not in self._volumes:
             raise ReproAssertError("sandbox_volume", "Workspace volume is not controller-owned.")
+        if dependency_volume is not None and dependency_volume not in self._volumes:
+            raise ReproAssertError("sandbox_volume", "Dependency volume is not controller-owned.")
         if not target.startswith("tests/reproassert/") or target.startswith("-"):
             raise ReproAssertError("sandbox_target", "Pytest target is not controller-approved.")
         name = f"reproassert-run-{_safe_token(run_id)}-{uuid.uuid4().hex[:10]}"
@@ -291,6 +342,7 @@ class DockerSandbox:
         create_args = self.verification_create_args(
             name=name,
             volume=volume,
+            dependency_volume=dependency_volume,
             run_id=run_id,
             process_args=pytest_args,
         )
@@ -298,7 +350,7 @@ class DockerSandbox:
         self._containers.add(name)
         started = time.monotonic()
         try:
-            self._assert_container_policy(name, volume=volume)
+            self._assert_container_policy(name, volume=volume, dependency_volume=dependency_volume)
             attached = self._start_attached(name)
             state = self._container_state(name) if not attached.removed else {}
             junit = None
@@ -324,11 +376,15 @@ class DockerSandbox:
         *,
         name: str,
         volume: str,
+        dependency_volume: str | None = None,
         run_id: str,
         process_args: Sequence[str],
     ) -> list[str]:
         p = self.policy
-        return [
+        python_path = "/workspace:/workspace/src:/workspace/.reproassert-deps"
+        if dependency_volume is not None:
+            python_path = "/workspace:/workspace/src:/dependencies:/workspace/.reproassert-deps"
+        args = [
             "create",
             "--name",
             name,
@@ -370,31 +426,43 @@ class DockerSandbox:
             ),
             "--mount",
             f"type=volume,src={volume},dst=/workspace,readonly",
-            "--workdir",
-            "/workspace",
-            "--log-driver",
-            "local",
-            "--log-opt",
-            "max-size=128k",
-            "--log-opt",
-            "max-file=1",
-            "--log-opt",
-            "compress=false",
-            "--entrypoint",
-            "/usr/bin/env",
-            p.image,
-            "-i",
-            "HOME=/tmp/home",
-            "LANG=C.UTF-8",
-            "LC_ALL=C.UTF-8",
-            "PATH=/usr/local/bin:/usr/bin:/bin",
-            "PYTHONDONTWRITEBYTECODE=1",
-            "PYTHONHASHSEED=0",
-            "PYTHONPATH=/workspace:/workspace/src:/workspace/.reproassert-deps",
-            "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1",
-            "TZ=UTC",
-            *process_args,
         ]
+        if dependency_volume is not None:
+            args.extend(
+                [
+                    "--mount",
+                    f"type=volume,src={dependency_volume},dst=/dependencies,readonly",
+                ]
+            )
+        args.extend(
+            [
+                "--workdir",
+                "/workspace",
+                "--log-driver",
+                "local",
+                "--log-opt",
+                "max-size=128k",
+                "--log-opt",
+                "max-file=1",
+                "--log-opt",
+                "compress=false",
+                "--entrypoint",
+                "/usr/bin/env",
+                p.image,
+                "-i",
+                "HOME=/tmp/home",
+                "LANG=C.UTF-8",
+                "LC_ALL=C.UTF-8",
+                "PATH=/usr/local/bin:/usr/bin:/bin",
+                "PYTHONDONTWRITEBYTECODE=1",
+                "PYTHONHASHSEED=0",
+                f"PYTHONPATH={python_path}",
+                "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1",
+                "TZ=UTC",
+                *process_args,
+            ]
+        )
+        return args
 
     def cleanup(self) -> None:
         for container in tuple(self._containers):
@@ -447,7 +515,9 @@ class DockerSandbox:
         finally:
             self._remove_container(name)
 
-    def _assert_container_policy(self, name: str, *, volume: str) -> None:
+    def _assert_container_policy(
+        self, name: str, *, volume: str, dependency_volume: str | None = None
+    ) -> None:
         inspected = self._inspect(name)
         host = inspected.get("HostConfig", {})
         config = inspected.get("Config", {})
@@ -455,6 +525,9 @@ class DockerSandbox:
         security = set(host.get("SecurityOpt") or [])
         cap_drop = {str(value).upper() for value in host.get("CapDrop") or []}
         expected_nano_cpus = int(self.policy.cpus * 1_000_000_000)
+        expected_volumes = {volume}
+        if dependency_volume is not None:
+            expected_volumes.add(dependency_volume)
         checks = {
             "network_none": host.get("NetworkMode") == "none",
             "readonly_root": host.get("ReadonlyRootfs") is True,
@@ -474,6 +547,18 @@ class DockerSandbox:
                 mount.get("Name") == volume
                 and mount.get("Destination") == "/workspace"
                 and mount.get("RW") is False
+                for mount in mounts
+            ),
+            "dependencies_ro": dependency_volume is None
+            or any(
+                mount.get("Name") == dependency_volume
+                and mount.get("Destination") == "/dependencies"
+                and mount.get("RW") is False
+                for mount in mounts
+            ),
+            "only_expected_mounts": len(mounts) == len(expected_volumes)
+            and all(
+                mount.get("Type") == "volume" and mount.get("Name") in expected_volumes
                 for mount in mounts
             ),
         }
@@ -604,6 +689,21 @@ class _AttachedResult:
     output_truncated: bool
     timed_out: bool
     removed: bool
+
+
+def _bounded_integer(value: object, label: str, *, minimum: int, maximum: int) -> None:
+    if not isinstance(value, int) or isinstance(value, bool) or not minimum <= value <= maximum:
+        raise ValueError(f"{label} must be an integer between {minimum} and {maximum}")
+
+
+def _bounded_number(value: object, label: str, *, minimum: float, maximum: float) -> None:
+    if (
+        not isinstance(value, (int, float))
+        or isinstance(value, bool)
+        or not math.isfinite(float(value))
+        or not minimum <= float(value) <= maximum
+    ):
+        raise ValueError(f"{label} must be a finite number between {minimum} and {maximum}")
 
 
 def _safe_token(value: str) -> str:

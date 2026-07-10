@@ -217,7 +217,9 @@ def test_json_escaping_boundary_matches_the_schema() -> None:
     assert receipt["content"]["canonical_bytes"] <= 144 * 1024
 
 
-def test_load_receipt_is_local_but_blocks_unverified_producer_by_default(tmp_path: Path) -> None:
+def test_load_receipt_is_local_but_blocks_unverifiable_raw_evidence_by_default(
+    tmp_path: Path,
+) -> None:
     receipt_path = tmp_path / "receipt.json"
     raw_path = tmp_path / "raw.json"
     cutoff_path = tmp_path / "cutoff.json"
@@ -235,7 +237,7 @@ def test_load_receipt_is_local_but_blocks_unverified_producer_by_default(tmp_pat
     }
     with pytest.raises(PolicyRejection) as blocked:
         load_snapshot_receipt(receipt_path, **arguments)  # type: ignore[arg-type]
-    assert blocked.value.code == "benchmark_snapshot_producer_unverified"
+    assert blocked.value.code == "benchmark_snapshot_evidence"
 
     snapshot = load_snapshot_receipt(
         receipt_path,
@@ -247,7 +249,7 @@ def test_load_receipt_is_local_but_blocks_unverified_producer_by_default(tmp_pat
     assert snapshot["body"] == BODY
 
 
-def test_direct_projection_also_blocks_unverified_producer_by_default() -> None:
+def test_direct_projection_also_blocks_unverifiable_raw_evidence_by_default() -> None:
     receipt = _receipt()
 
     with pytest.raises(PolicyRejection) as blocked:
@@ -261,7 +263,7 @@ def test_direct_projection_also_blocks_unverified_producer_by_default() -> None:
             expected_base_sha=BASE_SHA,
         )
 
-    assert blocked.value.code == "benchmark_snapshot_producer_unverified"
+    assert blocked.value.code == "benchmark_snapshot_evidence"
 
 
 @pytest.mark.parametrize(

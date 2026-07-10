@@ -270,7 +270,10 @@ The historical v0.1 cohort is preregistered at 20 cases across 10 repositories. 
 
 The v0.1 historical cutoff is currently blocked by its provenance erratum. The
 [v0.2 draft](benchmarks/v0.2-draft/README.md) defines a narrower, independently observable
-pre-solution-PR-publication receipt contract, but it is not a frozen cohort or a result.
+pre-solution-PR-publication receipt contract. Its offline producer now independently rederives
+complete supported edit histories and exact redaction, but there is no authenticated collector,
+frozen v0.2 cohort, or result; capture authenticity, fixing-PR selection, and privacy review remain
+trusted evaluator inputs.
 
 Exact-source preparation is available independently and makes no model call:
 
@@ -289,6 +292,21 @@ four failed closed on a gitlink, tracked symlinks, or codeload byte substitution
 [source-preparation baseline](benchmarks/v0.1/source-preparation-baseline.json). This is preparation
 compatibility evidence, not a reproduction score.
 
+The follow-up exact-object path treats codeload only as bulk transport, reconstructs Git trees,
+repairs only planned blob OIDs, confines tracked symlinks, and leaves gitlinks uninitialized:
+
+```console
+reproassert benchmark prepare-object-source rk-v0.1-018 \
+  --manifest benchmarks/v0.1/manifest.json \
+  --tool-git-sha <exact-controller-git-sha>
+```
+
+Its recorded no-model baseline accepted and freshly reverified all 20/20 sources, including the four
+previous compatibility failures; median local preparation was 3.533 seconds. See the
+[object-source baseline](benchmarks/v0.1/object-source-preparation-baseline.json). The receipts and
+archives remain private, no object-source index exists, and this does not unblock generation,
+establish reproduction accuracy, or authorize spend.
+
 - [Benchmark freeze and status](benchmarks/v0.1/README.md)
 - [Evaluation protocol and claim ladder](docs/evaluation.md)
 - [Market validation gates](docs/market-validation.md)
@@ -306,6 +324,8 @@ Passing the internal 6/20 continuation gate would justify more validation. It wo
 - [Market validation](docs/market-validation.md)
 - [Business model](docs/business-model.md)
 - [Launch plan](docs/launch-plan.md)
+- [Exact Git-object decision](docs/decisions/0006-repair-codeload-from-git-objects.md)
+- [Dependency preparation gate](docs/decisions/0007-dependency-preparation-remains-a-gated-prototype.md)
 - [Rebrand decision](docs/decisions/0001-rebrand-to-reproassert.md)
 - [Contributing](CONTRIBUTING.md)
 - [Code of Conduct](CODE_OF_CONDUCT.md)

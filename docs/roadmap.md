@@ -45,17 +45,20 @@ Before the first release is described as usable:
 The 20-case v0.1 cohort is frozen and
 [`results.jsonl`](../benchmarks/v0.1/results.jsonl) is empty. Its historical snapshot cutoff is not
 currently supportable from trusted evidence, so v0.1 remains blocked rather than being silently
-reinterpreted. The next evidence slice is:
+reinterpreted. Exact-object source preparation now accepts and freshly reverifies 20/20 repositories;
+that transport milestone does not satisfy the historical or evaluator gates. The next evidence
+slice is:
 
-1. finish and independently verify exact-source receipts for every eligible case;
-2. preregister a corrected v0.2 historical-snapshot contract and cohort before inference;
-3. prepare per-repository dependencies through bounded, recorded, hashable images;
-4. preserve and canary-test the generator/hidden-fix boundary;
-5. submit exactly one candidate per newly frozen case;
-6. run interleaved repeated base and hidden-fixed verification;
-7. apply declared causal controls and blinded semantic review;
-8. append every terminal result, including failures and infrastructure errors; and
-9. publish attributable cost and wall time without excluding failed attempts.
+1. complete trusted offline captures, fixing-PR bindings, privacy reviews, and generator-safe
+   projections for a corrected v0.2 cohort, then preregister it before inference;
+2. turn the wheel-only dependency primitives into a causally inspected executor with bounded
+   volumes, disk, egress, phase outcomes, image IDs, and post-install attestation;
+3. preserve and canary-test the production generator/hidden-fix boundary;
+4. submit exactly one candidate per newly frozen case;
+5. run interleaved repeated base and hidden-fixed verification;
+6. apply declared causal controls and blinded semantic review;
+7. append every terminal result, including failures and infrastructure errors; and
+8. publish attributable cost and wall time without excluding failed attempts.
 
 Continuation requires at least 6/20 semantic-valid cases, median warm runtime below 10 minutes, and attributable cost at or below roughly $1 per semantic-valid reproduction or a measured path there. Passing supports further validation only; it does not establish a population rate or state of the art.
 

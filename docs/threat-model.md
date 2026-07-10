@@ -25,7 +25,7 @@ Docker daemon, host kernel, or host administrator is already compromised.
 | Issue author | Prompt injection, copied shell commands, huge text, misleading expected behavior, malicious links |
 | Repository commit | Import hooks, pytest plugins, `conftest.py`, `sitecustomize.py`, native code, fork bombs, output floods, forged JUnit |
 | Candidate generator output | Production edits, unconditional failure, network/process calls, skip/xfail, top-level execution, deceptive assertions |
-| Source archive | Traversal, absolute paths, `.git` aliases, links, devices, FIFOs, bombs, duplicate/case-colliding paths, or bytes inconsistent with the declared commit tree |
+| Source archive and Git API responses | Traversal, absolute paths, `.git` aliases, links, devices, FIFOs, bombs, duplicate/case-colliding paths, truncated/inconsistent trees, unsafe symlink chains, or bytes inconsistent with the declared Git objects |
 | Imported report | Command fields, alternate repository, malformed SHA, candidate substitution, huge JSON, symlink path |
 | Dependency or runner supply chain | Malicious image layer, base image, Python package, registry, or mutable local tag |
 | Local operator configuration | Remote Docker context, untrusted generator command, explicit network provider, passed secrets, compromised daemon |
@@ -35,13 +35,13 @@ Docker daemon, host kernel, or host administrator is already compromised.
 | Threat | Implemented control | Remaining exposure |
 | --- | --- | --- |
 | URL/parser SSRF | Canonical `https://github.com/.../issues/N`; fixed API and codeload hosts; no redirects, proxies, auth, ports, queries, or fragments | DNS, TLS trust store, OS resolver, and GitHub are trusted; GitHub Enterprise is unsupported |
-| Archive traversal, substitution, or host overwrite | Private `0700` run directory; exclusive no-follow `0600` files; manual regular-file extraction; repeated path/type/link/count limits; reconstructed Git root-tree match; independent canonical tree SHA-256 | GitHub, DNS/TLS, Git SHA-1 identity, host tar/gzip/JSON/Python parsers, controller, and local filesystem remain trusted |
+| Archive/API traversal, substitution, or host overwrite | Private `0700` run directory; exclusive no-follow `0600` files; ordinary-path manual extraction; object-path complete tree reconstruction, stream-only codeload parsing, exact planned raw-blob repair, confined symlink resolution, workspace recheck; independent canonical tree SHA-256 | GitHub services, DNS/TLS, Git SHA-1 identity, host tar/gzip/JSON/Python parsers, controller, and local filesystem remain trusted |
 | Issue prompt injection | Issue labeled as hostile data; generator returns an exact three-field schema; issue commands never become controller argv | A model can still produce an irrelevant or deceptive test; prompt text is not a security boundary |
 | Candidate command/network behavior | AST defense in depth; dangerous imports/calls and aliases rejected; Docker has no network and receives no host secrets | Python static screening is incomplete by nature; loopback and in-container process behavior remain; Docker is the real boundary |
 | Shell/option injection | Controller and generator use argv arrays, not a shell; pytest node is controller-selected; leading-dash target rejected; replay ignores command fields | `--generator-command` is deliberately trusted user input; displayed commands should still be reviewed before copying |
 | Host filesystem access | No host bind mounts during verification; only a read-only controller-owned volume; read-only root; no devices or Docker/SSH socket | Docker daemon and container runtime are trusted; a container escape can reach their privileges |
 | Secret theft | Public unauthenticated intake; Docker env cleared and allowlisted; no token/socket mounts; Docker control env minimized; OpenAI key sent only to a fixed TLS endpoint after explicit provider selection | Built-in provider, DNS/TLS trust, trusted command generators, daemon, and host remain outside the hostile-repository boundary |
-| Verification network exfiltration | Docker `--network none`; no dependency setup in strict profile | Loopback remains; runtime/daemon escape bypasses this; trusted image build has network when invoked |
+| Verification network exfiltration | Docker `--network none`; any prepared dependency mount is read-only and installed in a separate offline phase | Loopback remains; runtime/daemon escape bypasses this; trusted image build has network; the dependency-download prototype has bridge egress without a network ACL and no completed executor |
 | CPU/RAM/PID/file/output exhaustion | Cgroup CPU/memory/PID limits, ulimits, bounded tmpfs/inodes, outer timeout, controller output cap, bounded Docker logs | Shared daemon/VM storage, staging helpers, kernel bugs, I/O pressure, and crash-left resources can still affect the host |
 | Terminal/clipboard injection | CSI, OSC, C1, CR, control, and format characters stripped from captured logs and CLI errors | Arbitrary report fields are data; other renderers must still escape Markdown, HTML, and rich-text markup |
 | Forged test result | Bounded stdout and optional defused XML; exact node name, one test/failure, symptom evidence, repeated fingerprint | Repository code runs in-process with pytest and can forge either evidence form; evidence is not attestation |
@@ -112,7 +112,7 @@ host disk, or kernel. tmpfs pages may be swapped by the Docker host/VM.
 
 - private GitHub repositories, GitHub Enterprise, authenticated source intake, and secrets in target
   tests;
-- arbitrary dependency installation or networked setup;
+- arbitrary dependency installation or repository-controlled networked setup; the reviewed wheel-only primitives are not a completed executor;
 - repositories requiring services, databases, browsers, GPUs, privileged syscalls, or writable
   source trees;
 - Windows containers or native Windows execution;
@@ -129,8 +129,9 @@ host disk, or kernel. tmpfs pages may be swapped by the Docker host/VM.
 Changes should preserve adversarial regressions for:
 
 - SSRF-shaped issue URLs and redirect attempts;
-- tar traversal, `.git` aliases, links, devices, FIFOs, bombs, path/case/Unicode collisions, and
-  archive-to-Git-tree mismatches;
+- tar traversal, `.git` aliases, links, devices, FIFOs, bombs, path/case/Unicode collisions,
+  truncated/inconsistent Git trees, unsafe symlink chains, unplanned Blob API fetches, and
+  archive-to-Git-object mismatches;
 - exclusive no-follow report and artifact I/O;
 - inert command fields in reports and generated JSON;
 - leading-dash pytest targets and controller-owned paths;

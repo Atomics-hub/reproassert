@@ -21,7 +21,7 @@ MAX_CUTOFF_BASIS_BYTES = 1024 * 1024
 MAX_TITLE_BYTES = 4 * 1024
 MAX_BODY_BYTES = 64 * 1024
 MAX_CANONICAL_BYTES = 144 * 1024
-SNAPSHOT_PRODUCER_REDERIVATION_IMPLEMENTED = False
+SNAPSHOT_PRODUCER_REDERIVATION_IMPLEMENTED = True
 
 _CASE_ID = re.compile(r"rk-v0\.2-[0-9]{3}")
 _REPOSITORY = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
@@ -318,10 +318,16 @@ def canonicalize_snapshot_receipt(
     if privacy.get("sensitive_material_excluded") is not True:
         raise _rejection("Privacy review did not exclude sensitive material.")
 
-    if SNAPSHOT_PRODUCER_REDERIVATION_IMPLEMENTED is not True and not allow_unverified_producer:
-        raise PolicyRejection(
-            "benchmark_snapshot_producer_unverified",
-            "Snapshot producer derivation is not independently implemented; scoring is blocked.",
+    if not allow_unverified_producer:
+        # Import lazily because the producer reuses the canonical byte representation defined here.
+        from reproassert.benchmark_snapshot_producer import (
+            verify_snapshot_receipt_derivation,
+        )
+
+        verify_snapshot_receipt_derivation(
+            root,
+            raw_issue_evidence_bytes=raw_receipt_bytes,
+            cutoff_basis_bytes=cutoff_basis_bytes,
         )
     return {"title": title, "body": body, "snapshot_sha256": snapshot_sha256}
 
