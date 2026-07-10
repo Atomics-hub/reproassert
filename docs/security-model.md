@@ -1,6 +1,6 @@
 # Security model
 
-Status: implemented local strict profile, reviewed 2026-07-09.
+Status: implemented local strict profile, reviewed 2026-07-10.
 
 ReproAssert separates a trusted controller from hostile repository execution. The boundary is a
 hardened Docker container; there is deliberately no native execution fallback. Static candidate
@@ -25,6 +25,20 @@ on the bundled fixed implementation. It also exercised the Docker policy inspect
 before verification. It does not prove resistance to container escapes, correctness on third-party
 repositories, Linux-host parity, CI behavior, semantic validity, or production readiness.
 
+On 2026-07-10, the standalone generator/evaluator canary also passed locally against the packaged
+image. Its positive container read an evaluator-only sentinel, its generator-view container had
+only `/workspace` and could not find the sentinel, the effective Docker policy matched the frozen
+config, and cleanup completed. This is mount-policy evidence, not proof against a Docker or kernel
+escape:
+
+```text
+reproassert sandbox isolation-canary --json-output
+accepted: true
+positive_control_passed: true
+negative_control_passed: true
+cleanup_succeeded: true
+```
+
 ## Trust boundaries
 
 | Component or data | Trust level | Treatment |
@@ -33,7 +47,8 @@ repositories, Linux-host parity, CI behavior, semantic validity, or production r
 | Built-in OpenAI provider client | Trusted controller path plus remote service | Runs only after explicit selection, sends bounded issue/source context to fixed `api.openai.com`, and reads only `OPENAI_API_KEY`. |
 | User-selected generator command | Trusted executable | Runs outside Docker with a cleared environment plus only explicitly passed variables. It receives issue and selected source context. |
 | GitHub issue title/body | Hostile data | Size-bounded, labeled as untrusted in the generator protocol, never interpreted as setup or shell instructions. |
-| Repository archive and files | Hostile data | Downloaded from a fixed host, manually extracted without links or special files, never executed on the host. |
+| Repository archive and files | Hostile data | Downloaded from a fixed host, manually extracted without links or special files, rewalked without following links, and bound to the commit root tree before generation. |
+| Draft historical snapshot receipt and raw evidence | Controller-only producer-development input | Structural fields and byte commitments are checked, but raw-history revision/redaction derivation is not implemented. Default projection fails closed as `benchmark_snapshot_producer_unverified`; the fixture override cannot satisfy a campaign prerequisite. Current live issues are never a historical fallback. |
 | Candidate test | Hostile executable code | Schema- and AST-screened, written only to a controller-selected test path, then executed only in Docker. |
 | Repository pytest configuration, imports, `sitecustomize`, and `conftest.py` | Hostile executable code | May run inside Docker during collection or verification. |
 | Pytest stdout and optional JUnit XML | Hostile evidence | Byte-bounded and terminal-sanitized. Optional XML is element-bounded and parsed with `defusedxml`; both forms are treated as forgeable. |
@@ -69,8 +84,8 @@ Current intake limits are:
 
 A requested branch, tag, or `HEAD` is resolved through GitHub's commits API to a lowercase 40-hex
 commit SHA. An already-full SHA is normalized locally so a large commit's API diff cannot exhaust
-the bounded metadata response; the subsequent bounded codeload request proves that archive is
-available. The source URL is built only from that exact SHA. Public unauthenticated GitHub
+the bounded metadata response. The controller then reads the root tree OID from GitHub's bounded
+Git-database commit endpoint and builds the codeload URL only from that exact SHA. Public unauthenticated GitHub
 repositories are the only implemented source type; private repositories and GitHub Enterprise are
 not supported.
 
@@ -83,10 +98,18 @@ Artifacts are opened relative to no-follow directory descriptors, created exclus
 The tar.gz archive is processed as a bounded stream. Extraction is manual; `extractall` is not used.
 Only directories and regular files are accepted. Absolute paths, empty or dot components, `..`,
 backslashes, control characters, symlinks, hardlinks, devices, FIFOs, duplicate paths, file/directory
-collisions, and case or Unicode-normalization collisions are rejected. Current extraction limits are
-20,000 members, 256 MiB declared unpacked data, 4,096 path bytes, and 255 bytes per component. File
+collisions, case or Unicode-normalization collisions, and canonical `.git` aliases are rejected.
+Current extraction limits independently cap 20,000 members, files, and directories, 64 MiB per
+file, 256 MiB declared unpacked data, 4,096 path bytes, and 255 bytes per component. File
 ownership, setuid, setgid, and archive directory modes are not restored; files become owner-only,
 with only the owner executable bit preserved.
+
+Before any source context or generator call, a second no-follow traversal revalidates file types,
+paths, link counts, device boundaries, resource limits, and filesystem snapshots. It reconstructs
+Git blob/tree object IDs from the accepted bytes and executable bits and requires the root tree to
+match the exact commit metadata. It also records a versioned canonical SHA-256 digest that includes
+directories, paths, modes, sizes, and content hashes. This still trusts GitHub, DNS/TLS, Git's SHA-1
+identity model, the controller host, and the local filesystem implementation.
 
 Source context generation reads regular text files without following final symlinks. It exposes at
 most 5,000 manifest names, 96 KiB of selected context, and 16 KiB from any one file. Names matching a

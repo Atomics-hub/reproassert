@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import click
 import pytest
@@ -12,6 +13,7 @@ import reproassert.cli as cli
 from reproassert.cli import main
 from reproassert.errors import ReproAssertError
 from reproassert.generator import OpenAIResponsesGenerator
+from reproassert.isolation_canary import IsolationCanaryResult
 from reproassert.sandbox import DockerDoctor
 from reproassert.workflow import WorkflowResult
 
@@ -94,6 +96,150 @@ def test_doctor_and_sandbox_build_render_ready(monkeypatch: object) -> None:
     assert "sha256:built" in build.output
 
 
+def test_sandbox_isolation_canary_renders_machine_receipt(monkeypatch: object) -> None:
+    receipt = IsolationCanaryResult(
+        version="reproassert-generator-evaluator-isolation-v1",
+        tool_version="0.1.0",
+        tool_git_sha=None,
+        policy_sha256="a" * 64,
+        config_sha256="b" * 64,
+        image_id="sha256:" + "c" * 64,
+        sentinel_sha256="d" * 64,
+        positive_control_passed=True,
+        negative_control_passed=True,
+        positive_mount_destinations=("/evaluator",),
+        generator_mount_destinations=("/workspace",),
+        process_env_names=("HOME",),
+        image_env_names_cleared=("PATH",),
+        cleanup_succeeded=True,
+    )
+    monkeypatch.setattr(cli, "DockerSandbox", ReadySandbox)  # type: ignore[attr-defined]
+    monkeypatch.setattr(cli, "run_isolation_canary", lambda _sandbox, **_kwargs: receipt)
+
+    result = CliRunner().invoke(main, ["sandbox", "isolation-canary", "--json-output"])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["accepted"] is True
+    assert payload["sentinel_sha256"] == "d" * 64
+    assert "canary-value" not in result.output
+
+
+def test_benchmark_source_commands_are_preparation_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text("{}")
+    root = tmp_path / "prepared"
+    captured: dict[str, object] = {}
+
+    def fake_prepare(
+        manifest_path: Path,
+        case_id: str,
+        output_root: Path,
+        **kwargs: object,
+    ) -> Path:
+        captured.update(
+            manifest=manifest_path,
+            case_id=case_id,
+            output_root=output_root,
+            kwargs=kwargs,
+        )
+        case_dir = output_root / case_id
+        case_dir.mkdir(mode=0o700)
+        receipt = case_dir / "benchmark-source-receipt.json"
+        receipt.write_text("{}")
+        return receipt
+
+    monkeypatch.setattr(cli, "prepare_source_case", fake_prepare)
+    prepared = CliRunner().invoke(
+        main,
+        [
+            "benchmark",
+            "prepare-source",
+            "rk-v0.1-001",
+            "--manifest",
+            str(manifest),
+            "--output-root",
+            str(root),
+            "--tool-git-sha",
+            "a" * 40,
+        ],
+    )
+
+    assert prepared.exit_code == 0, prepared.output
+    assert json.loads(prepared.output)["campaign_readiness_changed"] is False
+    assert captured["case_id"] == "rk-v0.1-001"
+    assert captured["kwargs"] == {"tool_git_sha": "a" * 40, "timeout_seconds": 15.0}
+
+    receipt_path = root / "rk-v0.1-001" / "benchmark-source-receipt.json"
+    monkeypatch.setattr(
+        cli,
+        "verify_source_receipt",
+        lambda *_args, **_kwargs: {
+            "source": {
+                "github_root_tree_oid": "b" * 40,
+                "archive": {"sha256": "c" * 64},
+                "attestation": {"tree_sha256": "d" * 64},
+            }
+        },
+    )
+    verified = CliRunner().invoke(
+        main,
+        [
+            "benchmark",
+            "verify-source",
+            str(receipt_path),
+            "--manifest",
+            str(manifest),
+            "--case-id",
+            "rk-v0.1-001",
+        ],
+    )
+    assert verified.exit_code == 0, verified.output
+    assert json.loads(verified.output)["verified"] is True
+
+
+def test_benchmark_source_index_discovers_the_frozen_layout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text("{}")
+    root = tmp_path / "receipts"
+    root.mkdir(mode=0o700)
+    output = root / "benchmark-source-index.json"
+    cases = tuple(SimpleNamespace(id=f"rk-v0.1-{index:03d}") for index in range(1, 21))
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(cli, "load_frozen_manifest", lambda _path: SimpleNamespace(cases=cases))
+
+    def fake_build(*args: object, **kwargs: object) -> Path:
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+        output.write_text("{}")
+        return output
+
+    monkeypatch.setattr(cli, "build_source_index", fake_build)
+    result = CliRunner().invoke(
+        main,
+        [
+            "benchmark",
+            "build-source-index",
+            "--manifest",
+            str(manifest),
+            "--receipts-root",
+            str(root),
+            "--tool-git-sha",
+            "e" * 40,
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["receipt_count"] == 20
+    args = captured["args"]
+    assert isinstance(args, tuple)
+    assert len(args[2]) == 20  # type: ignore[arg-type]
+
+
 def test_schema_command_prints_the_exact_bundled_report_schema() -> None:
     result = CliRunner().invoke(main, ["schema"])
 
@@ -106,6 +252,18 @@ def test_schema_command_prints_the_exact_bundled_report_schema() -> None:
         result.output
         == (Path(__file__).parents[1] / "schemas" / "reproassert-report.schema.json").read_text()
     )
+
+
+def test_schema_command_prints_preparation_receipt_schemas() -> None:
+    root = Path(__file__).parents[1]
+    for name, filename in (
+        ("benchmark-snapshot-receipt", "benchmark-snapshot-receipt.schema.json"),
+        ("benchmark-source-receipt", "benchmark-source-receipt.schema.json"),
+        ("benchmark-source-index", "benchmark-source-index.schema.json"),
+    ):
+        result = CliRunner().invoke(main, ["schema", "--name", name])
+        assert result.exit_code == 0, result.output
+        assert result.output == (root / "schemas" / filename).read_text()
 
 
 def test_doctor_returns_nonzero_when_boundary_missing(monkeypatch: object) -> None:

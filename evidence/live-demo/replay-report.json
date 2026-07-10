@@ -28,20 +28,20 @@
       "--color=no",
       "--tb=short",
       "--basetemp=/tmp/pytest",
-      "--junitxml=/tmp/3d321ba464c1469ebcd1d62a14f5bcd3.xml",
+      "--junitxml=/tmp/1d2a4f8d50f94f48904860ec04884719.xml",
       "--collect-only",
       "-q",
       "tests/reproassert/test_issue_1.py::test_issue_1_reproduction"
     ],
-    "duration_seconds": 3.0367325419792905,
+    "duration_seconds": 0.4588402919471264,
     "exit_code": 0,
     "oom_killed": false,
-    "output": "tests/reproassert/test_issue_1.py::test_issue_1_reproduction\n\n1 test collected in 0.02s\n",
+    "output": "tests/reproassert/test_issue_1.py::test_issue_1_reproduction\n\n1 test collected in 0.00s\n",
     "output_truncated": false,
     "phase": "collect",
     "timed_out": false
   },
-  "created_at": "2026-07-09T21:04:09.069616Z",
+  "created_at": "2026-07-10T12:52:43.154851Z",
   "failure_fingerprint": "3c2f8b1273619743a9966fd3ce5f56cafc804b41eff6e7812970041491d1784b",
   "generation": {
     "adapter": "replay"
@@ -56,7 +56,8 @@
     "Repository code can forge in-process pytest detail; results are bounded evidence, not proof.",
     "Docker shares a kernel on Linux; Docker Desktop shares its VM across containers.",
     "This strict profile performs no dependency installation and may reject valid repositories.",
-    "Generation metadata covers only the candidate that reached verification; provider work spent on aborted generation attempts is not recorded here."
+    "Generation metadata covers only the candidate that reached verification; provider work spent on aborted generation attempts is not recorded here.",
+    "Commit-to-tree provenance trusts GitHub's API, codeload service, TLS, and Git's SHA-1 object identity; an independent source mirror is not consulted."
   ],
   "outcome": "repeatable_base_failure",
   "policy": {
@@ -94,7 +95,7 @@
     "display_command": "reproassert replay evidence/live-demo/replay-report.json",
     "execution_policy": "controller_regenerates_argv_and_ignores_report_commands"
   },
-  "report_id": "78031c426188439584d74d77d8374845",
+  "report_id": "998c5d27ba384b8f8a19043c573c064b",
   "runner": {
     "backend": "docker",
     "controller": {
@@ -105,7 +106,7 @@
       "python_version": "3.10.19"
     },
     "image": "reproassert-sandbox:0.1.0",
-    "image_id": "sha256:462f4f536636fca90d9b8cb83b0d51f0d2f9602204d4be87124fc47a6ea946db",
+    "image_id": "sha256:13056bbb9118ac7038b9554c1ab44695e33281243fe4f61a2d59eb91ce033f47",
     "server_version": "29.3.1",
     "verification_environment": {
       "machine": "aarch64",
@@ -131,14 +132,14 @@
         "--color=no",
         "--tb=short",
         "--basetemp=/tmp/pytest",
-        "--junitxml=/tmp/2476f5924b1b4c70926c94ed0c90b686.xml",
+        "--junitxml=/tmp/9d6ef50028214ca2bd5fd951ec591267.xml",
         "-q",
         "tests/reproassert/test_issue_1.py::test_issue_1_reproduction"
       ],
-      "duration_seconds": 2.8384443330578506,
+      "duration_seconds": 0.4517419580370188,
       "exit_code": 1,
       "oom_killed": false,
-      "output": "F                                                                        [100%]\n=================================== FAILURES ===================================\n__________________________ test_issue_1_reproduction ___________________________\ntests/reproassert/test_issue_1.py:5: in test_issue_1_reproduction\n    assert slugify(\"Alpha  Beta\") == \"alpha-beta\", \"duplicate separators remain\"\nE   AssertionError: duplicate separators remain\nE   assert 'alpha--beta' == 'alpha-beta'\nE     \nE     - alpha-beta\nE     + alpha--beta\nE     ?       +\n=========================== short test summary info ============================\nFAILED tests/reproassert/test_issue_1.py::test_issue_1_reproduction - Asserti...\n1 failed in 0.06s\n",
+      "output": "F                                                                        [100%]\n=================================== FAILURES ===================================\n__________________________ test_issue_1_reproduction ___________________________\ntests/reproassert/test_issue_1.py:5: in test_issue_1_reproduction\n    assert slugify(\"Alpha  Beta\") == \"alpha-beta\", \"duplicate separators remain\"\nE   AssertionError: duplicate separators remain\nE   assert 'alpha--beta' == 'alpha-beta'\nE     \nE     - alpha-beta\nE     + alpha--beta\nE     ?       +\n=========================== short test summary info ============================\nFAILED tests/reproassert/test_issue_1.py::test_issue_1_reproduction - Asserti...\n1 failed in 0.01s\n",
       "output_truncated": false,
       "phase": "verify_1",
       "timed_out": false
@@ -157,14 +158,14 @@
         "--color=no",
         "--tb=short",
         "--basetemp=/tmp/pytest",
-        "--junitxml=/tmp/0886436fce7a4665a6315ca46b228151.xml",
+        "--junitxml=/tmp/30779b50290f478894b225cb4808df8c.xml",
         "-q",
         "tests/reproassert/test_issue_1.py::test_issue_1_reproduction"
       ],
-      "duration_seconds": 5.603625499992631,
+      "duration_seconds": 0.45392829191405326,
       "exit_code": 1,
       "oom_killed": false,
-      "output": "F                                                                        [100%]\n=================================== FAILURES ===================================\n__________________________ test_issue_1_reproduction ___________________________\ntests/reproassert/test_issue_1.py:5: in test_issue_1_reproduction\n    assert slugify(\"Alpha  Beta\") == \"alpha-beta\", \"duplicate separators remain\"\nE   AssertionError: duplicate separators remain\nE   assert 'alpha--beta' == 'alpha-beta'\nE     \nE     - alpha-beta\nE     + alpha--beta\nE     ?       +\n=========================== short test summary info ============================\nFAILED tests/reproassert/test_issue_1.py::test_issue_1_reproduction - Asserti...\n1 failed in 0.06s\n",
+      "output": "F                                                                        [100%]\n=================================== FAILURES ===================================\n__________________________ test_issue_1_reproduction ___________________________\ntests/reproassert/test_issue_1.py:5: in test_issue_1_reproduction\n    assert slugify(\"Alpha  Beta\") == \"alpha-beta\", \"duplicate separators remain\"\nE   AssertionError: duplicate separators remain\nE   assert 'alpha--beta' == 'alpha-beta'\nE     \nE     - alpha-beta\nE     + alpha--beta\nE     ?       +\n=========================== short test summary info ============================\nFAILED tests/reproassert/test_issue_1.py::test_issue_1_reproduction - Asserti...\n1 failed in 0.01s\n",
       "output_truncated": false,
       "phase": "verify_2",
       "timed_out": false
@@ -183,14 +184,14 @@
         "--color=no",
         "--tb=short",
         "--basetemp=/tmp/pytest",
-        "--junitxml=/tmp/4a6def72061b483a958299a279f7bdce.xml",
+        "--junitxml=/tmp/a07e97e5c2194c44a47266abf12d2e1d.xml",
         "-q",
         "tests/reproassert/test_issue_1.py::test_issue_1_reproduction"
       ],
-      "duration_seconds": 3.179688207921572,
+      "duration_seconds": 0.4569127089343965,
       "exit_code": 1,
       "oom_killed": false,
-      "output": "F                                                                        [100%]\n=================================== FAILURES ===================================\n__________________________ test_issue_1_reproduction ___________________________\ntests/reproassert/test_issue_1.py:5: in test_issue_1_reproduction\n    assert slugify(\"Alpha  Beta\") == \"alpha-beta\", \"duplicate separators remain\"\nE   AssertionError: duplicate separators remain\nE   assert 'alpha--beta' == 'alpha-beta'\nE     \nE     - alpha-beta\nE     + alpha--beta\nE     ?       +\n=========================== short test summary info ============================\nFAILED tests/reproassert/test_issue_1.py::test_issue_1_reproduction - Asserti...\n1 failed in 0.06s\n",
+      "output": "F                                                                        [100%]\n=================================== FAILURES ===================================\n__________________________ test_issue_1_reproduction ___________________________\ntests/reproassert/test_issue_1.py:5: in test_issue_1_reproduction\n    assert slugify(\"Alpha  Beta\") == \"alpha-beta\", \"duplicate separators remain\"\nE   AssertionError: duplicate separators remain\nE   assert 'alpha--beta' == 'alpha-beta'\nE     \nE     - alpha-beta\nE     + alpha--beta\nE     ?       +\n=========================== short test summary info ============================\nFAILED tests/reproassert/test_issue_1.py::test_issue_1_reproduction - Asserti...\n1 failed in 0.01s\n",
       "output_truncated": false,
       "phase": "verify_3",
       "timed_out": false
@@ -199,10 +200,18 @@
   "schema_version": "1.0",
   "source": {
     "archive_sha256": "658000779f5e08250f544eead60643e070b4d157abec3ff061ef9b9a7428e0a7",
+    "archive_size_bytes": 273666,
+    "directory_count": 33,
+    "executable_file_count": 2,
     "file_count": 97,
+    "git_metadata_absent": true,
+    "git_tree_oid": "300cc74d24f40e5830a3ca031761c02ee782c8a1",
+    "member_count": 130,
     "repository_url": "https://github.com/Atomics-hub/reproassert",
     "requested_ref": "7b03e8f7f4b7312f1785e7853892efa123e48699",
     "sha": "7b03e8f7f4b7312f1785e7853892efa123e48699",
+    "tree_attestation_algorithm": "reproassert-source-tree-v1",
+    "tree_sha256": "495cf09280f83d976f355a5155c1cbbc92c7dc76819302dcadadd4d16feefc24",
     "unpacked_bytes": 1049092
   },
   "tool": {

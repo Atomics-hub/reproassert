@@ -2,7 +2,11 @@
 
 > The test before the fix.
 
-ReproAssert takes a canonical public GitHub issue, resolves an exact repository commit, and checks one pytest candidate inside a locked-down Docker verifier. It produces a test-only patch, a replay command, and a machine-readable evidence report. It does not edit production code or claim that a repeated failure is semantically correct.
+ReproAssert takes a canonical public GitHub issue, resolves an exact repository commit, proves the
+downloaded files reconstruct that commit's Git root tree, and checks one pytest candidate inside a
+locked-down Docker verifier. It produces a test-only patch, a replay command, and a machine-readable
+evidence report. It does not edit production code or claim that a repeated failure is semantically
+correct.
 
 ```console
 reproassert issue https://github.com/OWNER/REPOSITORY/issues/123 \
@@ -21,7 +25,12 @@ rejected -> collected -> repeatable_base_failure  [current public ceiling]
 
 An accepted CLI run means one generated test collected and produced the same issue-marked failure on the pinned buggy base across the configured reruns. It does **not** mean the test passes on a fix, captures the issue's true semantics, or has been accepted by a maintainer.
 
-**Benchmark status:** v0.1 is frozen at 20 historical cases and has **0 scored result rows**. That is a preregistration status, not a success result. A [public self-owned issue run](evidence/live-demo/README.md) verifies the exact-SHA intake, generation, sandbox, report, and replay path; the local differential fixture also reaches `pass_on_base` on the fixed source. Neither is part of the 20-case score.
+**Benchmark status:** v0.1 is frozen at 20 historical cases and has **0 scored result rows**. Its
+historical-snapshot cutoff is not yet supported by trusted receipts, so the campaign remains blocked
+with zero authorized spend; see the [provenance erratum](benchmarks/v0.1/ERRATA.md). A
+[public self-owned issue run](evidence/live-demo/README.md) verifies the existing exact-SHA intake,
+generation, sandbox, report, and replay path; the local differential fixture also reaches
+`pass_on_base` on the fixed source. Neither is part of the 20-case score.
 
 ## Install from source
 
@@ -43,9 +52,16 @@ uv sync
 
 uv run reproassert sandbox build
 uv run reproassert doctor
+uv run reproassert sandbox isolation-canary
 ```
 
-`sandbox build` creates the pinned `reproassert-sandbox:0.1.0` image from the packaged Dockerfile and hash-locked pytest requirements. `doctor` checks the Docker CLI, engine, image, and confirms that native fallback is disabled.
+`sandbox build` creates the pinned `reproassert-sandbox:0.1.0` image from the packaged Dockerfile and
+hash-locked pytest requirements. `doctor` checks the Docker CLI, engine, image, and confirms that
+native fallback is disabled. `sandbox isolation-canary` runs a standalone synthetic mount-policy
+check: its positive container reads an evaluator-only sentinel while its separate generator-view
+container must not mount or find it. This is not yet the production benchmark generator path and
+does not flip campaign readiness. Add `--json-output` for its bounded receipt and optionally
+`--tool-git-sha` to bind an exact controller revision without invoking Git.
 
 Without uv:
 
@@ -188,7 +204,8 @@ By default, run directories live under `$XDG_STATE_HOME/reproassert/runs` or `~/
 
 - report and tool schema versions;
 - canonical issue metadata and issue-body hash;
-- requested ref, resolved SHA, source-archive hash, and bounded source facts;
+- requested ref, resolved SHA, archive hash/size, Git root-tree OID, independent canonical tree
+  SHA-256, no-Git-metadata result, and bounded source facts;
 - candidate content, path, hash, expected symptom, rationale, and generator kind;
 - Docker server, pinned image and image ID, effective strict policy, and resource limits;
 - collection and repeated-run exit codes, timings, bounded output, and failure fingerprint;
@@ -210,7 +227,11 @@ reproassert schema
 uv run reproassert replay ~/.local/state/reproassert/runs/issue-.../reproassert-report.json
 ```
 
-Replay validates the bounded subset of report fields it consumes: schema version, issue/repository relationship, exact source SHA, candidate fields and hash, strict candidate contract, and repeat count. It does not perform whole-document JSON Schema validation. It fetches the recorded exact SHA again and regenerates controller-owned pytest arguments. Command-looking fields inside a report are inert data and are never executed.
+Replay validates the bounded subset of report fields it consumes. It fetches the exact commit
+metadata and archive again, requires the archive hash to match, reconstructs the Git tree, compares
+the recorded canonical tree digest when present, and regenerates controller-owned pytest arguments.
+It does not execute command-looking report fields or treat whole-document JSON Schema validation as
+an execution boundary.
 
 Replay creates a new run directory, patch, report, and classification. It is evidence of a fresh bounded rerun, not proof that the issue is semantically reproduced.
 
@@ -232,7 +253,12 @@ See [sandbox profiles](docs/sandbox-profiles.md) and [architecture](docs/archite
 
 ## Security model
 
-Repository code, issue text, source files, candidate tests, dependencies, and report files are untrusted. Verification uses Docker with no network, read-only mounts, non-root execution, dropped capabilities, resource limits, output bounds, and cleanup. The controller passes no host secrets, SSH agent, browser state, cloud credentials, proxy variables, Docker socket, or unrelated host directory into the verifier.
+Repository code, issue text, source files, candidate tests, dependencies, and report files are
+untrusted. Archive paths/types are checked twice and the accepted files must reconstruct the exact
+commit tree before generation. Verification uses Docker with no network, read-only mounts, non-root
+execution, dropped capabilities, resource limits, output bounds, and cleanup. The controller passes
+no host secrets, SSH agent, browser state, cloud credentials, proxy variables, Docker socket, or
+unrelated host directory into the verifier.
 
 Important residual risks remain: Docker shares a kernel on Linux or a VM boundary on Docker Desktop; a malicious pytest process can try to forge in-process test detail; and a user-selected generator adapter runs outside the repository sandbox. Treat `repeatable_base_failure` as bounded evidence, not proof.
 
@@ -241,6 +267,22 @@ Read [Security policy](SECURITY.md), [Security model](docs/security-model.md), [
 ## Evaluation status
 
 The historical v0.1 cohort is preregistered at 20 cases across 10 repositories. [`results.jsonl`](benchmarks/v0.1/results.jsonl) is currently empty. The primary future benchmark metric requires hidden-fix execution, causal controls, and blinded semantic review; the current CLI alone cannot establish it.
+
+The v0.1 historical cutoff is currently blocked by its provenance erratum. The
+[v0.2 draft](benchmarks/v0.2-draft/README.md) defines a narrower, independently observable
+pre-solution-PR-publication receipt contract, but it is not a frozen cohort or a result.
+
+Exact-source preparation is available independently and makes no model call:
+
+```console
+reproassert benchmark prepare-source rk-v0.1-018 \
+  --manifest benchmarks/v0.1/manifest.json \
+  --tool-git-sha <exact-controller-git-sha>
+```
+
+See the [benchmark preparation commands](benchmarks/v0.1/README.md#exact-source-preparation-no-model-call).
+They preserve archives in private user state, re-fetch commit metadata during verification, and
+never change campaign readiness automatically.
 
 - [Benchmark freeze and status](benchmarks/v0.1/README.md)
 - [Evaluation protocol and claim ladder](docs/evaluation.md)

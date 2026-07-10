@@ -67,9 +67,18 @@ class ArchiveDownload:
 
 
 @dataclass(frozen=True)
+class CommitTreeMetadata:
+    commit_sha: str
+    tree_sha: str
+
+
+@dataclass(frozen=True)
 class ExtractionLimits:
     max_archive_bytes: int = MAX_ARCHIVE_BYTES
+    max_members: int = 20_000
     max_files: int = 20_000
+    max_directories: int = 20_000
+    max_file_bytes: int = 64 * 1024 * 1024
     max_unpacked_bytes: int = 256 * 1024 * 1024
     max_path_bytes: int = 4096
     max_component_bytes: int = 255
@@ -77,7 +86,10 @@ class ExtractionLimits:
     def __post_init__(self) -> None:
         for field_name in (
             "max_archive_bytes",
+            "max_members",
             "max_files",
+            "max_directories",
+            "max_file_bytes",
             "max_unpacked_bytes",
             "max_path_bytes",
             "max_component_bytes",
@@ -93,6 +105,7 @@ class ExtractedArchive:
     member_count: int
     file_count: int
     unpacked_bytes: int
+    directory_count: int = 0
 
 
 def parse_issue_url(url: str) -> GitHubIssueLocation:
@@ -230,6 +243,41 @@ def resolve_full_commit_sha(
     return resolve_commit_sha(owner, repo, requested_ref, timeout_seconds=timeout_seconds)
 
 
+def fetch_commit_tree_metadata(
+    owner: str,
+    repo: str,
+    sha: str,
+    *,
+    timeout_seconds: float = DEFAULT_HTTP_TIMEOUT_SECONDS,
+) -> CommitTreeMetadata:
+    """Fetch the root tree OID for one exact Git commit without requesting its diff."""
+
+    _validate_repository_parts(owner, repo)
+    normalized_sha = _validate_full_sha(sha)
+    api_url = f"https://{GITHUB_API_HOST}/repos/{owner}/{repo}/git/commits/{normalized_sha}"
+    payload = _fetch_json(
+        api_url,
+        expected_host=GITHUB_API_HOST,
+        max_bytes=MAX_COMMIT_JSON_BYTES,
+        timeout_seconds=timeout_seconds,
+    )
+    returned_sha = payload.get("sha")
+    tree = payload.get("tree")
+    if (
+        not isinstance(returned_sha, str)
+        or _FULL_SHA_RE.fullmatch(returned_sha) is None
+        or returned_sha.lower() != normalized_sha
+        or not isinstance(tree, dict)
+    ):
+        raise PolicyRejection(
+            "github_response_mismatch", "GitHub returned different commit metadata"
+        )
+    tree_sha = tree.get("sha")
+    if not isinstance(tree_sha, str) or _FULL_SHA_RE.fullmatch(tree_sha) is None:
+        raise PolicyRejection("invalid_git_tree", "GitHub did not return a full root tree OID")
+    return CommitTreeMetadata(commit_sha=normalized_sha, tree_sha=tree_sha.lower())
+
+
 def download_source_archive(
     owner: str,
     repo: str,
@@ -338,13 +386,14 @@ def _extract_archive(
 ) -> ExtractedArchive:
     member_count = 0
     file_count = 0
+    directory_paths: set[str] = set()
     unpacked_bytes = 0
     seen_members: set[str] = set()
     path_kinds: dict[str, str] = {}
     canonical_paths: dict[str, str] = {}
     top_levels: set[str] = set()
 
-    max_tar_bytes = limits.max_unpacked_bytes + limits.max_files * 4096 + 1024 * 1024
+    max_tar_bytes = limits.max_unpacked_bytes + limits.max_members * 4096 + 1024 * 1024
     with open_regular_file(archive_path) as compressed_stream:
         if os.fstat(compressed_stream.fileno()).st_size > limits.max_archive_bytes:
             raise PolicyRejection(
@@ -355,9 +404,9 @@ def _extract_archive(
             with tarfile.open(fileobj=cast(BinaryIO, bounded_stream), mode="r|") as archive:
                 for member in archive:
                     member_count += 1
-                    if member_count > limits.max_files:
+                    if member_count > limits.max_members:
                         raise PolicyRejection(
-                            "archive_too_many_files", "Source archive contains too many members"
+                            "archive_too_many_members", "Source archive contains too many members"
                         )
 
                     is_directory = member.isdir()
@@ -370,6 +419,15 @@ def _extract_archive(
                     parts = _validate_member_path(member.name, limits)
                     relative_path = "/".join(parts)
                     top_levels.add(parts[0])
+                    directory_depth = len(parts) if is_directory else len(parts) - 1
+                    directory_paths.update(
+                        "/".join(parts[:depth]) for depth in range(1, directory_depth + 1)
+                    )
+                    if len(directory_paths) > limits.max_directories:
+                        raise PolicyRejection(
+                            "archive_too_many_directories",
+                            "Source archive contains too many directories",
+                        )
                     _register_member_path(
                         parts,
                         is_directory=is_directory,
@@ -389,6 +447,16 @@ def _extract_archive(
                             "invalid_archive",
                             f"Archive member has a negative size: {relative_path}",
                         )
+                    if member.size > limits.max_file_bytes:
+                        raise PolicyRejection(
+                            "archive_file_too_large",
+                            f"Source archive member exceeds the per-file limit: {relative_path}",
+                        )
+                    file_count += 1
+                    if file_count > limits.max_files:
+                        raise PolicyRejection(
+                            "archive_too_many_files", "Source archive contains too many files"
+                        )
                     unpacked_bytes += member.size
                     if unpacked_bytes > limits.max_unpacked_bytes:
                         raise PolicyRejection(
@@ -406,7 +474,6 @@ def _extract_archive(
                         _copy_exact(cast(BinaryIO, source), output, member.size, relative_path)
                     safe_mode = 0o700 if member.mode & 0o111 else 0o600
                     os.chmod(target, safe_mode, follow_symlinks=False)
-                    file_count += 1
 
     source_root = destination
     if len(top_levels) == 1:
@@ -419,6 +486,7 @@ def _extract_archive(
         member_count=member_count,
         file_count=file_count,
         unpacked_bytes=unpacked_bytes,
+        directory_count=len(directory_paths),
     )
 
 
@@ -474,6 +542,11 @@ def _validate_member_path(name: str, limits: ExtractionLimits) -> tuple[str, ...
     parts = tuple(normalized_name.split("/"))
     if any(part in {"", ".", ".."} for part in parts):
         raise PolicyRejection("archive_unsafe_path", f"Archive member path is unsafe: {name!r}")
+    if any(_canonical_archive_component(part) == ".git" for part in parts):
+        raise PolicyRejection(
+            "archive_git_metadata",
+            f"Source archive contains forbidden Git metadata: {name!r}",
+        )
     if re.fullmatch(r"[A-Za-z]:.*", parts[0]):
         raise PolicyRejection("archive_unsafe_path", f"Archive member path is unsafe: {name!r}")
 
@@ -487,6 +560,10 @@ def _validate_member_path(name: str, limits: ExtractionLimits) -> tuple[str, ...
     ):
         raise PolicyRejection("archive_path_too_long", f"Archive member path is too long: {name!r}")
     return parts
+
+
+def _canonical_archive_component(component: str) -> str:
+    return unicodedata.normalize("NFKC", component).casefold().rstrip(". ")
 
 
 def _register_member_path(
@@ -643,7 +720,7 @@ def _fetch_json(
         content = _read_bounded(response, max_bytes=max_bytes, code="github_json_too_large")
     try:
         payload = json.loads(content, parse_constant=_reject_json_constant)
-    except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as exc:
+    except (json.JSONDecodeError, UnicodeDecodeError, ValueError, RecursionError) as exc:
         raise PolicyRejection("invalid_github_response", "GitHub returned invalid JSON") from exc
     if not isinstance(payload, dict):
         raise PolicyRejection("invalid_github_response", "GitHub JSON root must be an object")

@@ -1,0 +1,221 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Atomics-hub/reproassert/blob/main/schemas/benchmark-source-receipt.schema.json",
+  "title": "ReproAssert exact benchmark source receipt",
+  "description": "Deterministic preparation-only evidence binding one frozen benchmark case to an exact GitHub archive and reconstructed Git tree. This receipt does not imply campaign readiness or a scored attempt.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "benchmark_version",
+    "case",
+    "manifest",
+    "source",
+    "acquisition",
+    "tool"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "benchmark_version": { "const": "0.1.0" },
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "repository", "issue_url", "issue_number", "base_sha"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^rk-v0\\.1-[0-9]{3}$" },
+        "repository": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+        },
+        "issue_url": {
+          "type": "string",
+          "pattern": "^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/issues/[1-9][0-9]*$"
+        },
+        "issue_number": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807 },
+        "base_sha": { "$ref": "#/$defs/git_oid" }
+      }
+    },
+    "manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["raw_sha256", "case_entry_sha256"],
+      "properties": {
+        "raw_sha256": { "$ref": "#/$defs/sha256" },
+        "case_entry_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository_url",
+        "base_sha",
+        "github_root_tree_oid",
+        "archive",
+        "attestation"
+      ],
+      "properties": {
+        "repository_url": {
+          "type": "string",
+          "pattern": "^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+        },
+        "base_sha": { "$ref": "#/$defs/git_oid" },
+        "github_root_tree_oid": { "$ref": "#/$defs/git_oid" },
+        "archive": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "sha256",
+            "bytes",
+            "extracted_member_count",
+            "extracted_file_count",
+            "extracted_directory_count",
+            "extracted_bytes"
+          ],
+          "properties": {
+            "path": { "const": "source.tar.gz" },
+            "sha256": { "$ref": "#/$defs/sha256" },
+            "bytes": { "$ref": "#/$defs/nonnegative_integer" },
+            "extracted_member_count": { "$ref": "#/$defs/nonnegative_integer" },
+            "extracted_file_count": { "$ref": "#/$defs/nonnegative_integer" },
+            "extracted_directory_count": { "$ref": "#/$defs/nonnegative_integer" },
+            "extracted_bytes": { "$ref": "#/$defs/nonnegative_integer" }
+          }
+        },
+        "attestation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "algorithm",
+            "tree_sha256",
+            "reconstructed_git_tree_oid",
+            "expected_git_tree_oid",
+            "member_count",
+            "file_count",
+            "directory_count",
+            "total_bytes",
+            "executable_count",
+            "git_metadata_absent"
+          ],
+          "properties": {
+            "algorithm": { "const": "reproassert-source-tree-v1" },
+            "tree_sha256": { "$ref": "#/$defs/sha256" },
+            "reconstructed_git_tree_oid": { "$ref": "#/$defs/git_oid" },
+            "expected_git_tree_oid": { "$ref": "#/$defs/git_oid" },
+            "member_count": { "$ref": "#/$defs/nonnegative_integer" },
+            "file_count": { "$ref": "#/$defs/nonnegative_integer" },
+            "directory_count": { "$ref": "#/$defs/nonnegative_integer" },
+            "total_bytes": { "$ref": "#/$defs/nonnegative_integer" },
+            "executable_count": { "$ref": "#/$defs/nonnegative_integer" },
+            "git_metadata_absent": { "const": true }
+          }
+        }
+      }
+    },
+    "acquisition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policy", "policy_sha256", "runtime"],
+      "properties": {
+        "policy": { "$ref": "#/$defs/acquisition_policy" },
+        "policy_sha256": {
+          "const": "95218b983abb009f425c2c49ec0bfecdf8b01402d6354f06ecfd3b6822efa712"
+        },
+        "runtime": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["http_timeout_seconds"],
+          "properties": {
+            "http_timeout_seconds": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 300
+            }
+          }
+        }
+      }
+    },
+    "tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "git_sha"],
+      "properties": {
+        "name": { "const": "reproassert" },
+        "version": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]{0,99}$"
+        },
+        "git_sha": { "$ref": "#/$defs/git_oid" }
+      }
+    }
+  },
+  "$defs": {
+    "acquisition_policy": {
+      "const": {
+        "archive": {
+          "format": "tar.gz",
+          "max_compressed_bytes": 67108864,
+          "preserved_filename": "source.tar.gz",
+          "source": "codeload_exact_full_40_hex_sha"
+        },
+        "attestation": {
+          "algorithm": "reproassert-source-tree-v1",
+          "canonical_file_modes": "100644_or_100755",
+          "git_metadata": "reject_nfkc_casefold_rstrip_dot_space",
+          "hardlinks": "reject",
+          "limits": {
+            "max_component_bytes": 255,
+            "max_directories": 20000,
+            "max_file_bytes": 67108864,
+            "max_files": 20000,
+            "max_members": 20000,
+            "max_path_bytes": 4096,
+            "max_total_bytes": 268435456
+          },
+          "mount_boundaries": "reject",
+          "path_collisions": "reject_case_and_unicode_nfc",
+          "special_files": "reject",
+          "symlinks": "reject",
+          "tree_binding": "reconstructed_oid_equals_fresh_github_root_tree_oid"
+        },
+        "extraction": {
+          "git_metadata": "reject_nfkc_casefold_rstrip_dot_space",
+          "implementation": "manual_streaming_tar_gz_v1",
+          "limits": {
+            "max_archive_bytes": 67108864,
+            "max_component_bytes": 255,
+            "max_directories": 20000,
+            "max_file_bytes": 67108864,
+            "max_files": 20000,
+            "max_members": 20000,
+            "max_path_bytes": 4096,
+            "max_unpacked_bytes": 268435456
+          },
+          "links": "reject",
+          "member_types": "regular_files_and_directories_only",
+          "path_collisions": "reject_exact_case_and_unicode_nfc",
+          "special_files": "reject"
+        },
+        "id": "github-exact-source-v1",
+        "network": {
+          "archive_host": "codeload.github.com",
+          "authentication": "none",
+          "commit_metadata_host": "api.github.com",
+          "commit_metadata_max_bytes": 524288,
+          "proxy_environment": "disabled",
+          "redirects": "rejected",
+          "scheme": "https",
+          "tls_minimum": "1.2"
+        }
+      }
+    },
+    "git_oid": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "nonnegative_integer": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9223372036854775807
+    }
+  }
+}

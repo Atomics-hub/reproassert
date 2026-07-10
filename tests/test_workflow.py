@@ -15,11 +15,13 @@ from reproassert.errors import PolicyRejection
 from reproassert.generator import StaticGenerator
 from reproassert.intake import (
     ArchiveDownload,
+    CommitTreeMetadata,
     ExtractedArchive,
     IssueDocument,
 )
 from reproassert.models import ClaimLevel, IssueRef
 from reproassert.sandbox import DockerDoctor, DockerRunResult, SandboxPolicy
+from reproassert.source_attestation import SOURCE_TREE_ALGORITHM, SourceTreeAttestation
 from reproassert.verifier import VerificationOutcome
 from reproassert.workflow import WorkflowResult
 
@@ -87,6 +89,21 @@ def accepted_outcome() -> VerificationOutcome:
     )
 
 
+def source_attestation() -> SourceTreeAttestation:
+    return SourceTreeAttestation(
+        algorithm=SOURCE_TREE_ALGORITHM,
+        tree_sha256="e" * 64,
+        reconstructed_git_tree_oid="f" * 40,
+        expected_git_tree_oid="f" * 40,
+        member_count=3,
+        file_count=2,
+        directory_count=1,
+        total_bytes=100,
+        executable_count=0,
+        git_metadata_absent=True,
+    )
+
+
 @pytest.mark.parametrize(
     "metadata",
     [
@@ -123,8 +140,8 @@ def test_verify_and_write_creates_patch_and_authoritative_report(
         requested_ref="HEAD",
         sha="a" * 40,
         archive_sha256="c" * 64,
-        file_count=2,
-        unpacked_bytes=100,
+        archive_size_bytes=90,
+        source_attestation=source_attestation(),
         source_root=source,
         candidate=candidate(),
         generator_name="fixture",
@@ -138,10 +155,17 @@ def test_verify_and_write_creates_patch_and_authoritative_report(
         (Path(__file__).parents[1] / "schemas" / "reproassert-report.schema.json").read_text()
     )
     Draft202012Validator.check_schema(schema)
-    Draft202012Validator(schema).validate(report)
+    validator = Draft202012Validator(schema)
+    validator.validate(report)
+    partial_source = json.loads(json.dumps(report))
+    partial_source["source"].pop("directory_count")
+    assert list(validator.iter_errors(partial_source))
     assert result.outcome == "repeatable_base_failure"
     assert result.patch_path.read_text().startswith("diff --git")
     assert report["source"]["sha"] == "a" * 40
+    assert report["source"]["tree_sha256"] == "e" * 64
+    assert report["source"]["git_tree_oid"] == "f" * 40
+    assert report["source"]["git_metadata_absent"] is True
     assert report["candidate"]["generator"] == "fixture"
     assert report["generation"] == {"adapter": "fixture"}
     assert report["runner"]["image_id"] == "sha256:image"
@@ -190,6 +214,11 @@ def test_issue_workflow_orchestrates_bounded_inputs_and_cleans(
     monkeypatch.setattr(workflow, "resolve_commit_sha", lambda *_args: "a" * 40)
     monkeypatch.setattr(
         workflow,
+        "fetch_commit_tree_metadata",
+        lambda *_args: CommitTreeMetadata("a" * 40, "f" * 40),
+    )
+    monkeypatch.setattr(
+        workflow,
         "download_source_archive",
         lambda *_args, **_kwargs: ArchiveDownload(
             archive_file, hashlib.sha256(b"archive").hexdigest(), 7
@@ -198,7 +227,10 @@ def test_issue_workflow_orchestrates_bounded_inputs_and_cleans(
     monkeypatch.setattr(
         workflow,
         "extract_source_archive",
-        lambda *_args, **_kwargs: ExtractedArchive(extraction, source_root, 2, 1, 10),
+        lambda *_args, **_kwargs: ExtractedArchive(extraction, source_root, 3, 2, 100, 1),
+    )
+    monkeypatch.setattr(
+        workflow, "attest_source_tree", lambda *_args, **_kwargs: source_attestation()
     )
     monkeypatch.setattr(
         workflow, "build_source_context", lambda *_args, **_kwargs: SimpleNamespace()
@@ -231,8 +263,8 @@ def test_replay_workflow_regenerates_from_schema_not_commands(
         requested_ref="HEAD",
         sha="a" * 40,
         archive_sha256="c" * 64,
-        file_count=2,
-        unpacked_bytes=10,
+        archive_size_bytes=7,
+        source_attestation=source_attestation(),
         candidate=candidate(),
         relative_path="tests/reproassert/test_issue_3.py",
         generator_name="fixture",
@@ -278,8 +310,16 @@ def test_replay_workflow_regenerates_from_schema_not_commands(
     )
     monkeypatch.setattr(
         workflow,
+        "fetch_commit_tree_metadata",
+        lambda *_args: CommitTreeMetadata("a" * 40, "f" * 40),
+    )
+    monkeypatch.setattr(
+        workflow,
         "extract_source_archive",
-        lambda *_args, **_kwargs: ExtractedArchive(extracted_dir, source, 2, 1, 10),
+        lambda *_args, **_kwargs: ExtractedArchive(extracted_dir, source, 3, 2, 100, 1),
+    )
+    monkeypatch.setattr(
+        workflow, "attest_source_tree", lambda *_args, **_kwargs: source_attestation()
     )
     monkeypatch.setattr(workflow, "verify_candidate", lambda **_kwargs: accepted_outcome())
 
@@ -293,9 +333,26 @@ def test_replay_workflow_regenerates_from_schema_not_commands(
     Draft202012Validator(schema).validate(replay_report)
     assert replay_report["issue"]["title"] == "Fixture mismatch"
     assert replay_report["issue"]["body_sha256"] == "d" * 64
+    assert replay_report["source"]["tree_sha256"] == "e" * 64
     assert sandbox.cleaned >= 1
     assert not archive.exists()
     assert not extracted_dir.exists()
+
+    mismatch_archive = tmp_path / "mismatched-archive.tar.gz"
+    mismatch_archive.write_bytes(b"changed archive")
+    monkeypatch.setattr(
+        workflow,
+        "download_source_archive",
+        lambda *_args, **_kwargs: ArchiveDownload(mismatch_archive, "0" * 64, 15),
+    )
+    with pytest.raises(PolicyRejection) as mismatch:
+        workflow.run_replay_workflow(
+            input_path,
+            sandbox=sandbox,  # type: ignore[arg-type]
+            run_base=tmp_path / "mismatch-runs",
+        )
+    assert mismatch.value.code == "source_archive_mismatch"
+    assert not mismatch_archive.exists()
 
 
 def test_candidate_from_file_rejects_symlink_and_bad_encoding(tmp_path: Path) -> None:

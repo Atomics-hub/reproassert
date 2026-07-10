@@ -1,6 +1,7 @@
 # Public self-fixture evidence
 
-Status: verified on 2026-07-09. This is infrastructure proof, not benchmark or demand evidence.
+Status: verified on 2026-07-09 and replayed through the stronger source attestation on 2026-07-10.
+This is infrastructure proof, not benchmark or demand evidence.
 
 The public issue [Atomics-hub/reproassert#1](https://github.com/Atomics-hub/reproassert/issues/1)
 describes the intentionally buggy slug fixture at exact public commit
@@ -39,6 +40,11 @@ uv run --frozen --all-extras reproassert replay \
   `duplicate separators remain` symptom.
 - Replay verification: three of three fresh runs produced the same normalized failure fingerprint,
   `3c2f8b1273619743a9966fd3ce5f56cafc804b41eff6e7812970041491d1784b`.
+- The 2026-07-10 backward-compatible replay required the codeload archive SHA-256
+  `658000779f5e08250f544eead60643e070b4d157abec3ff061ef9b9a7428e0a7`, reconstructed Git root
+  tree `300cc74d24f40e5830a3ca031761c02ee782c8a1`, and recorded canonical tree SHA-256
+  `495cf09280f83d976f355a5155c1cbbc92c7dc76819302dcadadd4d16feefc24`. It found 97 files,
+  33 directories, and no Git metadata before restaging the candidate.
 - Verification ran in Python 3.12.13 / pytest 9.1.1 on the pinned Docker image with networking off,
   a read-only root and workspace, UID/GID 65532, dropped capabilities, and bounded resources.
 

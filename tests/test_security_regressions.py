@@ -39,6 +39,7 @@ def _valid_report() -> dict[str, object]:
         "source": {
             "repository_url": "https://github.com/owner/repo",
             "sha": "a" * 40,
+            "archive_sha256": "c" * 64,
         },
         "candidate": {
             "test_content": content,

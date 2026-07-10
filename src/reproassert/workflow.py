@@ -23,6 +23,7 @@ from reproassert.intake import (
     ExtractionLimits,
     download_source_archive,
     extract_source_archive,
+    fetch_commit_tree_metadata,
     fetch_issue,
     parse_issue_url,
     resolve_commit_sha,
@@ -35,6 +36,7 @@ from reproassert.safeio import (
     write_text_exclusive,
 )
 from reproassert.sandbox import DockerRunResult, DockerSandbox
+from reproassert.source_attestation import SourceTreeAttestation, attest_source_tree
 from reproassert.verifier import VerificationOutcome, verify_candidate
 
 
@@ -64,10 +66,16 @@ def run_issue_workflow(
     try:
         issue = fetch_issue(issue_url)
         sha = resolve_commit_sha(issue.ref.owner, issue.ref.repo, requested_ref)
+        commit_tree = fetch_commit_tree_metadata(issue.ref.owner, issue.ref.repo, sha)
         archive = download_source_archive(issue.ref.owner, issue.ref.repo, sha, run_dir)
         archive_path = archive.path
         extracted = extract_source_archive(archive.path, run_dir, limits=ExtractionLimits())
         extraction_path = extracted.destination
+        source_attestation = attest_source_tree(
+            extracted.source_root,
+            expected_git_tree_oid=commit_tree.tree_sha,
+        )
+        _reconcile_extraction(extracted.file_count, extracted.unpacked_bytes, source_attestation)
         context = build_source_context(
             extracted.source_root, issue_title=issue.ref.title, issue_body=issue.body
         )
@@ -94,8 +102,8 @@ def run_issue_workflow(
             requested_ref=requested_ref,
             sha=sha,
             archive_sha256=archive.sha256,
-            file_count=extracted.file_count,
-            unpacked_bytes=extracted.unpacked_bytes,
+            archive_size_bytes=archive.size_bytes,
+            source_attestation=source_attestation,
             source_root=extracted.source_root,
             candidate=candidate,
             generator_name=generator.name,
@@ -124,12 +132,31 @@ def run_replay_workflow(
     archive_path: Path | None = None
     extraction_path: Path | None = None
     try:
+        commit_tree = fetch_commit_tree_metadata(spec.issue.owner, spec.issue.repo, spec.source_sha)
+        if spec.git_tree_oid is not None and spec.git_tree_oid != commit_tree.tree_sha:
+            raise PolicyRejection(
+                "source_tree_metadata_mismatch",
+                "Recorded Git tree does not match the exact commit metadata.",
+            )
         archive = download_source_archive(
             spec.issue.owner, spec.issue.repo, spec.source_sha, run_dir
         )
         archive_path = archive.path
+        if archive.sha256 != spec.archive_sha256:
+            raise PolicyRejection(
+                "source_archive_mismatch", "Downloaded source archive differs from the report."
+            )
         extracted = extract_source_archive(archive.path, run_dir)
         extraction_path = extracted.destination
+        source_attestation = attest_source_tree(
+            extracted.source_root,
+            expected_git_tree_oid=commit_tree.tree_sha,
+        )
+        _reconcile_extraction(extracted.file_count, extracted.unpacked_bytes, source_attestation)
+        if spec.tree_sha256 is not None and spec.tree_sha256 != source_attestation.tree_sha256:
+            raise PolicyRejection(
+                "source_tree_digest_mismatch", "Extracted source tree differs from the report."
+            )
         return _verify_and_write(
             run_dir=run_dir,
             report_id=report_id,
@@ -140,8 +167,8 @@ def run_replay_workflow(
             requested_ref=spec.source_sha,
             sha=spec.source_sha,
             archive_sha256=archive.sha256,
-            file_count=extracted.file_count,
-            unpacked_bytes=extracted.unpacked_bytes,
+            archive_size_bytes=archive.size_bytes,
+            source_attestation=source_attestation,
             source_root=extracted.source_root,
             candidate=spec.candidate,
             generator_name="replay",
@@ -189,8 +216,8 @@ def _verify_and_write(
     requested_ref: str,
     sha: str,
     archive_sha256: str,
-    file_count: int,
-    unpacked_bytes: int,
+    archive_size_bytes: int,
+    source_attestation: SourceTreeAttestation,
     source_root: Path,
     candidate: ValidatedCandidate,
     generator_name: str,
@@ -229,8 +256,8 @@ def _verify_and_write(
         requested_ref=requested_ref,
         sha=sha,
         archive_sha256=archive_sha256,
-        file_count=file_count,
-        unpacked_bytes=unpacked_bytes,
+        archive_size_bytes=archive_size_bytes,
+        source_attestation=source_attestation,
         candidate=candidate,
         relative_path=relative_path,
         generator_name=generator_name,
@@ -265,8 +292,8 @@ def _report_dict(
     requested_ref: str,
     sha: str,
     archive_sha256: str,
-    file_count: int,
-    unpacked_bytes: int,
+    archive_size_bytes: int,
+    source_attestation: SourceTreeAttestation,
     candidate: ValidatedCandidate,
     relative_path: str,
     generator_name: str,
@@ -298,8 +325,16 @@ def _report_dict(
             "requested_ref": requested_ref,
             "sha": sha,
             "archive_sha256": archive_sha256,
-            "file_count": file_count,
-            "unpacked_bytes": unpacked_bytes,
+            "archive_size_bytes": archive_size_bytes,
+            "tree_attestation_algorithm": source_attestation.algorithm,
+            "tree_sha256": source_attestation.tree_sha256,
+            "git_tree_oid": source_attestation.reconstructed_git_tree_oid,
+            "member_count": source_attestation.member_count,
+            "file_count": source_attestation.file_count,
+            "directory_count": source_attestation.directory_count,
+            "unpacked_bytes": source_attestation.total_bytes,
+            "executable_file_count": source_attestation.executable_count,
+            "git_metadata_absent": source_attestation.git_metadata_absent,
         },
         "candidate": {
             "relative_path": relative_path,
@@ -378,8 +413,24 @@ def _report_dict(
                 "Generation metadata covers only the candidate that reached verification; "
                 "provider work spent on aborted generation attempts is not recorded here."
             ),
+            (
+                "Commit-to-tree provenance trusts GitHub's API, codeload service, TLS, and Git's "
+                "SHA-1 object identity; an independent source mirror is not consulted."
+            ),
         ],
     }
+
+
+def _reconcile_extraction(
+    extracted_file_count: int,
+    extracted_bytes: int,
+    attestation: SourceTreeAttestation,
+) -> None:
+    if extracted_file_count != attestation.file_count or extracted_bytes != attestation.total_bytes:
+        raise PolicyRejection(
+            "source_extraction_mismatch",
+            "Archive extraction counts do not match the attested source tree.",
+        )
 
 
 def _docker_result(result: DockerRunResult) -> dict[str, object]:

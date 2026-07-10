@@ -63,6 +63,34 @@
     "source": {
       "type": "object",
       "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "anyOf": [
+              { "required": ["archive_size_bytes"] },
+              { "required": ["tree_attestation_algorithm"] },
+              { "required": ["tree_sha256"] },
+              { "required": ["git_tree_oid"] },
+              { "required": ["member_count"] },
+              { "required": ["directory_count"] },
+              { "required": ["executable_file_count"] },
+              { "required": ["git_metadata_absent"] }
+            ]
+          },
+          "then": {
+            "required": [
+              "archive_size_bytes",
+              "tree_attestation_algorithm",
+              "tree_sha256",
+              "git_tree_oid",
+              "member_count",
+              "directory_count",
+              "executable_file_count",
+              "git_metadata_absent"
+            ]
+          }
+        }
+      ],
       "required": [
         "repository_url",
         "requested_ref",
@@ -79,8 +107,24 @@
         "requested_ref": { "type": "string", "minLength": 1, "maxLength": 256 },
         "sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
         "archive_sha256": { "$ref": "#/$defs/sha256" },
+        "archive_size_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 67108864
+        },
+        "tree_attestation_algorithm": { "const": "reproassert-source-tree-v1" },
+        "tree_sha256": { "$ref": "#/$defs/sha256" },
+        "git_tree_oid": { "$ref": "#/$defs/sha1" },
+        "member_count": { "type": "integer", "minimum": 0, "maximum": 20000 },
         "file_count": { "type": "integer", "minimum": 0, "maximum": 20000 },
-        "unpacked_bytes": { "type": "integer", "minimum": 0, "maximum": 268435456 }
+        "directory_count": { "type": "integer", "minimum": 0, "maximum": 20000 },
+        "unpacked_bytes": { "type": "integer", "minimum": 0, "maximum": 268435456 },
+        "executable_file_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 20000
+        },
+        "git_metadata_absent": { "const": true }
       }
     },
     "candidate": {
@@ -239,6 +283,7 @@
     }
   },
   "$defs": {
+    "sha1": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
     "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
     "tokenCount": {
       "type": "integer",

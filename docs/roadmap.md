@@ -40,17 +40,22 @@ Before the first release is described as usable:
 - keep CLI help, README examples, security docs, and report schema synchronized; and
 - record known failures rather than widening the claim.
 
-## Next: run benchmark v0.1 without moving the goalposts
+## Next: finish preparation without moving the goalposts
 
-The 20-case historical cohort is frozen and [`results.jsonl`](../benchmarks/v0.1/results.jsonl) is empty. The next evidence slice is to implement and operate the evaluator described in [evaluation.md](evaluation.md):
+The 20-case v0.1 cohort is frozen and
+[`results.jsonl`](../benchmarks/v0.1/results.jsonl) is empty. Its historical snapshot cutoff is not
+currently supportable from trusted evidence, so v0.1 remains blocked rather than being silently
+reinterpreted. The next evidence slice is:
 
-1. prepare per-repository dependencies through bounded, recorded, hashable images;
-2. preserve the generator/hidden-fix boundary;
-3. submit exactly one candidate per frozen case;
-4. run interleaved repeated base and hidden-fixed verification;
-5. apply declared causal controls and blinded semantic review;
-6. append every terminal result, including failures and infrastructure errors; and
-7. publish attributable cost and wall time without excluding failed attempts.
+1. finish and independently verify exact-source receipts for every eligible case;
+2. preregister a corrected v0.2 historical-snapshot contract and cohort before inference;
+3. prepare per-repository dependencies through bounded, recorded, hashable images;
+4. preserve and canary-test the generator/hidden-fix boundary;
+5. submit exactly one candidate per newly frozen case;
+6. run interleaved repeated base and hidden-fixed verification;
+7. apply declared causal controls and blinded semantic review;
+8. append every terminal result, including failures and infrastructure errors; and
+9. publish attributable cost and wall time without excluding failed attempts.
 
 Continuation requires at least 6/20 semantic-valid cases, median warm runtime below 10 minutes, and attributable cost at or below roughly $1 per semantic-valid reproduction or a measured path there. Passing supports further validation only; it does not establish a population rate or state of the art.
 
