@@ -1,0 +1,458 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atomics-hub.github.io/reproassert/schemas/benchmark-summary.schema.json",
+  "title": "ReproAssert benchmark summary",
+  "description": "Deterministic scored-benchmark projection. Smoke events are input metadata only and never contribute to metrics.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "benchmark_version",
+    "inputs",
+    "completeness",
+    "outcomes",
+    "claims",
+    "primary_metric",
+    "runtime",
+    "cost",
+    "usage",
+    "quality"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "benchmark_version": { "const": "0.1.0" },
+    "inputs": { "$ref": "#/$defs/inputs" },
+    "completeness": { "$ref": "#/$defs/completeness" },
+    "outcomes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attempt_finished_counts", "case_terminal_counts"],
+      "properties": {
+        "attempt_finished_counts": { "$ref": "#/$defs/outcomeCounts" },
+        "case_terminal_counts": { "$ref": "#/$defs/outcomeCounts" }
+      }
+    },
+    "claims": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["L0", "L1", "L2"],
+      "properties": {
+        "L0": { "$ref": "#/$defs/nonNegativeInteger" },
+        "L1": { "$ref": "#/$defs/nonNegativeInteger" },
+        "L2": { "$ref": "#/$defs/nonNegativeInteger" }
+      }
+    },
+    "primary_metric": { "$ref": "#/$defs/primaryMetric" },
+    "runtime": { "$ref": "#/$defs/runtime" },
+    "cost": { "$ref": "#/$defs/cost" },
+    "usage": { "$ref": "#/$defs/usage" },
+    "quality": { "$ref": "#/$defs/quality" }
+  },
+  "$defs": {
+    "nonNegativeInteger": { "type": "integer", "minimum": 0 },
+    "nonNegativeNumber": { "type": "number", "minimum": 0 },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "caseId": { "type": "string", "pattern": "^rk-v0\\.1-[0-9]{3}$" },
+    "caseIds": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/caseId" }
+    },
+    "identifierIds": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{2,127}$"
+      }
+    },
+    "rate": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "maximum": 1
+    },
+    "nullableNonNegativeNumber": {
+      "type": ["number", "null"],
+      "minimum": 0
+    },
+    "nullableNonNegativeInteger": {
+      "type": ["integer", "null"],
+      "minimum": 0
+    },
+    "fileMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bytes", "sha256"],
+      "properties": {
+        "bytes": { "$ref": "#/$defs/nonNegativeInteger" },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "ledgerMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bytes", "sha256", "event_count", "head_event_sha256"],
+      "properties": {
+        "bytes": { "$ref": "#/$defs/nonNegativeInteger" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "event_count": { "$ref": "#/$defs/nonNegativeInteger" },
+        "head_event_sha256": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/sha256" }
+          ]
+        }
+      }
+    },
+    "inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["manifest", "results", "ledgers"],
+      "properties": {
+        "manifest": { "$ref": "#/$defs/fileMetadata" },
+        "results": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["bytes", "sha256", "row_count"],
+          "properties": {
+            "bytes": { "$ref": "#/$defs/nonNegativeInteger" },
+            "sha256": { "$ref": "#/$defs/sha256" },
+            "row_count": { "$ref": "#/$defs/nonNegativeInteger" }
+          }
+        },
+        "ledgers": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["scored", "smoke"],
+          "properties": {
+            "scored": { "$ref": "#/$defs/ledgerMetadata" },
+            "smoke": { "$ref": "#/$defs/ledgerMetadata" }
+          }
+        }
+      }
+    },
+    "completeness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "complete",
+        "expected_case_count",
+        "attempted_case_count",
+        "terminal_case_count",
+        "result_case_count",
+        "missing_case_ids",
+        "open_attempt_ids",
+        "pending_infrastructure_case_ids",
+        "result_only_case_ids",
+        "terminal_only_case_ids",
+        "unmatched_model_call_ids",
+        "missing_cost_attempt_ids",
+        "missing_model_cost_call_ids",
+        "smoke_event_count_excluded"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "preregistered_no_results",
+            "in_progress",
+            "pending_infrastructure",
+            "complete"
+          ]
+        },
+        "complete": { "type": "boolean" },
+        "expected_case_count": { "const": 20 },
+        "attempted_case_count": { "$ref": "#/$defs/nonNegativeInteger" },
+        "terminal_case_count": { "$ref": "#/$defs/nonNegativeInteger" },
+        "result_case_count": { "$ref": "#/$defs/nonNegativeInteger" },
+        "missing_case_ids": { "$ref": "#/$defs/caseIds" },
+        "open_attempt_ids": { "$ref": "#/$defs/identifierIds" },
+        "pending_infrastructure_case_ids": { "$ref": "#/$defs/caseIds" },
+        "result_only_case_ids": { "$ref": "#/$defs/caseIds" },
+        "terminal_only_case_ids": { "$ref": "#/$defs/caseIds" },
+        "unmatched_model_call_ids": { "$ref": "#/$defs/identifierIds" },
+        "missing_cost_attempt_ids": { "$ref": "#/$defs/identifierIds" },
+        "missing_model_cost_call_ids": { "$ref": "#/$defs/identifierIds" },
+        "smoke_event_count_excluded": { "$ref": "#/$defs/nonNegativeInteger" }
+      }
+    },
+    "outcomeCounts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "benchmark_infrastructure_error",
+        "no_output",
+        "invalid_patch",
+        "policy_violation",
+        "setup_failure",
+        "collect_failure",
+        "pass_on_base",
+        "wrong_failure",
+        "flaky_base",
+        "fail_on_fix",
+        "flaky_fix",
+        "plausible_f2p_semantic_invalid",
+        "semantic_valid"
+      ],
+      "properties": {
+        "benchmark_infrastructure_error": { "$ref": "#/$defs/nonNegativeInteger" },
+        "no_output": { "$ref": "#/$defs/nonNegativeInteger" },
+        "invalid_patch": { "$ref": "#/$defs/nonNegativeInteger" },
+        "policy_violation": { "$ref": "#/$defs/nonNegativeInteger" },
+        "setup_failure": { "$ref": "#/$defs/nonNegativeInteger" },
+        "collect_failure": { "$ref": "#/$defs/nonNegativeInteger" },
+        "pass_on_base": { "$ref": "#/$defs/nonNegativeInteger" },
+        "wrong_failure": { "$ref": "#/$defs/nonNegativeInteger" },
+        "flaky_base": { "$ref": "#/$defs/nonNegativeInteger" },
+        "fail_on_fix": { "$ref": "#/$defs/nonNegativeInteger" },
+        "flaky_fix": { "$ref": "#/$defs/nonNegativeInteger" },
+        "plausible_f2p_semantic_invalid": { "$ref": "#/$defs/nonNegativeInteger" },
+        "semantic_valid": { "$ref": "#/$defs/nonNegativeInteger" }
+      }
+    },
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operator", "threshold", "status", "not_evaluable_reasons"],
+      "properties": {
+        "operator": { "type": "string", "enum": [">=", "<", "<="] },
+        "threshold": { "$ref": "#/$defs/nonNegativeInteger" },
+        "status": { "type": "string", "enum": ["pass", "fail", "not_evaluable"] },
+        "not_evaluable_reasons": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "confidenceInterval": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["method", "confidence", "lower", "upper"],
+          "properties": {
+            "method": { "const": "clopper_pearson_exact" },
+            "confidence": { "const": 0.95 },
+            "lower": { "type": "number", "minimum": 0, "maximum": 1 },
+            "upper": { "type": "number", "minimum": 0, "maximum": 1 }
+          }
+        }
+      ]
+    },
+    "primaryMetric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "numerator",
+        "denominator",
+        "rate",
+        "confidence_interval_95_exact",
+        "gate"
+      ],
+      "properties": {
+        "id": { "const": "semantic_valid_success_at_1" },
+        "numerator": { "$ref": "#/$defs/nonNegativeInteger" },
+        "denominator": { "const": 20 },
+        "rate": { "$ref": "#/$defs/rate" },
+        "confidence_interval_95_exact": { "$ref": "#/$defs/confidenceInterval" },
+        "gate": { "$ref": "#/$defs/gate" }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scope",
+        "included_phases",
+        "excluded_phases",
+        "known_case_count",
+        "unknown_case_count",
+        "unknown_case_ids",
+        "total_observed_ms",
+        "p50_ms",
+        "p90_ms",
+        "percentile_method",
+        "gate"
+      ],
+      "properties": {
+        "scope": { "const": "all_scored_attempts_warm_machine_phases" },
+        "included_phases": {
+          "const": [
+            "preflight",
+            "issue_snapshot",
+            "generation",
+            "candidate_policy",
+            "collection",
+            "base_verify",
+            "fixed_verify",
+            "causal_controls"
+          ]
+        },
+        "excluded_phases": {
+          "const": ["dependency_prep", "semantic_review", "gold_unblind"]
+        },
+        "known_case_count": { "$ref": "#/$defs/nonNegativeInteger" },
+        "unknown_case_count": { "$ref": "#/$defs/nonNegativeInteger" },
+        "unknown_case_ids": { "$ref": "#/$defs/caseIds" },
+        "total_observed_ms": { "$ref": "#/$defs/nonNegativeInteger" },
+        "p50_ms": { "$ref": "#/$defs/nullableNonNegativeNumber" },
+        "p90_ms": { "$ref": "#/$defs/nullableNonNegativeNumber" },
+        "percentile_method": { "const": "linear_interpolation_r7" },
+        "gate": { "$ref": "#/$defs/gate" }
+      }
+    },
+    "costStatusCounts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["measured", "estimated", "unknown", "zero_verified"],
+      "properties": {
+        "measured": { "$ref": "#/$defs/nonNegativeInteger" },
+        "estimated": { "$ref": "#/$defs/nonNegativeInteger" },
+        "unknown": { "$ref": "#/$defs/nonNegativeInteger" },
+        "zero_verified": { "$ref": "#/$defs/nonNegativeInteger" }
+      }
+    },
+    "cost": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "currency",
+        "unit",
+        "entry_count",
+        "status_counts",
+        "unknown_entry_count",
+        "estimated_entry_count",
+        "by_category_microusd",
+        "by_attribution_microusd",
+        "recorded_amount_total_microusd",
+        "attributable_total_microusd",
+        "attempted_case_count",
+        "fully_measured",
+        "cost_per_attempted_case_microusd",
+        "cost_per_semantic_valid_microusd",
+        "ratio_rounding",
+        "gate"
+      ],
+      "properties": {
+        "currency": { "const": "USD" },
+        "unit": { "const": "microUSD" },
+        "entry_count": { "$ref": "#/$defs/nonNegativeInteger" },
+        "status_counts": { "$ref": "#/$defs/costStatusCounts" },
+        "unknown_entry_count": { "$ref": "#/$defs/nonNegativeInteger" },
+        "estimated_entry_count": { "$ref": "#/$defs/nonNegativeInteger" },
+        "by_category_microusd": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "model_inference",
+            "sandbox_compute",
+            "artifact_transfer",
+            "paid_storage",
+            "dependency_prep",
+            "human_review"
+          ],
+          "properties": {
+            "model_inference": { "$ref": "#/$defs/nonNegativeInteger" },
+            "sandbox_compute": { "$ref": "#/$defs/nonNegativeInteger" },
+            "artifact_transfer": { "$ref": "#/$defs/nonNegativeInteger" },
+            "paid_storage": { "$ref": "#/$defs/nonNegativeInteger" },
+            "dependency_prep": { "$ref": "#/$defs/nonNegativeInteger" },
+            "human_review": { "$ref": "#/$defs/nonNegativeInteger" }
+          }
+        },
+        "by_attribution_microusd": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["scored", "cold_prep_excluded", "human_labor_excluded"],
+          "properties": {
+            "scored": { "$ref": "#/$defs/nonNegativeInteger" },
+            "cold_prep_excluded": { "$ref": "#/$defs/nonNegativeInteger" },
+            "human_labor_excluded": { "$ref": "#/$defs/nonNegativeInteger" }
+          }
+        },
+        "recorded_amount_total_microusd": { "$ref": "#/$defs/nonNegativeInteger" },
+        "attributable_total_microusd": { "$ref": "#/$defs/nonNegativeInteger" },
+        "attempted_case_count": { "$ref": "#/$defs/nonNegativeInteger" },
+        "fully_measured": { "type": "boolean" },
+        "cost_per_attempted_case_microusd": {
+          "$ref": "#/$defs/nullableNonNegativeInteger"
+        },
+        "cost_per_semantic_valid_microusd": {
+          "$ref": "#/$defs/nullableNonNegativeInteger"
+        },
+        "ratio_rounding": { "const": "nearest_microusd_half_up" },
+        "gate": { "$ref": "#/$defs/gate" }
+      }
+    },
+    "usageStatusCounts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reported", "estimated", "unknown", "not_applicable"],
+      "properties": {
+        "reported": { "$ref": "#/$defs/nonNegativeInteger" },
+        "estimated": { "$ref": "#/$defs/nonNegativeInteger" },
+        "unknown": { "$ref": "#/$defs/nonNegativeInteger" },
+        "not_applicable": { "$ref": "#/$defs/nonNegativeInteger" }
+      }
+    },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model_call_started_count",
+        "model_call_finished_count",
+        "unknown_call_count",
+        "estimated_call_count",
+        "status_counts",
+        "tokens"
+      ],
+      "properties": {
+        "model_call_started_count": { "$ref": "#/$defs/nonNegativeInteger" },
+        "model_call_finished_count": { "$ref": "#/$defs/nonNegativeInteger" },
+        "unknown_call_count": { "$ref": "#/$defs/nonNegativeInteger" },
+        "estimated_call_count": { "$ref": "#/$defs/nonNegativeInteger" },
+        "status_counts": { "$ref": "#/$defs/usageStatusCounts" },
+        "tokens": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "input_tokens",
+            "cached_input_tokens",
+            "output_tokens",
+            "total_tokens"
+          ],
+          "properties": {
+            "input_tokens": { "$ref": "#/$defs/nonNegativeInteger" },
+            "cached_input_tokens": { "$ref": "#/$defs/nonNegativeInteger" },
+            "output_tokens": { "$ref": "#/$defs/nonNegativeInteger" },
+            "total_tokens": { "$ref": "#/$defs/nonNegativeInteger" }
+          }
+        }
+      }
+    },
+    "quality": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "plausible_f2p_count",
+        "semantic_valid_count",
+        "semantic_false_reproduction_count",
+        "semantic_false_reproduction_denominator",
+        "semantic_false_reproduction_rate"
+      ],
+      "properties": {
+        "plausible_f2p_count": { "$ref": "#/$defs/nonNegativeInteger" },
+        "semantic_valid_count": { "$ref": "#/$defs/nonNegativeInteger" },
+        "semantic_false_reproduction_count": { "$ref": "#/$defs/nonNegativeInteger" },
+        "semantic_false_reproduction_denominator": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "semantic_false_reproduction_rate": { "$ref": "#/$defs/rate" }
+      }
+    }
+  }
+}

@@ -7,9 +7,18 @@ The benchmark asks one narrow question: given only a public issue snapshot and t
 ## Contents
 
 - `manifest.json` freezes 20 issue/base-commit pairs across 10 Python repositories.
+- `campaign.json` is the deny-by-default scored-run freeze. It currently blocks inference and
+  enforces a zero paid-provider budget until the missing evaluator prerequisites and an explicit
+  spend authorization (or a declared offline generator) exist.
 - `results.jsonl` is the append-only ledger for scored case records. It is intentionally empty at freeze time.
+- `ledger/smoke-events.jsonl` and `ledger/scored-events.jsonl` are separate canonical,
+  hash-chained all-attempt event ledgers. Both are intentionally empty.
+- `summary.json` is the deterministic aggregate projection; gates remain not evaluable at 0/20.
 - [`../../schemas/benchmark-case.schema.json`](../../schemas/benchmark-case.schema.json) defines public case metadata.
 - [`../../schemas/benchmark-run.schema.json`](../../schemas/benchmark-run.schema.json) defines an auditable scored run record.
+- [`../../schemas/benchmark-event.schema.json`](../../schemas/benchmark-event.schema.json) and
+  [`../../schemas/benchmark-campaign.schema.json`](../../schemas/benchmark-campaign.schema.json)
+  define the event and run-freeze contracts.
 - [`../../docs/evaluation.md`](../../docs/evaluation.md) defines the evaluator, leakage controls, outcomes, metrics, and claim limits.
 
 Validate the freeze without installing ReproAssert or any third-party package:
@@ -18,7 +27,18 @@ Validate the freeze without installing ReproAssert or any third-party package:
 python3 scripts/validate_benchmark.py
 ```
 
-The validator checks the exact cohort size, neutral unique case IDs, canonical issue URLs, full base SHAs, declared aggregate counts, five-case smoke subset, absence of evaluator-only oracle data, and any JSONL result rows.
+Regenerate the deterministic projection to stdout (the validator also requires byte identity with
+the checked-in `summary.json`):
+
+```console
+python3 scripts/summarize_benchmark.py
+```
+
+The validator checks the exact cohort, campaign and schema contracts, result cross-field evidence,
+both event hash chains and lifecycles, spend/timeout caps, event-to-result reconciliation, the
+deterministic summary, and absence of evaluator-only oracle data. Pull-request CI additionally
+requires old ledger/result bytes to remain an exact prefix and the frozen manifest to remain
+byte-identical. It does not make a network or model request.
 
 ## Cohort and smoke subset
 
@@ -36,16 +56,60 @@ The five smoke cases are only for exercising the harness before a scored run:
 
 Smoke outcomes do not replace the complete 20-case score.
 
+### Public smoke lane and scored lane
+
+The smoke lane is public, non-scored harness proof. Before the scored campaign it is limited to
+deterministic offline fixtures, archive/setup checks, and control artifacts—no live candidate model
+may touch a frozen case. A real model output on one of these five issues would be retained as that
+case's sole attempt rather than discarded as harness smoke. Smoke may never expose fixed snapshots,
+production patches, developer tests, semantic rubrics, or scored verdicts to the generator.
+
+The scored lane starts only after the tool, prompt template, request builder, image, limits, attempt
+budget, and evaluator are frozen. Each call separately records the hash of its case-specific rendered
+input; that digest is expected to differ across issues and is never mistaken for template drift.
+Each of the 20 cases then runs fresh without feedback from another case or adaptive tuning from its
+result. The five smoke IDs remain members of the frozen cohort; deterministic harness activity does
+not change the denominator.
+
 ## Freeze and oracle boundary
 
 The public manifest contains only neutral case IDs, repository names, issue URLs, buggy base SHAs, difficulty buckets, titles, and smoke flags. It deliberately excludes fixing pull requests, fixed commits, production patches, developer tests, oracle rubrics, and control patches. Those evaluator-only materials must never be mounted into the generation sandbox.
 
-After dependency preparation, generation runs with network access disabled. The generator receives the frozen pre-fix issue title/body and base tree only. Issue comments and links back to the fixing pull request are excluded. One candidate is selected without consulting the hidden fix.
+The trusted preparation controller resolves the declared full base SHA and produces a content-addressed source archive from that exact commit. The generation workspace is extracted from that archive, not mounted from a clone: it contains no `.git` directory or file, remote configuration, refs, reflogs, object database, alternate worktree metadata, or commits after the base SHA. The archive digest and extracted-tree digest are recorded, and the fixed source archive remains evaluator-only.
 
-The cohort is immutable for v0.1. A failed case may not be replaced. A factual correction requires a documented erratum; any change that can affect a score requires a new benchmark version. Result rows are append-only and must retain failures and infrastructure errors.
+After dependency preparation, generation runs with network access disabled. The generator receives the frozen pre-fix issue title/body and exact-SHA base archive only. Issue comments and links back to the fixing pull request are excluded. One candidate is selected without consulting the hidden fix.
+
+The cohort is immutable for v0.1. A failed case may not be replaced. A factual correction requires a documented erratum; any change that can affect a score requires a new benchmark version. Every
+attempt and infrastructure error remains in the append-only event ledger. `results.jsonl` receives
+one derived counted projection per case only after its trace is terminal and its cost is known; it
+cannot contain best-picked reruns under new run IDs.
+
+## Campaign, attempt, and candidate accounting
+
+A **campaign** is the single scored run for one frozen case under its predeclared total time,
+model-call, and cost limits. An **attempt** is one started model trajectory inside that campaign. A
+**candidate** is a decoded, policy-checkable patch produced by that attempt; exactly one candidate
+may be submitted for scoring.
+
+The immutable campaign trace retains every started attempt and any submitted candidate, including
+no-output, rejected, timed-out, setup-failed, and otherwise unsuccessful work. Provider text and raw
+error bodies are not published; an undecodable output is represented by its bounded classification,
+safe response-ID hash when available, usage state, and full attributable cost. The public result row
+summarizes the trace. Attempt accounting starts before a provider request or local model generation;
+stopping before a usable patch does not remove its latency or spend.
+
+Provider calls must fit inside their recorded generation phase; escaped duration is a conservative
+runtime floor and a validation failure. Phase artifacts commit the canonical issue snapshot, policy,
+verification, control, and reviewer evidence projected into each result row; execution phases also
+commit the published environment hash. A matching terminal-row hash alone therefore cannot
+substitute different inputs, candidate fields, reviewers, or execution evidence.
+
+Budgets are fixed before the scored lane begins. No success-rate or cost claim may silently expand the number of attempts, select with hidden-fix feedback, discard failed campaigns, or report successful attempts alone. Alongside `semantic_valid_success_at_1`, reports distinguish first-attempt success from success within the frozen campaign budget and compute cost per semantic-valid success from total spend across every started attempt.
 
 ## Claim ceiling
 
-The primary metric is `semantic_valid_success_at_1`. A repeated fail-to-pass result is evidence, not proof of semantic correctness. It counts only after causal controls and blinded review establish that the generated trigger and oracle reproduce the issue rather than incidental patch behavior.
+The primary metric is `semantic_valid_success_at_1`. A repeated fail-to-pass result is evidence, not proof of semantic correctness. It counts only after causal controls and blinded review establish that the generated trigger and oracle reproduce the issue rather than incidental patch behavior. Reports separately count plausible fail-to-pass candidates that are semantic false reproductions and publish their rate among all plausible fail-to-pass candidates; a zero denominator is reported as undefined, not zero.
 
 The internal continuation gate is at least 6 semantic-valid cases out of 20. Because this cohort is small, selected, and contamination-exposed, meeting that gate supports further product validation only; it does not establish a general 30% success rate. Maintainer acceptance and willingness-to-reuse are separate external gates and require separately authorized outreach.
+
+The protocol is grounded in the hidden-oracle harness of [TDD-Bench Verified](https://arxiv.org/html/2412.02883), the transition definitions of [SWT-Bench](https://arxiv.org/html/2406.12952), and BLAST's finding that mechanical fail-to-pass can still be a [false reproduction](https://arxiv.org/html/2509.01616). The complete source notes and resulting safeguards are in [`docs/evaluation.md`](../../docs/evaluation.md#primary-methodological-anchors).

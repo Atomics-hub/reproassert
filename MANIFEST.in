@@ -1,3 +1,5 @@
 recursive-include tests *.py
 recursive-include examples *.py
 recursive-include schemas *.json
+recursive-include scripts *.py
+recursive-include benchmarks *.json *.jsonl *.md

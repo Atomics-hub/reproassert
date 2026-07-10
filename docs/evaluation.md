@@ -2,7 +2,36 @@
 
 Version 0.1 evaluates whether ReproAssert can turn a historical GitHub issue into a verified failing pytest reproduction before a fix is attempted. The protocol is frozen before scored runs and separates generation from hidden-fix evaluation.
 
+Hardening note (2026-07-10): before any live-model smoke or scored attempt, the executable contract
+added hash-chained all-attempt accounting, cross-field claim invariants, explicit unknown-cost state,
+and deny-by-default campaign gates. The 20 cases, outcome taxonomy, 6/20 target, runtime/cost gates,
+and 0/20 result state did not change. This amendment closes pre-run validation gaps; it was not made
+in response to model output.
+
 The primary result is `semantic_valid_success_at_1`: the number of cases for which the single submitted candidate reaches L2, divided by all 20 frozen cases. Raw patch production, collection, base failure, or fail-to-pass are diagnostic milestones, not the headline success metric.
+
+## Accounting units and fixed budgets
+
+The protocol distinguishes three nested units:
+
+- A **campaign** is the one scored end-to-end run for a frozen case, under predeclared total time, model-call, and cost limits. Campaigns, including terminal failures, are the 20-case denominator.
+- An **attempt** is one started model trajectory within a campaign. It starts when a provider request is sent or local inference begins, whether or not it returns a patch.
+- A **candidate** is a decoded, policy-checkable patch produced by an attempt. The submitted patch
+  and its hash are retained; raw provider text and raw error bodies are not made public. An output
+  that never becomes a safe patch remains visible through its terminal classification, safe
+  response-ID hash when available, token-usage state, latency, and cost. Exactly one rank-1
+  candidate is submitted to the evaluator.
+
+Before the scored lane begins, the configuration freezes the maximum attempts, agent steps or calls, wall time, output, and attributable cost per campaign. Candidate selection may use generator-visible base execution feedback, but never the fixed tree, gold tests, causal-control results, or semantic verdicts. Increasing attempts after observing failures, silently restarting a campaign, or choosing the best candidate with oracle feedback creates a different experiment.
+
+Every started attempt contributes its wall time, input/output tokens, provider charge, sandbox
+compute, and artifact-transfer cost to its campaign, including attempts ending in no output,
+invalid patches, setup errors, or timeouts. The public case row records aggregate fields and the
+immutable campaign trace preserves per-attempt detail plus the one submitted patch. This prevents
+best-of-N and successful-run-only reporting from hiding the work required to obtain the result.
+Every model-call interval must be durably enclosed by its generation phase. A missing enclosure or
+a call longer than the enclosing phase makes runtime unknown and adds the known call duration as a
+conservative floor; it cannot pass either the case wall cap or aggregate runtime gate.
 
 ## Claims
 
@@ -21,7 +50,18 @@ Before a fix exists, L0 is the public ceiling. Within this historical benchmark,
 
 The cohort was selected for initial feasibility: public GitHub issue, pytest-compatible repository, historically replayable environment, no complete final test in the issue body, and upstream human effort below one hour. This makes the set useful for an early product gate but systematically easier than the full population of maintainer reports.
 
-Five predeclared smoke cases exercise checkout, dependency image, patch application, pytest collection, result capture, and cleanup. Smoke runs may be discarded while fixing the harness only if they never expose evaluator-only material to the generator. Once the scored run begins, every case outcome is retained.
+Five predeclared smoke cases exercise archive intake, dependency image, patch application, pytest
+collection, result capture, and cleanup with deterministic offline fixtures. Before the scored run,
+no live candidate model may touch those issues. If one does, that output is retained as the case's
+single attempt rather than discarded as harness work. Once the scored run begins, every attempt and
+case outcome is retained.
+
+Smoke and scoring are separate information lanes. The **public smoke lane** is non-scored harness
+proof using only predeclared fixtures or controls and publishes no fixed snapshot, gold test, rubric,
+or scored verdict that could guide generation. The **scored lane** begins after the tool, prompt
+template, request builder, image, limits, attempt budget, and evaluator are frozen. Each model call
+also records its case-specific rendered-input hash, which is expected to vary by issue. Scoring uses
+fresh workspaces, does not reuse smoke candidates, and does not feed one case's outcome into another.
 
 ## Generator/evaluator boundary
 
@@ -35,9 +75,19 @@ Five predeclared smoke cases exercise checkout, dependency image, patch applicat
 
 Issue comments are excluded. Backlinks or automatic references to a fixing pull request are stripped from the issue snapshot. The snapshot hash, capture time, cutoff, included fields, and stripping decision are recorded. Generation has no access to benchmark source records that encode a fix.
 
-Dependency preparation is a separate bounded phase. It may access approved package indexes and the cloned public repository, records the resulting image digest and lock evidence, and exposes no host credentials. Every generation and verification execution starts from a fresh container or equivalent real sandbox. Network access is disabled after dependency preparation. The sandbox receives no SSH agent, cloud credentials, browser state, GitHub token, unrelated host directory, or evaluator artifact.
+The trusted preparation controller resolves the full 40-character base SHA and creates a content-addressed source archive from exactly that commit. Generation receives a fresh extraction of that archive, never the repository clone used to create it. Before launch, the controller verifies that the archive and extraction contain no `.git` directory or file, remote configuration, refs, reflogs, object database, alternates, linked-worktree metadata, or future commit history. It records the archive digest, extracted-tree digest, source SHA, and preparation tool version. The fixed archive, production patch, and any clone containing later history remain in a separate evaluator-only trust domain.
 
-The model/provider/version, prompt hash, configuration hash, tool commit, image digest, limits, timestamps, token usage, cost, and submitted patch hash are recorded. Exactly one candidate per case is submitted for scoring. Internal attempts may be counted, but no candidate may be selected using the hidden fix, gold tests, or their execution results.
+Dependency preparation is a separate bounded phase. It may access approved package indexes and the
+exact-SHA archive, never a repository clone or VCS object store, records the resulting image digest
+and lock evidence, and exposes no host credentials. Every generation and verification execution
+starts from a fresh container or equivalent real sandbox. Network access is disabled after
+dependency preparation. The sandbox receives no SSH agent, cloud credentials, browser state,
+GitHub token, unrelated host directory, or evaluator artifact.
+
+The model/provider/version, frozen prompt-template hash, per-call rendered-input hash, configuration
+hash, tool commit, image digest, limits, timestamps, token usage, cost, and submitted patch hash are
+recorded. Exactly one candidate per case is submitted for scoring. Every started attempt remains in
+the campaign trace; no candidate may be selected using the hidden fix, gold tests, or their results.
 
 ## Candidate policy
 
@@ -51,16 +101,27 @@ Minimality is reviewed, not enforced by an arbitrary line threshold. Fixtures an
 
 ## Scored procedure
 
-1. **Freeze inputs.** Verify the manifest and schemas; snapshot issue title/body at the declared pre-fix cutoff; hash every artifact. Neither cohort nor scoring rules change after generation output is observed.
+1. **Freeze inputs.** Verify the manifest and schemas; snapshot issue title/body at the declared pre-fix cutoff; freeze campaign budgets; construct and hash exact-SHA base archives with no Git metadata or future history. Neither cohort nor scoring rules change after generation output is observed.
 2. **Prepare dependencies.** Build the case image with bounded network policy, record the digest and cold cost/time, then disable network. A repository that cannot be prepared for benchmark reasons is `benchmark_infrastructure_error`; a setup error caused by the candidate is `setup_failure`.
-3. **Generate on base.** Run ReproAssert against the exact base tree with only generator-visible inputs. Preserve logs under output limits and choose one candidate without oracle feedback.
+3. **Generate on base.** Run ReproAssert against a fresh extraction of the exact-SHA base archive with only generator-visible inputs. Preserve every started attempt, candidate, bounded log, time, token, and cost record; choose one candidate without oracle feedback.
 4. **Inspect policy and patch.** Reject empty/unapplicable patches and forbidden file or behavior changes before executing code. Parse the diff; do not rely only on filename conventions or model declarations.
 5. **Collect target nodes.** Apply the patch to a clean base tree and collect exactly the declared generated pytest node IDs. Collection must succeed without running unrelated tests.
 6. **Run interleaved verification.** In six fresh clean environments execute the schedule `base, fixed, fixed, base, base, fixed`. Each execution uses the same candidate and command. The three base results must share an issue-aligned normalized failure fingerprint; the three fixed results must pass. Interleaving reduces systematic warm-cache and time-order bias.
 7. **Apply causal controls.** When production fix hunks can be separated, `fix minus issue-relevant hunks` should continue to fail and `base plus issue-relevant hunks` should pass. Record `not_available` or `inconclusive` with a reason when hunks are inseparable. Repository-appropriate decoy or alternative-fix controls are supporting evidence and must be declared before unblinding the gold tests.
 8. **Review semantics while blinded.** Two reviewers inspect the frozen issue, candidate, normalized base failure, fixed pass evidence, and declared causal-control results without seeing developer tests or the human test patch. A third reviewer breaks a disagreement. Reviewer identities, binary rubric answers, confidence, rationale, and agreement are recorded.
 9. **Unblind after verdict.** Developer tests and gold artifacts may be inspected only after the semantic verdict is committed. They may explain divergence but cannot retroactively select or rewrite the submitted candidate.
-10. **Append the result.** Write one immutable JSON object per case to `benchmarks/v0.1/results.jsonl`, including rejected and infrastructure outcomes. Validate the ledger before calculating aggregate metrics.
+10. **Commit the trace and project the result.** Fsync every event before its associated side
+    effect and retain incomplete/provider/infrastructure work in the hash-chained scored ledger. An
+    unresolved infrastructure error leaves the benchmark incomplete. Once a case has one counted
+    terminal outcome and known attributable cost, append its single derived JSON object to
+    `results.jsonl`. Each policy, base/fixed execution, causal-control, and semantic-review phase
+    commits the canonical bytes and SHA-256 of the corresponding result evidence. Reconciliation
+    requires the exact issue snapshot, every candidate field, reviewer packet/rubric, terminal
+    verdict, and cost category to match those events before calculating aggregate metrics. Each
+    code-execution phase also carries the hash of the complete published environment record.
+    Commitments count only from the outcome-appropriate phase state: preflight, issue snapshot,
+    policy, collection, and base verification must succeed; L1/L2 fixed/control/review phases must
+    succeed; and an L0 fail-on-fix outcome requires fixed verification itself to finish failed.
 
 ## Semantic review rubric
 
@@ -102,12 +163,15 @@ Report at minimum:
 
 - L0, L1, and L2 counts out of 20, with per-case terminal outcomes.
 - Primary `semantic_valid_success_at_1 = L2 / 20` and an exact binomial 95% confidence interval.
+- First-attempt semantic-valid success and semantic-valid success within the frozen campaign budget, each over all 20 cases; neither may be presented as an unqualified pass@N result.
+- Started-attempt and emitted-candidate counts, including all zero-output, rejected, timed-out, and discarded work.
+- Plausible fail-to-pass false reproductions: `plausible_f2p_semantic_invalid / all submitted candidates with plausible_f2p=true`, plus `semantic_valid / all submitted candidates with plausible_f2p=true` as semantic precision among plausible fail-to-pass candidates. Both are undefined when no submitted candidate reaches plausible fail-to-pass.
 - Setup, collection, wrong-failure, base-flake, fixed-failure, and semantic-invalid rates.
 - Cold-cache and warm-cache p50/p90 dependency, generation, verification, and total wall time.
 - Total attributable cost, cost per attempted case, and `total attributable cost / L2 count`; when L2 is zero, cost per success is undefined rather than zero.
 - Model input/output tokens and model, sandbox compute, artifact transfer, and cold dependency-prep cost as separate fields.
 
-Attributable cost includes every successful and failed scored attempt. Report one-time dependency image construction and human curation/review labor separately. Median cost among successful cases alone is not a decision metric because it hides spend on failures.
+Attributable cost includes every started successful, failed, timed-out, no-output, and discarded scored attempt. Report one-time dependency image construction and human curation/review labor separately. The decision metric is portfolio cost per semantic-valid success: total attributable campaign cost across all 20 cases divided by L2 count. Median cost among successful cases alone is not a decision metric because it hides spend on failures; when L2 is zero, cost per success is undefined rather than zero.
 
 The internal continuation gates are:
 
@@ -121,6 +185,14 @@ Six successes in 20 has wide statistical uncertainty and this sample is selected
 
 ## Contamination and reproducibility limits
 
-This is a historical public benchmark. A model may have encountered an issue, code, fix, or downstream discussion during pretraining. Generator isolation prevents live lookup and accidental oracle mounting, but it cannot erase memorized data. Every published result must therefore say `historical public, contamination-exposed` and identify the exact model version and run date.
+This is a historical public benchmark. A model may have encountered an issue, code, fix, or downstream discussion during pretraining. Generator isolation prevents live lookup, future-history inspection, and accidental oracle mounting, but it cannot erase memorized data. Public smoke proof is reproducible but explicitly non-scored; scored campaigns remain isolated from smoke candidates and prior-case verdicts. Every published result must therefore say `historical public, contamination-exposed` and identify the exact model version and run date.
 
 The full manifest, failure rows, environment digests, commands, bounded-log hashes, costs, and aggregate script must be public. Evaluator-only gold artifacts should remain access-controlled until the run is locked, then may be released in a leakage-labeled evaluation bundle if upstream licensing permits. No post-hoc case replacement, silent rerun, or best-of-N selection is allowed. Corrections that could change a score create a new benchmark version.
+
+## Primary methodological anchors
+
+- [TDD-Bench Verified](https://arxiv.org/html/2412.02883) supplies the central oracle-isolation pattern: generation sees the issue and old code while the containerized evaluator alone applies hidden new code and executes the exact contributed test nodes.
+- [SWT-Bench](https://arxiv.org/html/2406.12952) defines F→P, F→F, P→P, and P→F transitions; it treats P→P generated tests as executable but unrelated and requires at least one F→P with no test failing on the fixed tree.
+- [BLAST](https://arxiv.org/html/2509.01616) demonstrates why F→P is necessary but insufficient: an incidental code difference can make a test transition without reproducing the reported issue, motivating the explicit false-reproduction rate and semantic review.
+- [LIBRO](https://coinse.github.io/publications/pdfs/Kang2023aa.pdf) and [BRT Agent](https://arxiv.org/html/2502.01821) show that issue-level success depends strongly on the number of generations or trajectories, motivating frozen campaign budgets and disclosure of every attempt rather than an unqualified best-of-N score.
+- [SWE-rebench](https://arxiv.org/html/2505.20411) motivates separating public reproducibility artifacts from scored evaluation and labeling historical public tasks as contamination-exposed rather than claiming that sandbox isolation removes pretraining leakage.
