@@ -30,6 +30,8 @@ env/
 .reproassert/
 reproassert-report.json
 !evidence/live-demo/reproassert-report.json
+output/
+.playwright-cli/
 
 # Editors and operating systems
 .DS_Store

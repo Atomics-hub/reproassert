@@ -20,11 +20,19 @@ a credible path toward a hosted business capable of reaching $10,000 MRR.
 
 ## Current launch milestone
 
-The next few coherent pull requests must turn the implemented causal dependency, executed-tree,
-bounded JUnit, v0.2 structural, and capability-gated differential primitives into an authentic
-production evaluation path: freeze provenance-safe historical inputs, issue evaluator capabilities
-only from application-owned semantic verification, run one cost-capped 20-case campaign, and publish
-bounded L0/L1/L2, runtime, failure, and cost evidence.
+The next few coherent pull requests must turn the implemented semantic issuer, two-phase scored
+runner, crash recovery, campaign barrier, finalizer, causal dependency, executed-tree, bounded JUnit,
+and differential primitives into a publicly verifiable validation release. Completion requires a
+sandbox-attested dataset parser, independently rederived upstream Git provenance, a leak-audited
+chronology-honest 20-case cohort, a canonical pre-inference authorization/pricing record, exact-SHA
+sandbox replay, executed causal controls, two-reviewer consensus with deterministic tie-breaks, all
+Docker gates, current documentation, path-aware CI, and clean wheel/source installs.
+
+This milestone prepares and publishes the executable evidence path; it does not silently spend the
+campaign budget or manufacture demand evidence. After every prerequisite is green, Tom receives one
+exact request naming the model, price source, per-case cap, total cap, call count, and abort
+conditions. The 20-case campaign starts only after that approval. Maintainer contact remains a
+separate approval.
 
 Work remains local-first and batched to protect the repository owner's GitHub Actions budget. A paid
 model smoke or scored campaign requires a separate explicit spend cap after every prerequisite is
@@ -32,4 +40,5 @@ true. Authenticated third-party GitHub GraphQL capture and maintainer contact li
 separate exact approval; missing authority never weakens the provenance or validation contract.
 
 This file records the durable objective. [PROJECT_STATUS.md](PROJECT_STATUS.md) records current
-evidence without upgrading the claim.
+evidence without upgrading the claim. The milestone is not complete merely because its local unit
+suite passes; public PR proof, Docker proof, and every listed P1 gate must also close.

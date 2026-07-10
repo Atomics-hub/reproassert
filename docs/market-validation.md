@@ -6,7 +6,11 @@ Status: test-first validation in progress; no market or performance claim is pro
 
 ## Product hypothesis
 
-ReproAssert turns a GitHub issue and an exact repository commit into a candidate Python/pytest reproduction before a human or coding agent attempts a fix. A claimed success must include a test patch, one-command reproduction, and structured evidence showing that the test collects and repeatedly fails on the buggy base for the intended symptom.
+ReproAssert turns a GitHub issue and an exact repository commit into a candidate Python/pytest
+reproduction without changing production code. A prospective user can run that evidence step before
+starting a fix; a historical benchmark cannot prove that nobody had already attempted one. A claimed
+success must include a test patch, one-command reproduction, and structured evidence showing that
+the test collects and repeatedly fails on the buggy base for the intended symptom.
 
 The initial paying-user hypothesis is a 5-50 engineer team that:
 

@@ -12,7 +12,8 @@ Working headline:
 
 Working description:
 
-> ReproAssert turns a GitHub issue and exact commit into a sandboxed failing pytest patch, one-command reproduction, and auditable report before any agent edits production code.
+> ReproAssert turns a GitHub issue and exact commit into a sandboxed failing pytest patch,
+> one-command reproduction, and auditable report without changing production code.
 
 The first viewport should show an actual terminal run, generated patch, repeated failing result, and report excerpt. It should not lead with a generic AI claim.
 

@@ -21,12 +21,26 @@ jobs:
     name: Quality and benchmark contract
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    outputs:
+      python_changed: ${{ steps.scope.outputs.python_changed }}
+      site_changed: ${{ steps.scope.outputs.site_changed }}
+      docker_changed: ${{ steps.scope.outputs.docker_changed }}
     steps:
       - name: Check out source
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Determine bounded change scope
+        id: scope
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          python scripts/ci_change_scope.py \
+            --event "$EVENT_NAME" \
+            --base-sha "$BASE_SHA" \
+            --github-output "$GITHUB_OUTPUT"
       - name: Set up Python
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
@@ -49,12 +63,13 @@ jobs:
 
   unit:
     name: Unit and wheel smoke (Python ${{ matrix.python-version }})
+    needs: quality
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        python-version: ["3.10", "3.14"]
     steps:
       - name: Check out source
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -84,6 +99,8 @@ jobs:
 
   package:
     name: Build and install distributions
+    needs: quality
+    if: needs.quality.outputs.python_changed == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -166,6 +183,8 @@ jobs:
 
   site:
     name: Site build, rendered contract, and lint
+    needs: quality
+    if: needs.quality.outputs.site_changed == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -194,6 +213,8 @@ jobs:
 
   docker-sandbox:
     name: Docker sandbox boundary
+    needs: quality
+    if: needs.quality.outputs.docker_changed == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
