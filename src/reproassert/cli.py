@@ -39,6 +39,7 @@ from reproassert.benchmark_v02_campaign import (
     verify_v02_causal_control_set,
     verify_v02_semantic_review_set,
 )
+from reproassert.benchmark_v02_replay import run_v02_replay_bundle
 from reproassert.dependency_execution_receipt import load_dependency_execution_receipt
 from reproassert.errors import ReproAssertError
 from reproassert.generator import (
@@ -924,6 +925,37 @@ def benchmark_verify_v02_finalization(
                 "verified": True,
                 "verification_scope": "full_bundle_rederived",
                 "provider_invoked_by_this_command": False,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+@benchmark_group.command("replay-v02-case")
+@click.argument("bundle_path", type=click.Path(path_type=Path, exists=True, dir_okay=False))
+@click.option(
+    "--run-base",
+    type=click.Path(path_type=Path, file_okay=False),
+    default=_default_run_base,
+    show_default="user state directory",
+)
+def benchmark_replay_v02_case(bundle_path: Path, run_base: Path) -> None:
+    """Reacquire and replay one published exact-source v0.2 bundle."""
+
+    try:
+        result = run_v02_replay_bundle(bundle_path, run_base=run_base)
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(
+        json.dumps(
+            {
+                "claim_level": result.claim_level,
+                "failure_fingerprint": result.fingerprint,
+                "model_or_provider_invoked": False,
+                "outcome": result.outcome,
+                "result_path": str(result.result_path),
+                "run_dir": str(result.run_dir),
             },
             indent=2,
             sort_keys=True,

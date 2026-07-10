@@ -25,17 +25,15 @@ rejected -> collected -> repeatable_base_failure  [current public ceiling]
 
 An accepted CLI run means one generated test collected and produced the same issue-marked failure on the pinned buggy base across the configured reruns. It does **not** mean the test passes on a fix, captures the issue's true semantics, or has been accepted by a maintainer.
 
-**Benchmark status:** v0.1 is frozen at 20 historical cases and has **0 scored result rows**. Its
-historical-snapshot cutoff is not supported by trusted receipts, so the campaign remains blocked
-with zero Actions or model spend on this milestone; see the
-[provenance erratum](benchmarks/v0.1/ERRATA.md). A
-[public self-owned issue run](evidence/live-demo/README.md) verifies the existing exact-SHA intake,
-generation, sandbox, report, and replay path; the local differential fixture also reaches
-an interleaved three-fail/three-pass result. Neither is part of the 20-case score. The v0.2 package,
-preregistration, and publication-leak tooling is structural and defaults to not ready: there is no
-authentic v0.2 cohort, official application semantic issuer, production scored runner, or L1 public
-result. Capturing complete historical body revisions still requires authenticated GitHub GraphQL
-access, which has not been authorized for third-party repositories.
+**Benchmark status:** v0.1 remains immutable at **0/20** because of its
+[provenance erratum](benchmarks/v0.1/ERRATA.md). The replacement v0.2 selection is now frozen at 20
+leak-audited cases from the pinned upstream dataset. Its exact Git object graph and Parquet parser
+boundary are independently attested, but its issue text is honestly labeled
+`dataset_snapshot_at_pinned_commit`, `chronology_unproven`, and
+`historical_public_contamination_exposed`. The scored runner, pre-inference pricing and
+authorization barrier, executed causal controls, two-reviewer/tie-break consensus, and bounded
+publication verifier are implemented and default-deny. Authentic model results and maintainer
+validations remain **0/20** and **0**, respectively. No scored model spend or outreach has occurred.
 
 ## Install from source
 
@@ -247,6 +245,27 @@ an execution boundary.
 
 Replay creates a new run directory, patch, report, and classification. It is evidence of a fresh bounded rerun, not proof that the issue is semantically reproduced.
 
+Published v0.2 cases use a stricter bundle-backed replay path:
+
+```console
+uv run reproassert benchmark replay-v02-case path/to/reproassert-v02-replay-bundle.json
+```
+
+The bundle self-binds the exact repository SHA, Git root tree, canonical source-tree digest,
+candidate bytes, expected failure fingerprint, a publisher-declared controller revision, and—when
+required—the complete hash-locked wheel plan, installed dependency-tree digest, and immutable
+runner image ID. The declared revision is recorded but is not authenticated against the installed
+controller. Replay accepts only ReproAssert's packaged trusted runner tag, reacquires the source,
+rebuilds dependencies with network limited to the download phase, disables network for installation
+and pytest, and rejects any mismatch. Its self-hashed result records collection plus every repeated
+run's bounded argv, duration, exit state, output digest, and JUnit digest. It never invokes a model
+provider.
+
+The exact bundle and result schemas are published at
+[`benchmark-v02-replay-bundle.schema.json`](https://atomics-hub.github.io/reproassert/benchmark-v02-replay-bundle.schema.json)
+and
+[`benchmark-v02-replay-result.schema.json`](https://atomics-hub.github.io/reproassert/benchmark-v02-replay-result.schema.json).
+
 ## Strict Python/pytest profile v1
 
 The first profile is intentionally narrow:
@@ -254,7 +273,7 @@ The first profile is intentionally narrow:
 | Surface | Current behavior |
 | --- | --- |
 | Repository | Canonical public GitHub issue and source archive only; private repositories and authenticated intake are unsupported. |
-| Dependencies | The public issue/replay workflow performs no repository dependency installation. A separate wheel-only causal executor can prepare a reviewed hash-locked dependency volume for evaluator code, but it is not wired into the public CLI or any scored campaign. |
+| Dependencies | Ordinary `issue`/`replay` remains dependency-free. `benchmark replay-v02-case` rebuilds only a published, canonical, hash-locked wheel plan in the causal executor, then mounts the attested installed tree read-only with network disabled. |
 | Candidate | One new synchronous pytest test, at most 32 KiB, in a controller-owned path. Async tests, unconditional failure, skip/xfail, explicit raise, obvious infinite loops, top-level execution, network/process APIs, and other blocked calls are rejected. |
 | Verification | Collect once, then run 2-10 times (default 3) with network disabled, a read-only root/workspace, non-root user, all capabilities dropped, and no native fallback. |
 | Limits | 60 seconds and 64 KiB output per verifier phase; 1 GiB memory, 1 CPU, 128 PIDs, and 64 MiB `/tmp`. |
@@ -279,17 +298,14 @@ Read [Security policy](SECURITY.md), [Security model](docs/security-model.md), [
 
 ## Evaluation status
 
-The historical v0.1 cohort is preregistered at 20 cases across 10 repositories. [`results.jsonl`](benchmarks/v0.1/results.jsonl) is currently empty. The primary future benchmark metric requires hidden-fix execution, causal controls, and blinded semantic review; the current CLI alone cannot establish it.
+The historical v0.1 cohort is preregistered at 20 cases across 10 repositories. [`results.jsonl`](benchmarks/v0.1/results.jsonl) is currently empty. The v0.2 primary metric requires hidden-fix execution, executed causal controls, and blinded semantic review; the ordinary issue CLI alone cannot establish it.
 
-The v0.1 historical cutoff is blocked by its provenance erratum. The
-[v0.2 draft](benchmarks/v0.2-draft/README.md) defines a narrower, independently observable
-pre-solution-PR-publication receipt contract. Its offline producer independently rederives complete
-supported edit histories and exact redaction. The structural package/preregistration/leak scanners
-also bind dataset provenance, source and dependency receipts, hidden-fix artifacts, isolation
-evidence, and reviewer roles, but they deliberately cannot issue a live evaluator capability or mark
-the cohort ready. There is no authenticated collector, frozen v0.2 cohort, production scored runner,
-model campaign, or result; capture authenticity, fixing-PR selection, and privacy review remain
-trusted evaluator inputs.
+The [v0.2 draft](benchmarks/v0.2-draft/README.md) replaces the unsupported chronology claim with a
+frozen dataset-snapshot mode. A network-disabled, resource-bounded parser container derives the
+20-case selection from pinned upstream objects; raw host-native preparation cannot mint semantic
+evidence. Exact source, dependency, hidden-fix, isolation, reviewer-role, request, pricing, and
+authorization commitments are bound before any provider-capable call. The cohort is
+selection-frozen but not yet scored: **0/20 runs, 0/20 L1, 0/20 L2, and zero maintainer validations**.
 
 The preparation-only dependency executor now creates fresh labeled tmpfs volumes, runs fixed
 networked-download and offline-install phases under the immutable runner image ID, attests the

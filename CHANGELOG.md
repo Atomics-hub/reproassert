@@ -4,6 +4,8 @@ All notable changes to ReproAssert will be documented here. The format follows [
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-10
+
 ### Added
 
 - Exact Git-object benchmark preparation and replay commands with complete Trees API
@@ -15,8 +17,16 @@ All notable changes to ReproAssert will be documented here. The format follows [
 - A causal dependency executor for hash-locked wheel closures, with fresh byte/inode-bounded tmpfs
   volumes, inspected networked-download and offline-install phases, installed-tree attestation,
   typed read-only verifier handles, strict cleanup, and an independently verifiable receipt.
-- Fail-closed v0.2 evaluator-package, preregistration, semantic-receipt, provenance, and publication
-  leak-audit contracts. No cohort or official semantic capability issuer is included yet.
+- A container-attested, independently provenance-verified, mechanically leak-audited 20-case v0.2
+  selection with explicit chronology-unproven claim labels.
+- A fail-closed v0.2 semantic issuer, production runner, exact pricing/spend authorization and
+  single-ledger claim, crash recovery, executed causal controls, two-reviewer/tie-break consensus,
+  and bounded full-denominator publication verifier.
+- Canonical `benchmark replay-v02-case` bundles that bind exact source, candidate, expected failure,
+  publisher-declared controller revision, and optional hash-locked dependency plan/tree/image
+  evidence; replay invokes no model provider.
+- Schema-backed replay results with collection and repeated-run execution commitments, public
+  canonical schema URLs, and a packaged-runner allowlist that rejects bundle-selected images.
 - Capability-gated interleaved base/fixed differential verification with exact structured JUnit
   evidence. This is evaluator infrastructure, not a published benchmark result.
 
@@ -24,6 +34,8 @@ All notable changes to ReproAssert will be documented here. The format follows [
 
 - Documented a local-first CI budget: batch coherent pull-request updates, diagnose failures locally,
   and require an explicit cost rationale for new workflows, triggers, matrices, or metered services.
+- Reduced the required Python matrix to 3.10 and 3.14 and made package/site/Docker checks path-aware
+  while keeping their job-level required contexts successful when skipped.
 - Report schema 1.1 now binds the exact candidate-applied tree that entered the sandbox; replay
   recomputes that overlay while retaining read support for schema 1.0 reports.
 
@@ -68,5 +80,6 @@ All notable changes to ReproAssert will be documented here. The format follows [
 - Updated the public site's runtime and build dependencies to patched versions; both the full and
   production-only npm audits report zero known vulnerabilities for the release candidate.
 
-[Unreleased]: https://github.com/Atomics-hub/reproassert/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Atomics-hub/reproassert/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Atomics-hub/reproassert/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Atomics-hub/reproassert/releases/tag/v0.1.0

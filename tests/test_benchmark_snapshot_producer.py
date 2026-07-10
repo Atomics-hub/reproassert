@@ -229,7 +229,7 @@ def test_receipt_commits_query_provenance_chronology_redaction_and_human_review(
         },
         "tool": {
             "name": "reproassert-snapshot-producer",
-            "version": "0.1.0",
+            "version": "0.2.0",
             "git_sha": "b" * 40,
         },
         "raw_receipt_sha256": hashlib.sha256(raw).hexdigest(),

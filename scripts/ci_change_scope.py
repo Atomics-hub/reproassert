@@ -17,7 +17,12 @@ def classify_paths(paths: Iterable[str]) -> dict[str, bool]:
     python_prefixes = ("src/", "tests/", "schemas/", "scripts/")
     python_files = {"pyproject.toml", "uv.lock", ".github/workflows/ci.yml"}
     site_prefixes = ("site/",)
-    site_files = {"schemas/reproassert-report.schema.json", ".github/workflows/ci.yml"}
+    site_files = {
+        "schemas/reproassert-report.schema.json",
+        "schemas/benchmark-v02-replay-bundle.schema.json",
+        "schemas/benchmark-v02-replay-result.schema.json",
+        ".github/workflows/ci.yml",
+    }
     docker_prefixes = (
         "src/reproassert/assets/",
         "src/reproassert/benchmark_v02_",

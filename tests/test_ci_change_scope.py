@@ -52,6 +52,11 @@ def test_report_schema_and_workflow_changes_fail_safe() -> None:
         "site_changed": True,
         "docker_changed": False,
     }
+    assert classify_paths(["schemas/benchmark-v02-replay-result.schema.json"]) == {
+        "python_changed": True,
+        "site_changed": True,
+        "docker_changed": False,
+    }
     assert classify_paths([".github/workflows/ci.yml"]) == {
         "python_changed": True,
         "site_changed": True,

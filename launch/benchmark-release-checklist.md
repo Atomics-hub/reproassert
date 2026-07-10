@@ -56,10 +56,11 @@ readiness box is not a benchmark result.
   costs, review timing, and public redaction.
 - [ ] The public aggregate includes each candidate's bounded test content and one-command
   reproduction, or an explicit no-candidate disposition.
+- [ ] Every submitted candidate has a schema-valid, self-hashed v0.2 replay bundle whose clean
+  replay matches the exact source, dependency tree/image, outcome, and failure fingerprint.
 - [ ] Exact model version/date, historical-public contamination, total spend, failure taxonomy,
   runtime, semantic precision, and confidence interval are disclosed.
 - [ ] Publication says `0/20` or `not measured` for every incomplete metric; no partial denominator
   is presented as the campaign result.
 - [ ] One clean wheel install, schema export, source-distribution test, Docker run, and public
   artifact re-verification pass from the exact release commit.
-

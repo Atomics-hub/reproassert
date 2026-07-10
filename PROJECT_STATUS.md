@@ -4,12 +4,12 @@ Last updated: 2026-07-10
 
 ## Current verdict
 
-**GO for the bounded local Python/pytest product slice. Exact source preparation covers all 20
-frozen repositories, and the causal wheel executor, strict receipt verifier, executed-tree binding,
-bounded JUnit result anchor, and capability-gated differential primitive now work locally. The
-historical generation campaign remains BLOCKED pending authentic v0.2 captures and cohort freeze,
-an application-owned semantic capability issuer, and a production scored generator/evaluator
-runner. Hosted-product and demand claims remain deferred.**
+**GO for validation-ready local Python/pytest infrastructure. The 20-case v0.2 selection is frozen
+from a container-attested, leak-audited upstream dataset; the scored runner, exact pricing and spend
+authorization barrier, causal evaluator, two-reviewer/tie-break semantic gate, publication verifier,
+and exact-SHA dependency-aware replay path are implemented. The campaign remains deliberately
+unrun at 0/20 until Tom supplies exact capped spend authorization. Hosted-product and demand claims
+remain deferred, and nobody has been contacted.**
 
 ## Verified now
 
@@ -57,14 +57,12 @@ runner. Hosted-product and demand claims remain deferred.**
 - A standalone real-Docker generator/evaluator mount canary passed its positive and negative
   sentinel controls and cleanup. It is synthetic infrastructure evidence, not proof that the
   production benchmark generator is isolated.
-- Historical snapshot validation is fail-closed. The v0.1 `pre_fix_source_snapshot` label remains
-  unsupported. The v0.2 draft now has an offline-only producer that requires complete issue edit
-  history, selects the last revision before fixing-PR publication, reruns exact redaction, and
-  independently rederives the durable receipt. A live self-owned issue/PR fixture rederived the
-  expected pre-publication revision; its bounded proof record is
-  [`evidence/snapshot-producer-self-fixture.json`](evidence/snapshot-producer-self-fixture.json).
-  There is still no authenticated collector or frozen v0.2 cohort; capture authenticity, fixing-PR
-  selection, and human privacy review remain trusted inputs.
+- The v0.2 selection is frozen only after a hash-locked PyArrow worker ran inside an inspected,
+  immutable, network-disabled container with no inherited environment, read-only inputs/root,
+  non-root execution, dropped capabilities, and bounded CPU/memory/PIDs/output/time. The pinned
+  500-row audit quarantined 64 rows; the selected 20/20 are mechanically clean. Issue text remains
+  labeled `dataset_snapshot_at_pinned_commit`, `chronology_unproven`, and
+  `historical_public_contamination_exposed`; no stronger chronology claim is made.
 - The causal wheel dependency executor now accepts only a strict plan path; creates fresh, distinct,
   exactly labeled local-tmpfs input, wheelhouse, and dependency volumes with byte and inode quotas;
   pins one immutable runner image ID; runs only the fixed source-free download and offline-install
@@ -80,28 +78,30 @@ runner. Hosted-product and demand claims remain deferred.**
   direct import, typed read-only verifier borrow, and a separate input-volume inode exhaustion check
   that failed with `ENOSPC` under the declared quota. Cleanup left no owned dependency resources.
   These are local infrastructure checks, not historical case preparation or benchmark results.
-- The capability-gated differential primitive passed a real local Docker fixture under the frozen
+- `reproassert benchmark replay-v02-case` consumes one canonical self-hashed bundle, reacquires the
+  exact commit/tree/archive, rebuilds an embedded hash-locked wheel plan, verifies the installed
+  dependency tree and immutable image ID, reruns the candidate with network disabled, and emits a
+  bounded replay-result commitment. It cannot invoke a model provider.
+- The capability-gated differential evaluator passed a real local Docker fixture under the frozen
   schedule `base, fixed, fixed, base, base, fixed`: all three base executions produced the same
   intended failure and all three fixed executions passed. It revalidates one candidate, attests both
   candidate-applied trees, requires exact target JUnit evidence, hashes/redacts raw fixed output, and
-  can bind a typed dependency receipt/plan/tree/image. It is not a public CLI or scored runner.
-- The v0.2 draft now has strict structural tooling for fix mappings, private case packages,
-  generator-safe projections, salted evaluator commitments, a 20-case preregistration envelope,
-  cohort audit, and pre-publication leak scanning. It defaults to not ready and does not issue the
-  nominal evaluator capability required by differential execution; no application-owned semantic
-  issuer exists yet.
-- Prior regular-source milestone is public on protected `main` at commit
-  `be5bdc2bd49f3ffa9b88fa5b30a7d6536f1b68d8`. The exact-object/snapshot/dependency implementation is
-  bound to commit `24571bb72abd4c618a5a1e0fd8a881b403303519`; its recorded local non-Docker,
-  cross-version, package-install, Docker, isolation-canary, and site gates were green. That describes
-  the earlier preparation milestone, not the current unmerged branch. The current
-  causal-executor/differential milestone was built and checked locally with zero GitHub Actions runs
-  and zero model/provider spend; its final aggregate test count will be recorded only after the
-  batched local gate completes.
+  can bind a typed dependency receipt/plan/tree/image.
+- The v0.2 application issuer promotes dataset evidence only from the nominal Docker-bound parser
+  handoff, never a raw receipt or host-native preparation object. The production runner binds all 20
+  rendered requests, exact provider/model/adapter pricing, caps, approval bytes, tool revision,
+  campaign/cohort/preregistration, and a single-ledger claim before provider-capable work.
+- L2 publication requires a mechanical fail-to-pass differential, executed candidate-on-fixed,
+  fix-minus, base-plus, and preregistered decoy controls, plus two distinct authorized reviewers.
+  A deterministic third reviewer is required only on disagreement. No missing or inconclusive
+  control can be published as L2.
+- Protected `main` includes the validation controls at merge commit
+  `6abbed9ade57934bbdc75afa250800acc355003d` (PR #20). That public milestone passed Python 3.10 and
+  3.14, distribution/clean-install, Docker, schema, Ruff, and mypy checks.
 - Public proof site and canonical report schema are live over HTTPS at
   <https://atomics-hub.github.io/reproassert/>. The deployed desktop/mobile surface has no detected
   horizontal overflow, overlap, console errors, or warnings.
-- GitHub rulesets require pull requests, all nine CI contexts, linear history, and immutable `v*`
+- GitHub rulesets require pull requests, six path-aware CI contexts, linear history, and immutable `v*`
   tags. Vulnerability alerts, secret scanning/push protection, and immutable future releases are
   enabled. Automated security-fix PR creation is intentionally disabled after an initial noisy
   burst; version updates are grouped monthly and limited to one PR per ecosystem. Actions artifacts
@@ -121,10 +121,9 @@ runner. Hosted-product and demand claims remain deferred.**
 - Semantically valid benchmark reproductions: **0/20 measured**.
 - Regular-file v1 source receipts: **16/20 accepted and independently reverified; four unsupported
   under that deliberately narrower policy**.
-- Provenance-verified historical issue snapshots: **0/20 campaign-ready**.
-- Prepared dependency and hidden-fix evaluator packages: **0/20 authentic case packages and 0/20
-  campaign-ready**. The executor and structural schemas exist, but no official semantic issuer has
-  bound real case evidence into a live evaluator capability.
+- Leak-audited dataset selection: **20/20 frozen**; prospective issue chronology remains unproven.
+- Prepared dependency and hidden-fix evaluator packages: **0/20 authentic scored case packages**.
+  The issuer, runner, replay, controls, and schemas are implemented, but no paid campaign ran.
 - Exact-object source receipts: **20/20 accepted and independently reverified locally**; private
   receipts are not a public index and have not changed the frozen campaign prerequisite.
 - Independently validated or maintainer-accepted tests: **0**.
@@ -132,24 +131,17 @@ runner. Hosted-product and demand claims remain deferred.**
 - L1 plausible fail-to-pass public benchmark results: **0/20 measured**.
 - Complete model cost across successful and failed generation attempts, warm runtime, and hosted
   runner COGS: **not measured**. A verified-candidate report does not capture aborted attempts.
-- GitHub Actions and model/provider spend for the current milestone: **$0 and zero workflow runs**.
+- Model/provider spend for the validation campaign: **$0**. CI used the repository's public-runner
+  workflow only for the coherent PR gates; no paid service was purchased.
 - Paid pilots, qualified trials, and MRR: **0**.
 
-## Next exact build slice
+## Next validation slice
 
-1. Publish the causal-executor, executed-tree/JUnit, v0.2 structural, and differential slice through
-   one batched pull request and one planned CI cycle; do not create a release or reuse the immutable
-   `v0.1.0` tag.
-2. Obtain separate exact authorization for least-privilege read-only GitHub GraphQL use against the
-   selected third-party public repositories, then capture complete body/title history. Public REST
-   does not expose the required body revisions; do not weaken `pre_solution_pr_publication`.
-3. Complete and independently audit the 20 real fixing-PR mappings, privacy reviews, generator-safe
-   projections, source/dependency receipts, hidden-fix trees, and reviewer-role seals; only then
-   freeze a corrected public v0.2 preregistration.
-4. Implement the application-owned semantic verifier/capability issuer and the production scored
-   generator/evaluator runner. The scored generator must use a trusted built-in adapter or a separate
-   real sandbox, never an arbitrary same-user host command with evaluator paths available.
-5. Authorize any model smoke only after every prerequisite is true and a separate explicit spend cap
-   is recorded. Prepare maintainer-validation packets, but contact nobody without exact approval.
-
-The active project goal is intentionally not marked complete while these validation gates remain.
+1. Treat v0.2.0 as validation-ready tooling, not as benchmark-success evidence; retain v0.1.0 as an
+   immutable historical release and require the same exact tag-source gate for every later release.
+2. Ask Tom for one explicit capped authorization artifact only after the 20 private case packages,
+   request bindings, pricing snapshot, and campaign freeze pass offline verification.
+3. Run the 20-case campaign without inspecting hidden fixes in generation, finalize only through the
+   causal-control and reviewer-consensus gate, and publish failures as well as successes.
+4. Prepare maintainer-validation packets from accepted candidates, but contact nobody without Tom's
+   separate exact outreach approval.

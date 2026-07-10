@@ -1,8 +1,8 @@
 # Sandbox profiles
 
-Status: one dependency-free local issue/replay profile and one preparation-only causal wheel
-executor are implemented. The wheel path is not wired into a scored campaign, and enhanced/hosted
-profiles remain design paths rather than shipped features.
+Status: the dependency-free issue/replay profile, causal wheel executor, attested dataset-parser
+profile, capability-gated differential evaluator, and v0.2 bundle replay path are implemented.
+Hosted multi-tenancy remains a design path rather than a shipped feature.
 
 ## `strict-python-pytest-v1` — implemented
 
@@ -10,6 +10,11 @@ ReproAssert has no native execution path. `reproassert issue` and `reproassert r
 `require_ready()` and stop if the Docker CLI, engine, or configured image is unavailable. The strict
 profile performs no target-repository dependency installation and never executes a repository
 Dockerfile, setup command, Makefile, tox command, or copied issue instruction.
+
+`reproassert benchmark replay-v02-case` is the explicit exception for published benchmark bundles:
+it accepts only the bundle's canonical hash-locked wheel plan, downloads wheels through the fixed
+source-free helper, installs with network disabled, attests the installed tree, and mounts it
+read-only into the same strict pytest profile. It never runs repository setup instructions.
 
 The packaged image is built from a Python 3.12.13 slim Bookworm base pinned by SHA-256. Runner Python
 dependencies are installed from a hash-locked requirements file. `reproassert sandbox build` has

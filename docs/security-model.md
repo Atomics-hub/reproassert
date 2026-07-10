@@ -55,12 +55,13 @@ mechanism checks, not authentic historical packages, scored results, or hosted-b
 | User-selected generator command | Trusted executable | Runs outside Docker with a cleared environment plus only explicitly passed variables. It receives issue and selected source context. |
 | GitHub issue title/body | Hostile data | Size-bounded, labeled as untrusted in the generator protocol, never interpreted as setup or shell instructions. |
 | Repository archive, Git metadata responses, blobs, and files | Hostile data | The ordinary issue path manually extracts regular files and binds them to the commit root. The preparation-only object path reconstructs a complete Trees API response, treats codeload only as bulk transport, repairs only exact planned blob OIDs, and materializes bounded root-confined links without Git metadata. |
-| Reviewed dependency plan, wheels, and prepared tree | Hostile artifacts under a trusted preparation controller | A causal executor enforces fresh labeled quota-bounded tmpfs volumes, fixed download/offline-install phases, immutable image binding, pre/post attestations, a typed read-only handle, strict recomputed receipt verification, and executor-owned cleanup. It remains wheel-only, bridge egress is not an ACL, and no authentic case receipt is campaign-ready. |
-| Draft historical snapshot receipt and raw evidence | Evaluator-only trusted capture plus hostile structured data | The default validator independently parses complete offline edit history, selects the pre-publication revision, reruns exact fixing-PR redaction, and checks byte commitments. The evaluator still chooses the fixing PR and vouches for capture authenticity and human privacy review; there is no authorized third-party GraphQL collector or signed GitHub attestation. Current live issues and REST-only history are never historical fallbacks. |
+| Reviewed dependency plan, wheels, and prepared tree | Hostile artifacts under a trusted preparation controller | A causal executor enforces fresh labeled quota-bounded tmpfs volumes, fixed download/offline-install phases, immutable image binding, pre/post attestations, a typed read-only handle, strict recomputed receipt verification, and executor-owned cleanup. It remains wheel-only and bridge egress is not a network ACL. |
+| Attested dataset snapshot and private receipt | Evaluator-only structured data | The fixed worker parses pinned bytes only inside an inspected immutable network-disabled container. Host-native preparation cannot mint semantic evidence. The selected issue text is explicitly chronology-unproven; patch, test, hint, and leak-audit material never enters the generator projection. |
 | Candidate test | Hostile executable code | Schema- and AST-screened, applied as the only artifact under a reserved controller-selected path, and bound to the candidate-applied tree independently attested after Docker staging. |
 | Repository pytest configuration, imports, `sitecustomize`, and `conftest.py` | Hostile executable code | May run inside Docker during collection or verification. |
 | Pytest stdout and JUnit XML | Hostile evidence | Byte-bounded and terminal-sanitized. XML crosses a fresh quota-bounded local-tmpfs result volume held by an inspected isolated anchor and is element-bounded with `defusedxml`; both forms remain forgeable. |
 | Imported replay report | Hostile data | Size-, type-, URL-, SHA-, candidate-, and repeat-count validated. Command-like fields are ignored. |
+| Imported v0.2 replay bundle | Hostile data | Canonical, duplicate-key-free, <=2 MiB, self-hashed, and cross-bound to exact source/candidate/dependency/image/fingerprint commitments. Rebuilt evidence must match before a result is written. |
 | Generated report and patch | Controller output | Created exclusively in a private run directory; informative, not signed or remotely attested. |
 
 ## End-to-end flow
@@ -247,6 +248,12 @@ regenerates the candidate overlay and pytest argv from controller code, and requ
 executed-tree equality. Schema-1.0 backward replay cannot retroactively add that field. Replay does
 not trust or reuse the report's runner image, Docker policy, displayed command, result, or claim
 level.
+
+V0.2 replay bundles additionally bind the exact dependency plan, expected installed-tree digest,
+and immutable image ID. The replay command permits network only inside the fixed wheel-download
+phase, installs offline, mounts the result read-only into network-disabled pytest containers, and
+emits a self-hashed bounded result. Bundles remain unsigned and architecture-specific image IDs are
+not portable attestations.
 
 ## Secret handling
 

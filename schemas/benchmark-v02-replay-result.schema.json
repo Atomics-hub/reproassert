@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atomics-hub.github.io/reproassert/benchmark-v02-replay-result.schema.json",
+  "title": "ReproAssert v0.2 public replay result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "algorithm", "case_id", "bundle_sha256", "source_tree_sha256",
+    "candidate_sha256", "declared_tool_git_sha", "dependency", "claim_level", "outcome",
+    "failure_fingerprint", "collection", "runs", "result_sha256"
+  ],
+  "properties": {
+    "schema_version": {"const": "0.1.0"},
+    "algorithm": {"const": "reproassert-v02-public-replay-result-v1"},
+    "case_id": {"type": "string", "pattern": "^rk-v0\\.2-[0-9]{3}$"},
+    "bundle_sha256": {"$ref": "#/$defs/sha256"},
+    "source_tree_sha256": {"$ref": "#/$defs/sha256"},
+    "candidate_sha256": {"$ref": "#/$defs/sha256"},
+    "declared_tool_git_sha": {"$ref": "#/$defs/gitSha"},
+    "dependency": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["execution_receipt_sha256", "image_id", "plan_sha256", "tree_sha256"],
+          "properties": {
+            "execution_receipt_sha256": {"$ref": "#/$defs/sha256"},
+            "image_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+            "plan_sha256": {"$ref": "#/$defs/sha256"},
+            "tree_sha256": {"$ref": "#/$defs/sha256"}
+          }
+        }
+      ]
+    },
+    "claim_level": {"const": "repeatable_base_failure"},
+    "outcome": {"const": "repeatable_base_failure"},
+    "failure_fingerprint": {"$ref": "#/$defs/sha256"},
+    "collection": {"$ref": "#/$defs/execution"},
+    "runs": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 10,
+      "items": {"$ref": "#/$defs/execution"}
+    },
+    "result_sha256": {"$ref": "#/$defs/sha256"}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "gitSha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "phase", "argv", "exit_code", "duration_seconds", "timed_out", "oom_killed",
+        "output_sha256", "output_truncated", "junit_sha256"
+      ],
+      "properties": {
+        "phase": {"type": "string", "minLength": 1, "maxLength": 100},
+        "argv": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {"type": "string", "maxLength": 1000}
+        },
+        "exit_code": {"type": ["integer", "null"], "minimum": -2147483648, "maximum": 2147483647},
+        "duration_seconds": {"type": "number", "minimum": 0, "maximum": 3600},
+        "timed_out": {"type": "boolean"},
+        "oom_killed": {"type": "boolean"},
+        "output_sha256": {"$ref": "#/$defs/sha256"},
+        "output_truncated": {"type": "boolean"},
+        "junit_sha256": {
+          "oneOf": [{"type": "null"}, {"$ref": "#/$defs/sha256"}]
+        }
+      }
+    }
+  }
+}

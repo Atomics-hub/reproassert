@@ -4,8 +4,10 @@ import hashlib
 import os
 import re
 import stat
+from contextlib import nullcontext
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from defusedxml import ElementTree
 
@@ -15,6 +17,9 @@ from reproassert.models import ClaimLevel
 from reproassert.safeio import open_regular_file
 from reproassert.sandbox import DockerRunResult, DockerSandbox
 from reproassert.source_attestation import SourceTreeAttestation, attest_source_tree
+
+if TYPE_CHECKING:
+    from reproassert.dependency_executor import DependencyVolumeHandle
 
 _DYNAMIC_HEX = re.compile(r"0x[0-9a-fA-F]+")
 _DYNAMIC_PATH = re.compile(r"/(?:tmp|private/tmp)/[^\s:]+")
@@ -61,6 +66,7 @@ def verify_candidate(
     expected_source_tree: SourceTreeAttestation,
     run_id: str,
     repeats: int = 3,
+    dependency_handle: DependencyVolumeHandle | None = None,
 ) -> VerificationOutcome:
     if repeats < 2 or repeats > 10:
         raise ValueError("repeats must be between 2 and 10")
@@ -92,52 +98,60 @@ def verify_candidate(
         run_id=run_id,
         expected=source_tree,
     )
+    dependency_context = (
+        nullcontext(None)
+        if dependency_handle is None
+        else sandbox.borrow_dependency_volume(dependency_handle)
+    )
     try:
-        collection = sandbox.run_pytest(
-            volume=volume,
-            target=target,
-            phase="collect",
-            run_id=run_id,
-            collect_only=True,
-        )
-        collection_rejection = classify_collection_run(collection, target)
-        if collection_rejection:
+        with dependency_context as dependency_volume:
+            collection = sandbox.run_pytest(
+                volume=volume,
+                dependency_volume=dependency_volume,
+                target=target,
+                phase="collect",
+                run_id=run_id,
+                collect_only=True,
+            )
+            collection_rejection = classify_collection_run(collection, target)
+            if collection_rejection:
+                return VerificationOutcome(
+                    False,
+                    ClaimLevel.REJECTED,
+                    collection_rejection,
+                    None,
+                    collection,
+                    (),
+                    candidate.sha256,
+                    source_tree.tree_sha256,
+                )
+
+            runs = tuple(
+                sandbox.run_pytest(
+                    volume=volume,
+                    dependency_volume=dependency_volume,
+                    target=target,
+                    phase=f"verify_{attempt}",
+                    run_id=run_id,
+                )
+                for attempt in range(1, repeats + 1)
+            )
+            outcome, fingerprint = classify_base_runs(
+                runs,
+                expected_symptom=candidate.expected_symptom,
+                test_function=candidate.test_function,
+            )
+            accepted = outcome == "repeatable_base_failure"
             return VerificationOutcome(
-                False,
-                ClaimLevel.REJECTED,
-                collection_rejection,
-                None,
+                accepted,
+                ClaimLevel.REPEATABLE_BASE_FAILURE if accepted else ClaimLevel.COLLECTED,
+                outcome,
+                fingerprint,
                 collection,
-                (),
+                runs,
                 candidate.sha256,
                 source_tree.tree_sha256,
             )
-
-        runs = tuple(
-            sandbox.run_pytest(
-                volume=volume,
-                target=target,
-                phase=f"verify_{attempt}",
-                run_id=run_id,
-            )
-            for attempt in range(1, repeats + 1)
-        )
-        outcome, fingerprint = classify_base_runs(
-            runs,
-            expected_symptom=candidate.expected_symptom,
-            test_function=candidate.test_function,
-        )
-        accepted = outcome == "repeatable_base_failure"
-        return VerificationOutcome(
-            accepted,
-            ClaimLevel.REPEATABLE_BASE_FAILURE if accepted else ClaimLevel.COLLECTED,
-            outcome,
-            fingerprint,
-            collection,
-            runs,
-            candidate.sha256,
-            source_tree.tree_sha256,
-        )
     finally:
         sandbox.cleanup()
 

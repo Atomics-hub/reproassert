@@ -12,7 +12,8 @@ installing a broad GitHub App.
 - Original issue: `<public issue URL>`
 - Candidate patch: `<path or attached bounded diff>`
 - Candidate SHA-256: `<64-hex>`
-- One-command reproduction: `<sandboxed command>`
+- Replay bundle and SHA-256: `<public bundle path/link and 64-hex>`
+- One-command reproduction: `reproassert benchmark replay-v02-case <bundle.json>`
 - Expected symptom in the candidate: `<bounded text>`
 - Observed base consistency: `<N/N and normalized fingerprint>`
 - Hidden-fix result, if disclosure is permitted: `<N/N or withheld>`
@@ -28,7 +29,8 @@ issue fidelity.
 
 1. Check out the exact buggy SHA in a disposable environment.
 2. Inspect the candidate patch before applying it.
-3. Run the supplied sandbox command with network disabled after dependency preparation.
+3. Run the supplied replay command. It reacquires the exact source, permits network only for the
+   fixed hash-locked wheel download phase, and disables network for install and pytest.
 4. Confirm that the observed failure is the issue's intended behavior, not a generic crash,
    unrelated existing failure, timeout, or assertion that can never pass.
 5. Optionally rerun on the maintainer's known fix or current branch and record the exact commit.
@@ -49,4 +51,3 @@ Please answer with `yes`, `no`, or `uncertain`, plus one sentence where useful:
 Record the response date, reviewer identity or approved pseudonym, reviewed candidate SHA-256,
 reviewed repository commit, verdict, required edits, repeat-use intent, and publication permission.
 Silence, a star, a benchmark pass, or a generic compliment is not maintainer validation.
-

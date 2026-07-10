@@ -173,8 +173,10 @@ semantics. The independent bounded loader/verifier rejects duplicate JSON keys, 
 schema or recomputation drift, and caller-supplied readiness claims. The executor context retains sole
 cleanup ownership; the verifier only borrows the final volume read-only. Docker bridge egress is
 still constrained by fixed trusted pip behavior and post-download hashes, not a network-layer PyPI
-allowlist. The ordinary issue/replay workflow remains dependency-free, and no real v0.2 package is
-campaign-ready. See [ADR 0007](decisions/0007-dependency-preparation-remains-a-gated-prototype.md).
+allowlist. Ordinary issue/replay remains dependency-free. Published v0.2 bundles embed the exact
+canonical wheel plan and expected installed-tree/image commitments; `benchmark replay-v02-case`
+rebuilds and mounts that dependency volume through this executor. See
+[ADR 0007](decisions/0007-dependency-preparation-remains-a-gated-prototype.md).
 
 `reproassert sandbox isolation-canary` exercises a standalone synthetic generator/evaluator mount
 profile with two real containers. It is not wired to the current host-side generators and cannot by
@@ -194,8 +196,9 @@ The v0.2 structural package code defines a nominal `VerifiedV02EvaluatorCapabili
 the case, base commit/root/content tree, hidden-fixed and fixing-head trees, production/developer
 patch identities, evaluator commitment, and either a complete dependency receipt/plan/tree/image set
 or an explicit dependency-free mode. The constructor uses an internal issuer token, and every
-consumer recomputes the capability digest. The public package verifier deliberately returns no
-capability: application-owned controller code must first rederive the private semantic evidence.
+consumer recomputes the capability digest. The public package verifier alone returns no capability.
+Application-owned controller code first rederives nominal dataset, source, dependency, isolation,
+and semantic evidence; only that issuer can mint the evaluator capability consumed by the runner.
 The nominal object prevents accidental raw-path composition, not hostile same-process Python:
 anything already executing inside the trusted controller can introspect private module state. The
 production architecture must keep repository, model, plugin, and package-controlled execution in a
@@ -279,6 +282,16 @@ the missing historical executed-tree field retroactively.
 
 The display command stored in the report is never used as execution input.
 
+V0.2 public replay uses a separate canonical, self-hashed bundle (maximum 2 MiB). It binds the case,
+exact commit/archive/root/content tree, candidate bytes, expected fingerprint, publisher-declared
+controller revision, repeat count, and an optional complete dependency plan plus installed-tree and
+immutable-image commitments. That declared revision is durable provenance supplied by the publisher,
+not an authentication of the installed replay controller. Replay requires the packaged trusted
+runner tag, reconstructs its own argv, reacquires source, reruns exact tree attestation, rebuilds the
+dependency volume with network disabled after download, and emits a schema-backed self-hashed result
+covering collection and every repeated execution. Any mismatch rejects the replay; no provider
+adapter is reachable from this command.
+
 ## Claim ladder
 
 | Claim | Produced by current issue/replay workflow? | Meaning |
@@ -286,7 +299,7 @@ The display command stored in the report is never used as execution input.
 | `rejected` | Yes | Candidate failed static policy or collection-level evidence. |
 | `collected` | Yes | Candidate collected but did not meet the repeatable intended-failure contract. |
 | `repeatable_base_failure` | Yes, maximum | The exact generated test failed consistently on the pinned base under strict v1. |
-| `differential_reproduction` | Not from issue/replay; internal primitive only | Requires a nominal evaluator capability and three matching base failures plus three exact fixed passes. No official issuer or public result exists. |
+| `differential_reproduction` | Not from ordinary issue/replay | Requires an application-issued evaluator capability and three matching base failures plus three exact fixed passes. Public results remain 0/20. |
 | `maintainer_validated` | No | Requires recorded independent maintainer evidence. |
 
 The historical benchmark still adds causal controls and blinded semantic review beyond the
