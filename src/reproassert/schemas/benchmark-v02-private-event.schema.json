@@ -1,0 +1,666 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Atomics-hub/reproassert/blob/main/schemas/benchmark-v02-private-event.schema.json",
+  "title": "ReproAssert v0.2 private scored event row",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "benchmark_version",
+    "algorithm",
+    "sequence",
+    "recorded_at",
+    "previous_event_sha256",
+    "campaign_id",
+    "attempt_id",
+    "case_id",
+    "event_type",
+    "payload",
+    "event_sha256"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "benchmark_version": { "const": "0.2.0-draft" },
+    "algorithm": { "const": "reproassert-v02-scored-event-chain-v1" },
+    "sequence": { "type": "integer", "minimum": 1 },
+    "recorded_at": { "$ref": "#/$defs/timestamp" },
+    "previous_event_sha256": { "$ref": "#/$defs/nullable_sha256" },
+    "campaign_id": { "$ref": "#/$defs/identifier" },
+    "attempt_id": { "$ref": "#/$defs/identifier" },
+    "case_id": { "$ref": "#/$defs/case_id" },
+    "event_type": {
+      "enum": [
+        "attempt_started",
+        "phase_started",
+        "phase_finished",
+        "model_call_started",
+        "model_call_finished",
+        "cost_recorded",
+        "candidate_submitted",
+        "generation_disposition_frozen",
+        "campaign_generation_barrier_frozen",
+        "recovery_started",
+        "attempt_finished",
+        "attempt_crashed"
+      ]
+    },
+    "payload": { "type": "object" },
+    "event_sha256": { "$ref": "#/$defs/sha256" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "event_type": { "const": "attempt_started" } } },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/attempt_started" } } }
+    },
+    {
+      "if": { "properties": { "event_type": { "const": "phase_started" } } },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/phase_started" } } }
+    },
+    {
+      "if": { "properties": { "event_type": { "const": "phase_finished" } } },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/phase_finished" } } }
+    },
+    {
+      "if": { "properties": { "event_type": { "const": "model_call_started" } } },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/model_call_started" } } }
+    },
+    {
+      "if": { "properties": { "event_type": { "const": "model_call_finished" } } },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/model_call_finished" } } }
+    },
+    {
+      "if": { "properties": { "event_type": { "const": "cost_recorded" } } },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/cost_recorded" } } }
+    },
+    {
+      "if": { "properties": { "event_type": { "const": "candidate_submitted" } } },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/candidate_submitted" } } }
+    },
+    {
+      "if": { "properties": { "event_type": { "const": "generation_disposition_frozen" } } },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/generation_disposition_frozen" } } }
+    },
+    {
+      "if": { "properties": { "event_type": { "const": "campaign_generation_barrier_frozen" } } },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/campaign_generation_barrier_frozen" } } }
+    },
+    {
+      "if": { "properties": { "event_type": { "const": "recovery_started" } } },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/recovery_started" } } }
+    },
+    {
+      "if": { "properties": { "event_type": { "const": "attempt_finished" } } },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/attempt_finished" } } }
+    },
+    {
+      "if": { "properties": { "event_type": { "const": "attempt_crashed" } } },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/attempt_crashed" } } }
+    }
+  ],
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "git_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "nullable_sha256": {
+      "oneOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }]
+    },
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{2,127}$"
+    },
+    "case_id": { "type": "string", "pattern": "^rk-v0\\.2-[0-9]{3}$" },
+    "code": {
+      "oneOf": [
+        { "type": "string", "pattern": "^[a-z][a-z0-9_]{1,99}$" },
+        { "type": "null" }
+      ]
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?Z$"
+    },
+    "phase": { "enum": ["generation", "differential", "result_write"] },
+    "claim": {
+      "enum": [
+        "rejected",
+        "collected",
+        "repeatable_base_failure",
+        "differential_reproduction"
+      ]
+    },
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "repo",
+        "issue_url",
+        "base_sha",
+        "difficulty",
+        "smoke",
+        "generator_projection_sha256",
+        "evaluator_commitment_sha256",
+        "source_context_sha256"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/case_id" },
+        "repo": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$" },
+        "issue_url": {
+          "type": "string",
+          "pattern": "^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/issues/[1-9][0-9]*$"
+        },
+        "base_sha": { "$ref": "#/$defs/git_sha" },
+        "difficulty": { "enum": ["lt_15m", "15m_to_1h"] },
+        "smoke": { "type": "boolean" },
+        "generator_projection_sha256": { "$ref": "#/$defs/sha256" },
+        "evaluator_commitment_sha256": { "$ref": "#/$defs/sha256" },
+        "source_context_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "execution_authorization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sha256",
+        "kind",
+        "authorized_at",
+        "authorization_ref_sha256",
+        "authorization_text_sha256",
+        "request_set_sha256"
+      ],
+      "properties": {
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "kind": { "const": "explicit_user_approval" },
+        "authorized_at": { "$ref": "#/$defs/timestamp" },
+        "authorization_ref_sha256": { "$ref": "#/$defs/sha256" },
+        "authorization_text_sha256": { "$ref": "#/$defs/sha256" },
+        "request_set_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "pricing_snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "provider",
+        "requested_model",
+        "effective_at",
+        "source",
+        "input_microusd_per_million_tokens",
+        "cached_input_microusd_per_million_tokens",
+        "output_microusd_per_million_tokens",
+        "sandbox_microusd_per_second",
+        "artifact_microusd_per_million_bytes",
+        "paid_storage_microusd",
+        "dependency_prep_microusd"
+      ],
+      "properties": {
+        "algorithm": { "const": "reproassert-v02-component-pricing-v1" },
+        "provider": { "const": "openai" },
+        "requested_model": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "effective_at": { "$ref": "#/$defs/timestamp" },
+        "source": { "type": "string", "minLength": 3, "maxLength": 300 },
+        "input_microusd_per_million_tokens": { "type": "integer", "minimum": 0 },
+        "cached_input_microusd_per_million_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "output_microusd_per_million_tokens": { "type": "integer", "minimum": 0 },
+        "sandbox_microusd_per_second": { "type": "integer", "minimum": 0 },
+        "artifact_microusd_per_million_bytes": { "type": "integer", "minimum": 0 },
+        "paid_storage_microusd": { "type": "integer", "minimum": 0 },
+        "dependency_prep_microusd": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "run_provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "execution_authorization_sha256",
+        "authorized_at",
+        "authorization_ref_sha256",
+        "authorization_text_sha256",
+        "request_set_sha256",
+        "provider",
+        "requested_model",
+        "adapter_config_sha256",
+        "pricing_snapshot_sha256",
+        "pricing_effective_at",
+        "pricing_source"
+      ],
+      "properties": {
+        "execution_authorization_sha256": { "$ref": "#/$defs/sha256" },
+        "authorized_at": { "$ref": "#/$defs/timestamp" },
+        "authorization_ref_sha256": { "$ref": "#/$defs/sha256" },
+        "authorization_text_sha256": { "$ref": "#/$defs/sha256" },
+        "request_set_sha256": { "$ref": "#/$defs/sha256" },
+        "provider": { "const": "openai" },
+        "requested_model": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "adapter_config_sha256": { "$ref": "#/$defs/sha256" },
+        "pricing_snapshot_sha256": { "$ref": "#/$defs/sha256" },
+        "pricing_effective_at": { "$ref": "#/$defs/timestamp" },
+        "pricing_source": { "type": "string", "minLength": 3, "maxLength": 300 }
+      }
+    },
+    "configuration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "campaign_freeze_sha256",
+        "execution_authorization",
+        "tool_git_sha",
+        "authorization",
+        "generator",
+        "pricing_snapshot",
+        "pricing_snapshot_sha256",
+        "run_provenance",
+        "reserved_worst_case_microusd",
+        "max_case_attributable_microusd",
+        "max_campaign_attributable_microusd",
+        "max_case_wall_ms",
+        "provider_timeout_ms"
+      ],
+      "properties": {
+        "algorithm": { "const": "reproassert-v02-scored-runner-v1" },
+        "campaign_freeze_sha256": { "$ref": "#/$defs/sha256" },
+        "execution_authorization": { "$ref": "#/$defs/execution_authorization" },
+        "tool_git_sha": { "$ref": "#/$defs/git_sha" },
+        "authorization": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "authorization_ref"],
+          "properties": {
+            "status": { "const": "explicit_user_approval" },
+            "authorization_ref": { "type": "string", "minLength": 3, "maxLength": 200 }
+          }
+        },
+        "generator": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "provider",
+            "requested_model",
+            "adapter_config_sha256",
+            "feedback_policy",
+            "submitted_candidate_budget"
+          ],
+          "properties": {
+            "mode": { "const": "trusted_builtin_provider_adapter" },
+            "provider": { "const": "openai" },
+            "requested_model": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+            "adapter_config_sha256": { "$ref": "#/$defs/sha256" },
+            "feedback_policy": { "const": "none_one_shot" },
+            "submitted_candidate_budget": { "const": 1 }
+          }
+        },
+        "pricing_snapshot": { "$ref": "#/$defs/pricing_snapshot" },
+        "pricing_snapshot_sha256": { "$ref": "#/$defs/sha256" },
+        "run_provenance": { "$ref": "#/$defs/run_provenance" },
+        "reserved_worst_case_microusd": { "type": "integer", "minimum": 1 },
+        "max_case_attributable_microusd": { "type": "integer", "minimum": 1 },
+        "max_campaign_attributable_microusd": { "type": "integer", "minimum": 1 },
+        "max_case_wall_ms": { "type": "integer", "minimum": 1 },
+        "provider_timeout_ms": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "attempt_started": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "started_at",
+        "preregistration_sha256",
+        "cohort_sha256",
+        "case",
+        "configuration",
+        "source_context",
+        "runner_input_sha256",
+        "reserved_worst_case_microusd"
+      ],
+      "properties": {
+        "started_at": { "$ref": "#/$defs/timestamp" },
+        "preregistration_sha256": { "$ref": "#/$defs/sha256" },
+        "cohort_sha256": { "$ref": "#/$defs/sha256" },
+        "case": { "$ref": "#/$defs/case" },
+        "configuration": { "$ref": "#/$defs/configuration" },
+        "source_context": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["algorithm", "policy_sha256", "sha256"],
+          "properties": {
+            "algorithm": { "$ref": "#/$defs/identifier" },
+            "policy_sha256": { "$ref": "#/$defs/sha256" },
+            "sha256": { "$ref": "#/$defs/sha256" }
+          }
+        },
+        "runner_input_sha256": { "$ref": "#/$defs/sha256" },
+        "reserved_worst_case_microusd": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "phase_started": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["phase", "started_at"],
+      "properties": {
+        "phase": { "$ref": "#/$defs/phase" },
+        "started_at": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "phase_finished": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "phase",
+        "status",
+        "started_at",
+        "completed_at",
+        "duration_ms",
+        "classification_code",
+        "evidence"
+      ],
+      "properties": {
+        "phase": { "$ref": "#/$defs/phase" },
+        "status": { "enum": ["succeeded", "failed"] },
+        "started_at": { "$ref": "#/$defs/timestamp" },
+        "completed_at": { "$ref": "#/$defs/timestamp" },
+        "duration_ms": { "type": "integer", "minimum": 0 },
+        "classification_code": { "$ref": "#/$defs/code" },
+        "evidence": { "type": "object", "maxProperties": 20 }
+      }
+    },
+    "model_call_started": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "call_id",
+        "started_at",
+        "provider",
+        "endpoint_host",
+        "requested_model",
+        "rendered_input_sha256",
+        "config_sha256",
+        "max_output_tokens",
+        "execution_authorization_sha256",
+        "pricing_snapshot_sha256",
+        "reserved_worst_case_microusd",
+        "runner_input_sha256"
+      ],
+      "properties": {
+        "call_id": { "type": "string", "pattern": "^call_[0-9a-f]{32}$" },
+        "started_at": { "$ref": "#/$defs/timestamp" },
+        "provider": { "const": "openai" },
+        "endpoint_host": { "const": "api.openai.com" },
+        "requested_model": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+        "rendered_input_sha256": { "$ref": "#/$defs/sha256" },
+        "config_sha256": { "$ref": "#/$defs/sha256" },
+        "max_output_tokens": { "type": "integer", "minimum": 1 },
+        "execution_authorization_sha256": { "$ref": "#/$defs/sha256" },
+        "pricing_snapshot_sha256": { "$ref": "#/$defs/sha256" },
+        "reserved_worst_case_microusd": { "type": "integer", "minimum": 1 },
+        "runner_input_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "input_tokens", "cached_input_tokens", "output_tokens", "total_tokens"],
+      "properties": {
+        "status": { "enum": ["reported", "unknown"] },
+        "input_tokens": { "oneOf": [{ "type": "integer", "minimum": 0 }, { "type": "null" }] },
+        "cached_input_tokens": { "oneOf": [{ "type": "integer", "minimum": 0 }, { "type": "null" }] },
+        "output_tokens": { "oneOf": [{ "type": "integer", "minimum": 0 }, { "type": "null" }] },
+        "total_tokens": { "oneOf": [{ "type": "integer", "minimum": 0 }, { "type": "null" }] }
+      }
+    },
+    "model_call_finished": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "call_id",
+        "status",
+        "started_at",
+        "completed_at",
+        "duration_ms",
+        "response_model",
+        "response_id_sha256",
+        "classification_code",
+        "usage",
+        "generation_artifact_sha256",
+        "generation_artifact_bytes"
+      ],
+      "properties": {
+        "call_id": { "type": "string", "pattern": "^call_[0-9a-f]{32}$" },
+        "status": {
+          "enum": ["succeeded", "provider_error", "timeout", "invalid_response", "refusal", "cancelled"]
+        },
+        "started_at": { "$ref": "#/$defs/timestamp" },
+        "completed_at": { "$ref": "#/$defs/timestamp" },
+        "duration_ms": { "type": "integer", "minimum": 0 },
+        "response_model": {
+          "oneOf": [
+            { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+            { "type": "null" }
+          ]
+        },
+        "response_id_sha256": { "$ref": "#/$defs/nullable_sha256" },
+        "classification_code": { "type": "string", "pattern": "^[a-z][a-z0-9_]{1,99}$" },
+        "usage": { "$ref": "#/$defs/usage" },
+        "generation_artifact_sha256": { "$ref": "#/$defs/nullable_sha256" },
+        "generation_artifact_bytes": {
+          "oneOf": [{ "type": "integer", "minimum": 1 }, { "type": "null" }]
+        }
+      }
+    },
+    "cost_recorded": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entry_id",
+        "category",
+        "attribution",
+        "status",
+        "amount_microusd",
+        "source_call_id",
+        "observed_at",
+        "evidence_sha256"
+      ],
+      "properties": {
+        "entry_id": { "type": "string", "pattern": "^cost_[0-9a-f]{32}$" },
+        "category": {
+          "enum": ["model_inference", "sandbox_compute", "artifact_transfer", "paid_storage", "dependency_prep"]
+        },
+        "attribution": { "enum": ["scored", "cold_prep_excluded"] },
+        "status": { "enum": ["measured", "zero_verified", "unknown"] },
+        "amount_microusd": {
+          "oneOf": [{ "type": "integer", "minimum": 0 }, { "type": "null" }]
+        },
+        "source_call_id": {
+          "oneOf": [
+            { "type": "string", "pattern": "^call_[0-9a-f]{32}$" },
+            { "type": "null" }
+          ]
+        },
+        "observed_at": { "$ref": "#/$defs/timestamp" },
+        "evidence_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "candidate_submitted": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidate_index",
+        "candidate_sha256",
+        "candidate_bytes",
+        "artifact_path",
+        "generation_artifact_sha256",
+        "generation_artifact_bytes",
+        "test_function",
+        "generation_call_id",
+        "oracle_consulted",
+        "submitted_at"
+      ],
+      "properties": {
+        "candidate_index": { "const": 1 },
+        "candidate_sha256": { "$ref": "#/$defs/sha256" },
+        "candidate_bytes": { "type": "integer", "minimum": 1, "maximum": 32768 },
+        "artifact_path": { "const": "generation-transaction.json" },
+        "generation_artifact_sha256": { "$ref": "#/$defs/sha256" },
+        "generation_artifact_bytes": { "type": "integer", "minimum": 1 },
+        "test_function": { "type": "string", "pattern": "^test_issue_[1-9][0-9]*_reproduction$" },
+        "generation_call_id": { "type": "string", "pattern": "^call_[0-9a-f]{32}$" },
+        "oracle_consulted": { "const": false },
+        "submitted_at": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "generation_disposition_frozen": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "candidate_sha256", "classification_code", "frozen_at"],
+      "properties": {
+        "status": { "enum": ["candidate_submitted", "no_candidate"] },
+        "candidate_sha256": { "$ref": "#/$defs/nullable_sha256" },
+        "classification_code": { "$ref": "#/$defs/code" },
+        "frozen_at": { "$ref": "#/$defs/timestamp" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "status": { "const": "candidate_submitted" } } },
+          "then": {
+            "properties": {
+              "candidate_sha256": { "$ref": "#/$defs/sha256" },
+              "classification_code": { "type": "null" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "status": { "const": "no_candidate" } } },
+          "then": {
+            "properties": {
+              "candidate_sha256": { "type": "null" },
+              "classification_code": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{1,99}$"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "campaign_generation_barrier_frozen": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "barrier_algorithm",
+        "configuration_sha256",
+        "execution_authorization_sha256",
+        "request_set_sha256",
+        "pricing_snapshot_sha256",
+        "run_provenance_sha256",
+        "disposition_set_sha256",
+        "generation_barrier_sha256",
+        "disposition_count",
+        "frozen_at"
+      ],
+      "properties": {
+        "barrier_algorithm": { "const": "reproassert-v02-campaign-generation-barrier-v1" },
+        "configuration_sha256": { "$ref": "#/$defs/sha256" },
+        "execution_authorization_sha256": { "$ref": "#/$defs/sha256" },
+        "request_set_sha256": { "$ref": "#/$defs/sha256" },
+        "pricing_snapshot_sha256": { "$ref": "#/$defs/sha256" },
+        "run_provenance_sha256": { "$ref": "#/$defs/sha256" },
+        "disposition_set_sha256": { "$ref": "#/$defs/sha256" },
+        "generation_barrier_sha256": { "$ref": "#/$defs/sha256" },
+        "disposition_count": { "const": 20 },
+        "frozen_at": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "recovery_started": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "recovery_id",
+        "started_at",
+        "mode",
+        "preregistration_sha256",
+        "configuration_sha256",
+        "execution_authorization_sha256",
+        "source_context_sha256",
+        "runner_input_sha256",
+        "generation_call_id",
+        "generation_artifact_sha256",
+        "generation_artifact_bytes",
+        "candidate_sha256",
+        "provider_calls_permitted",
+        "oracle_feedback_permitted"
+      ],
+      "properties": {
+        "recovery_id": { "$ref": "#/$defs/identifier" },
+        "started_at": { "$ref": "#/$defs/timestamp" },
+        "mode": { "const": "exact_candidate_zero_provider_calls" },
+        "preregistration_sha256": { "$ref": "#/$defs/sha256" },
+        "configuration_sha256": { "$ref": "#/$defs/sha256" },
+        "execution_authorization_sha256": { "$ref": "#/$defs/sha256" },
+        "source_context_sha256": { "$ref": "#/$defs/sha256" },
+        "runner_input_sha256": { "$ref": "#/$defs/sha256" },
+        "generation_call_id": { "type": "string", "pattern": "^call_[0-9a-f]{32}$" },
+        "generation_artifact_sha256": { "$ref": "#/$defs/sha256" },
+        "generation_artifact_bytes": { "type": "integer", "minimum": 1 },
+        "candidate_sha256": { "$ref": "#/$defs/sha256" },
+        "provider_calls_permitted": { "const": 0 },
+        "oracle_feedback_permitted": { "const": false }
+      }
+    },
+    "attempt_finished": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "completed_at",
+        "status",
+        "outcome",
+        "claim_level",
+        "cost_complete",
+        "total_attributable_microusd",
+        "private_result_sha256",
+        "public_result_sha256"
+      ],
+      "properties": {
+        "completed_at": { "$ref": "#/$defs/timestamp" },
+        "status": { "enum": ["complete", "incomplete_unknown_cost"] },
+        "outcome": { "type": "string", "pattern": "^[a-z][a-z0-9_]{1,99}$" },
+        "claim_level": { "$ref": "#/$defs/claim" },
+        "cost_complete": { "type": "boolean" },
+        "total_attributable_microusd": {
+          "oneOf": [{ "type": "integer", "minimum": 0 }, { "type": "null" }]
+        },
+        "private_result_sha256": { "$ref": "#/$defs/nullable_sha256" },
+        "public_result_sha256": { "$ref": "#/$defs/nullable_sha256" }
+      }
+    },
+    "attempt_crashed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "crashed_at",
+        "classification_code",
+        "exception_type",
+        "cost_complete",
+        "recovery_status"
+      ],
+      "properties": {
+        "crashed_at": { "$ref": "#/$defs/timestamp" },
+        "classification_code": { "type": "string", "pattern": "^[a-z][a-z0-9_]{1,99}$" },
+        "exception_type": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "cost_complete": { "const": false },
+        "recovery_status": {
+          "const": "manual_reconciliation_required_no_new_provider_call"
+        }
+      }
+    }
+  }
+}

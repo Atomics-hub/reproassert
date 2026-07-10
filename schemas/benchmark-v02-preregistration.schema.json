@@ -28,7 +28,7 @@
       "properties": {
         "cutoff": { "const": "pre_solution_pr_publication" },
         "comments_included": { "const": false },
-        "generator_visible_fields": { "const": ["repo", "issue_url", "base_sha", "issue_snapshot"] },
+        "generator_visible_fields": { "const": ["repo", "issue_url", "base_sha", "issue_snapshot", "verified_source_context"] },
         "evaluator_only_fields": { "const": ["raw_issue_history", "fixing_pull_request", "fixed_commit_and_production_patch", "developer_tests", "oracle_rubric", "causal_controls", "reviewer_packet"] },
         "submitted_candidates_per_case": { "const": 1 },
         "candidate_selection_uses_oracle": { "const": false },
@@ -39,7 +39,7 @@
     "artifact_contract": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["issue_history_query_sha256", "solution_cutoff_query_sha256", "fixing_pr_identity_query_sha256", "redaction_policy_sha256", "generator_projection_algorithm", "evaluator_package_algorithm", "evaluator_commitment_algorithm", "semantic_verification_algorithm", "source_dataset_transform"],
+      "required": ["issue_history_query_sha256", "solution_cutoff_query_sha256", "fixing_pr_identity_query_sha256", "redaction_policy_sha256", "generator_projection_algorithm", "evaluator_package_algorithm", "evaluator_commitment_algorithm", "semantic_verification_algorithm", "source_dataset_transform", "source_context_algorithm", "source_context_policy_sha256"],
       "properties": {
         "issue_history_query_sha256": { "$ref": "#/$defs/sha256" },
         "solution_cutoff_query_sha256": { "$ref": "#/$defs/sha256" },
@@ -49,7 +49,9 @@
         "evaluator_package_algorithm": { "const": "reproassert-hidden-evaluator-package-v1" },
         "evaluator_commitment_algorithm": { "const": "reproassert-salted-evaluator-commitment-v1" },
         "semantic_verification_algorithm": { "const": "reproassert-v02-semantic-verification-v1" },
-        "source_dataset_transform": { "const": "drop_PASS_TO_PASS_and_FAIL_TO_PASS_v1" }
+        "source_dataset_transform": { "const": "drop_PASS_TO_PASS_and_FAIL_TO_PASS_v1" },
+        "source_context_algorithm": { "const": "reproassert-v02-source-context-v1" },
+        "source_context_policy_sha256": { "$ref": "#/$defs/sha256" }
       }
     },
     "cases": {
@@ -69,7 +71,7 @@
     "case": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "repo", "issue_url", "base_sha", "difficulty", "smoke", "generator_projection_sha256", "evaluator_commitment_sha256"],
+      "required": ["id", "repo", "issue_url", "base_sha", "difficulty", "smoke", "generator_projection_sha256", "evaluator_commitment_sha256", "source_context_sha256"],
       "properties": {
         "id": { "type": "string", "pattern": "^rk-v0\\.2-[0-9]{3}$" },
         "repo": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$" },
@@ -78,7 +80,8 @@
         "difficulty": { "enum": ["lt_15m", "15m_to_1h"] },
         "smoke": { "type": "boolean" },
         "generator_projection_sha256": { "$ref": "#/$defs/sha256" },
-        "evaluator_commitment_sha256": { "$ref": "#/$defs/sha256" }
+        "evaluator_commitment_sha256": { "$ref": "#/$defs/sha256" },
+        "source_context_sha256": { "$ref": "#/$defs/sha256" }
       }
     },
     "tool": {

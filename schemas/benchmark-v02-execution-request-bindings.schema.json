@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Atomics-hub/reproassert/blob/main/schemas/benchmark-v02-execution-request-bindings.schema.json",
+  "title": "ReproAssert v0.2 execution request bindings",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "benchmark_version",
+    "algorithm",
+    "preregistration_sha256",
+    "cohort_sha256",
+    "requests"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "benchmark_version": { "const": "0.2.0-draft" },
+    "algorithm": { "const": "reproassert-v02-execution-request-bindings-v1" },
+    "preregistration_sha256": { "$ref": "#/$defs/sha256" },
+    "cohort_sha256": { "$ref": "#/$defs/sha256" },
+    "requests": {
+      "type": "array",
+      "minItems": 20,
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["case_id", "rendered_input_sha256"],
+        "properties": {
+          "case_id": { "$ref": "#/$defs/case_id" },
+          "rendered_input_sha256": { "$ref": "#/$defs/sha256" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "case_id": { "type": "string", "pattern": "^rk-v0\\.2-[0-9]{3}$" }
+  }
+}

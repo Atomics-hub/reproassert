@@ -9,6 +9,15 @@ record whether earlier private fix chronology is proven or unproven. That caveat
 three-field generator projection and must never be turned into a “before anyone attempted a fix”
 claim.
 
+The committed [`upstream-provenance.json`](upstream-provenance.json) is a public, oracle-safe
+projection from a real offline parse of the exact 500-row SWE-bench Verified Parquet artifact and
+an exact join against all 449 TDD-Bench Verified member IDs. It binds both upstream commits, Git
+objects, artifact hashes, parser protocol, PyArrow version, and the shipped worker hash while
+excluding instance IDs, row ordinals, row commitments, production patches, and developer tests.
+This is authentic upstream-input evidence, not a selected 20-case cohort, campaign freeze, model
+run, or benchmark result. The host-native PyArrow step remains evidence preparation only; hosted
+use requires the same parser in a memory-bounded, no-secret, network-disabled container or microVM.
+
 No v0.2 cohort is frozen yet. Case IDs and receipts used by the draft validator are fixtures until a
 new manifest is preregistered. Benchmark v0.1 remains immutable, blocked, and at 0/20.
 
@@ -101,6 +110,6 @@ applies exactly one candidate to separately attested base/fixed trees, and runs 
 failures and three exact fixed passes. Raw fixed stdout/JUnit is reduced to digests before the public
 record. This fixture does not come from an authentic v0.2 package and is not an L1 result.
 
-There are still no authentic v0.2 captures or case packages, no official semantic issuer, no
-production scored runner or model campaign, no public L1/L2 result, and no model/provider or GitHub
-Actions spend for this milestone.
+There are still no authentic v0.2 issue-history captures or case packages, no frozen 20-case
+cohort, no model campaign, and no public L1/L2 result. The upstream provenance record does not
+change those facts or authorize model/provider or GitHub Actions spend.

@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reproassert.dev/schemas/benchmark-v02-leak-audited-cohort-plan.schema.json",
+  "title": "ReproAssert benchmark v0.2 leak-audited cohort plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["algorithm", "case_count", "cases", "cohort_plan_sha256", "difficulty_split", "issue_text_policy", "oracle_leak_policy", "repository_count", "security", "selection_method", "status"],
+  "properties": {
+    "algorithm": { "const": "reproassert-v02-leak-audited-cohort-plan-v1" },
+    "case_count": { "const": 20 },
+    "cases": { "type": "array", "minItems": 20, "maxItems": 20, "items": { "$ref": "#/$defs/case" } },
+    "cohort_plan_sha256": { "$ref": "#/$defs/sha256" },
+    "difficulty_split": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["15m_to_1h", "lt_15m"],
+      "properties": { "15m_to_1h": { "const": 6 }, "lt_15m": { "const": 14 } }
+    },
+    "issue_text_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["generator_claim_ceiling", "historical_public_contamination", "issue_text_chronology", "issue_text_source", "issue_text_source_commit", "source_dataset_object_witness_sha256"],
+      "properties": {
+        "generator_claim_ceiling": { "const": "generated_against_exact_buggy_base_with_historical_fix_hidden" },
+        "historical_public_contamination": { "const": "historical_public_contamination_exposed" },
+        "issue_text_chronology": { "const": "chronology_unproven" },
+        "issue_text_source": { "const": "dataset_snapshot_at_pinned_commit" },
+        "issue_text_source_commit": { "$ref": "#/$defs/gitOid" },
+        "source_dataset_object_witness_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "oracle_leak_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["direct_own_fixing_pr_reference", "exact_production_added_line_overlap_at_least_40_chars", "exact_test_added_line_overlap_at_least_40_chars"],
+      "properties": {
+        "direct_own_fixing_pr_reference": { "const": "reject" },
+        "exact_production_added_line_overlap_at_least_40_chars": { "const": "quarantine" },
+        "exact_test_added_line_overlap_at_least_40_chars": { "const": "quarantine" }
+      }
+    },
+    "repository_count": { "const": 10 },
+    "security": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["developer_test_bytes_exposed", "hints_text_exposed", "production_patch_bytes_exposed"],
+      "properties": {
+        "developer_test_bytes_exposed": { "const": false },
+        "hints_text_exposed": { "const": false },
+        "production_patch_bytes_exposed": { "const": false }
+      }
+    },
+    "selection_method": { "const": "v0.1_migration_with_two_lowest_membership_same_repo_difficulty_leak_free_replacements" },
+    "status": { "const": "prepared_not_production_eligible" }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "gitOid": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["base_sha", "case_id", "case_plan_sha256", "difficulty", "instance_id", "issue_text_sha256", "issue_url", "issue_url_provenance", "oracle_leak_audit", "replaced_instance_id", "replacement_rule", "repo", "selection_origin", "source_dataset_row_ordinal", "tdd_membership_ordinal"],
+      "properties": {
+        "base_sha": { "$ref": "#/$defs/gitOid" },
+        "case_id": { "type": "string", "pattern": "^rk-v0\\.2-(00[1-9]|01[0-9]|020)$" },
+        "case_plan_sha256": { "$ref": "#/$defs/sha256" },
+        "difficulty": { "enum": ["lt_15m", "15m_to_1h"] },
+        "instance_id": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+__[A-Za-z0-9_.-]+-[1-9][0-9]*$" },
+        "issue_text_sha256": { "$ref": "#/$defs/sha256" },
+        "issue_url": { "type": "string", "pattern": "^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/issues/[1-9][0-9]*$" },
+        "issue_url_provenance": { "enum": ["controller_selected_v0.1_mapping_chronology_unproven", "current_fixing_pr_body_mapping_unauthenticated_chronology_unproven"] },
+        "oracle_leak_audit": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["direct_own_fixing_pr_reference", "minimum_exact_added_line_characters", "oracle_leak_free", "production_added_line_overlap", "test_added_line_overlap"],
+          "properties": {
+            "direct_own_fixing_pr_reference": { "const": false },
+            "minimum_exact_added_line_characters": { "const": 40 },
+            "oracle_leak_free": { "const": true },
+            "production_added_line_overlap": { "const": false },
+            "test_added_line_overlap": { "const": false }
+          }
+        },
+        "replaced_instance_id": { "oneOf": [{ "type": "null" }, { "type": "string", "pattern": "^[A-Za-z0-9_.-]+__[A-Za-z0-9_.-]+-[1-9][0-9]*$" }] },
+        "replacement_rule": { "enum": ["not_applicable", "lowest_tdd_membership_ordinal_same_repo_and_difficulty_passing_mechanical_oracle_audit"] },
+        "repo": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$" },
+        "selection_origin": { "enum": ["v0.1_migration", "deterministic_tdd_membership_replacement"] },
+        "source_dataset_row_ordinal": { "type": "integer", "minimum": 0, "maximum": 499 },
+        "tdd_membership_ordinal": { "type": "integer", "minimum": 1, "maximum": 449 }
+      }
+    }
+  }
+}

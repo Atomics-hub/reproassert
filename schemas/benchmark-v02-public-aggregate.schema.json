@@ -1,0 +1,471 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Atomics-hub/reproassert/blob/main/schemas/benchmark-v02-public-aggregate.schema.json",
+  "title": "ReproAssert v0.2 public campaign aggregate",
+  "description": "A bounded selected-cohort aggregate with executed causal-control receipts, blinded multi-reviewer consensus, and no hidden fixed-run detail or private-result hash.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "benchmark_version",
+    "algorithm",
+    "publication_status",
+    "claim_ceiling",
+    "campaign_id",
+    "finalized_at",
+    "campaign_freeze_sha256",
+    "preregistration_sha256",
+    "cohort_sha256",
+    "generation_barrier_sha256",
+    "candidate_freeze_barrier",
+    "benchmark_provenance",
+    "run_configuration",
+    "summary",
+    "cases",
+    "limitations",
+    "tool",
+    "public_aggregate_sha256"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "benchmark_version": { "const": "0.2.0-draft" },
+    "algorithm": { "const": "reproassert-v02-public-aggregate-v1" },
+    "publication_status": { "const": "campaign_complete_unsealed" },
+    "claim_ceiling": {
+      "const": "l2_protocol_bounded_selected_cohort_no_maintainer_validation"
+    },
+    "campaign_id": { "$ref": "#/$defs/identifier" },
+    "finalized_at": { "$ref": "#/$defs/timestamp" },
+    "campaign_freeze_sha256": { "$ref": "#/$defs/sha256" },
+    "preregistration_sha256": { "$ref": "#/$defs/sha256" },
+    "cohort_sha256": { "$ref": "#/$defs/sha256" },
+    "generation_barrier_sha256": { "$ref": "#/$defs/sha256" },
+    "candidate_freeze_barrier": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["expected", "verified", "all_dispositions_preceded_first_evaluator_phase"],
+      "properties": {
+        "expected": { "const": 20 },
+        "verified": { "const": 20 },
+        "all_dispositions_preceded_first_evaluator_phase": { "const": true }
+      }
+    },
+    "benchmark_provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["corpus_visibility", "cohort_scope", "generalization_claim"],
+      "properties": {
+        "corpus_visibility": { "const": "historical_public_contamination_exposed" },
+        "cohort_scope": { "const": "selected_feasibility_cohort_not_population_sample" },
+        "generalization_claim": { "const": "none" }
+      }
+    },
+    "run_configuration": { "$ref": "#/$defs/run_configuration" },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "case_count",
+        "candidate_count",
+        "mechanical_differential_count",
+        "mechanical_outcome_counts",
+        "review_semantic_valid_count",
+        "provisional_candidate_count",
+        "l2_semantic_valid_count",
+        "false_positive_count",
+        "false_positive_rate_millionths",
+        "provisional_rate_millionths",
+        "l2_success_rate_millionths",
+        "l2_exact_binomial_95_interval",
+        "total_attributable_microusd",
+        "median_active_duration_ms",
+        "median_provisional_candidate_cost_microusd",
+        "blended_cost_per_provisional_candidate_microusd",
+        "blended_cost_per_provisional_candidate_rounding",
+        "blended_cost_per_l2_success_microusd",
+        "l2_cost_per_success_status"
+      ],
+      "properties": {
+        "case_count": { "const": 20 },
+        "candidate_count": { "$ref": "#/$defs/count" },
+        "mechanical_differential_count": { "$ref": "#/$defs/count" },
+        "mechanical_outcome_counts": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 20,
+          "propertyNames": { "pattern": "^[a-z][a-z0-9_]{1,99}$" },
+          "additionalProperties": { "$ref": "#/$defs/count" }
+        },
+        "review_semantic_valid_count": { "$ref": "#/$defs/count" },
+        "provisional_candidate_count": { "$ref": "#/$defs/count" },
+        "l2_semantic_valid_count": { "$ref": "#/$defs/count" },
+        "false_positive_count": { "$ref": "#/$defs/count" },
+        "false_positive_rate_millionths": {
+          "oneOf": [
+            { "type": "integer", "minimum": 0, "maximum": 1000000 },
+            { "type": "null" }
+          ]
+        },
+        "provisional_rate_millionths": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "l2_success_rate_millionths": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "l2_exact_binomial_95_interval": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "method",
+            "lower_millionths",
+            "upper_millionths",
+            "scope",
+            "selection_bias_addressed"
+          ],
+          "properties": {
+            "method": { "const": "clopper_pearson_two_sided_reference" },
+            "lower_millionths": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000
+            },
+            "upper_millionths": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000
+            },
+            "scope": { "const": "selected_cohort_only_not_population_generalization" },
+            "selection_bias_addressed": { "const": false }
+          }
+        },
+        "total_attributable_microusd": { "type": "integer", "minimum": 0 },
+        "median_active_duration_ms": { "type": "integer", "minimum": 0 },
+        "median_provisional_candidate_cost_microusd": {
+          "oneOf": [{ "type": "integer", "minimum": 0 }, { "type": "null" }]
+        },
+        "blended_cost_per_provisional_candidate_microusd": {
+          "oneOf": [{ "type": "integer", "minimum": 0 }, { "type": "null" }]
+        },
+        "blended_cost_per_provisional_candidate_rounding": {
+          "const": "ceiling_integer_microusd"
+        },
+        "blended_cost_per_l2_success_microusd": {
+          "oneOf": [{ "type": "integer", "minimum": 0 }, { "type": "null" }]
+        },
+        "l2_cost_per_success_status": {
+          "enum": [
+            "undefined_no_l2_verdicts",
+            "ceiling_integer_microusd_all_campaign_attributable_cost"
+          ]
+        }
+      }
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 20,
+      "maxItems": 20,
+      "items": { "$ref": "#/$defs/case" }
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": { "type": "string", "minLength": 1, "maxLength": 200 }
+    },
+    "tool": { "$ref": "#/$defs/tool" },
+    "public_aggregate_sha256": { "$ref": "#/$defs/sha256" }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "git_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{2,127}$"
+    },
+    "case_id": { "type": "string", "pattern": "^rk-v0\\.2-[0-9]{3}$" },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?Z$"
+    },
+    "count": { "type": "integer", "minimum": 0, "maximum": 20 },
+    "nullable_sha256": {
+      "oneOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }]
+    },
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "case_id",
+        "issue_url",
+        "runner_input_sha256",
+        "candidate_status",
+        "candidate",
+        "reproduction",
+        "mechanical_outcome",
+        "claim_level",
+        "causal_control_evidence",
+        "semantic_review_evidence",
+        "semantic_verdict",
+        "validation_outcome",
+        "provisional_mechanical_plus_review",
+        "l2_semantic_valid",
+        "total_attributable_microusd",
+        "active_duration_ms"
+      ],
+      "properties": {
+        "case_id": { "$ref": "#/$defs/case_id" },
+        "issue_url": {
+          "type": "string",
+          "pattern": "^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/issues/[1-9][0-9]*$"
+        },
+        "runner_input_sha256": { "$ref": "#/$defs/sha256" },
+        "candidate_status": { "enum": ["submitted", "no_candidate"] },
+        "candidate": {
+          "oneOf": [{ "$ref": "#/$defs/candidate" }, { "type": "null" }]
+        },
+        "reproduction": {
+          "oneOf": [{ "$ref": "#/$defs/reproduction" }, { "type": "null" }]
+        },
+        "mechanical_outcome": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{1,99}$"
+        },
+        "claim_level": {
+          "enum": [
+            "rejected",
+            "collected",
+            "repeatable_base_failure",
+            "differential_reproduction"
+          ]
+        },
+        "causal_control_evidence": { "$ref": "#/$defs/causal_control_evidence" },
+        "semantic_review_evidence": { "$ref": "#/$defs/semantic_review_evidence" },
+        "semantic_verdict": {
+          "enum": [
+            "semantically_valid",
+            "semantically_invalid",
+            "not_applicable_no_candidate"
+          ]
+        },
+        "validation_outcome": {
+          "enum": [
+            "semantic_valid",
+            "plausible_f2p_semantic_invalid",
+            "mechanical_gate_not_met",
+            "no_candidate"
+          ]
+        },
+        "provisional_mechanical_plus_review": { "type": "boolean" },
+        "l2_semantic_valid": { "type": "boolean" },
+        "total_attributable_microusd": { "type": "integer", "minimum": 0 },
+        "active_duration_ms": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "bytes", "test_content", "expected_symptom", "rationale"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^tests/reproassert/test_issue_[1-9][0-9]*\\.py$"
+        },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "bytes": { "type": "integer", "minimum": 1, "maximum": 32768 },
+        "test_content": { "type": "string", "minLength": 1, "maxLength": 32768 },
+        "expected_symptom": { "type": "string", "minLength": 3, "maxLength": 500 },
+        "rationale": { "type": "string", "minLength": 3, "maxLength": 2000 }
+      }
+    },
+    "causal_control_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "control_receipt_sha256",
+        "required_control_outcomes",
+        "required_controls_passed",
+        "declared_decoy_count",
+        "declared_decoys_passed"
+      ],
+      "properties": {
+        "control_receipt_sha256": { "$ref": "#/$defs/sha256" },
+        "required_control_outcomes": {
+          "type": "object",
+          "maxProperties": 3,
+          "propertyNames": {
+            "enum": [
+              "candidate_on_fixed",
+              "fix_minus_issue_relevant_hunks",
+              "base_plus_issue_relevant_hunks"
+            ]
+          },
+          "additionalProperties": {
+            "enum": [
+              "pass",
+              "fail",
+              "infra_error",
+              "timeout",
+              "not_available",
+              "inconclusive"
+            ]
+          }
+        },
+        "required_controls_passed": { "type": "boolean" },
+        "declared_decoy_count": { "type": "integer", "minimum": 0, "maximum": 32 },
+        "declared_decoys_passed": { "type": "boolean" }
+      }
+    },
+    "semantic_review_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "review_case_sha256",
+        "reviewer_role_seal_sha256",
+        "reviewer_count",
+        "consensus_verdict",
+        "tiebreak_used",
+        "checklist_sha256"
+      ],
+      "properties": {
+        "review_case_sha256": { "$ref": "#/$defs/sha256" },
+        "reviewer_role_seal_sha256": { "$ref": "#/$defs/nullable_sha256" },
+        "reviewer_count": { "enum": [0, 2, 3] },
+        "consensus_verdict": {
+          "enum": [
+            "semantically_valid",
+            "semantically_invalid",
+            "not_applicable_no_candidate"
+          ]
+        },
+        "tiebreak_used": { "type": "boolean" },
+        "checklist_sha256": { "$ref": "#/$defs/nullable_sha256" }
+      }
+    },
+    "run_configuration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "configuration_sha256",
+        "campaign_freeze_sha256",
+        "runner_tool_git_sha",
+        "authorization_status",
+        "provider",
+        "requested_model",
+        "response_models",
+        "adapter_config_sha256",
+        "pricing_snapshot_sha256",
+        "feedback_policy",
+        "candidate_budget_per_case",
+        "reserved_worst_case_microusd",
+        "max_case_attributable_microusd",
+        "max_campaign_attributable_microusd",
+        "max_case_wall_ms",
+        "provider_timeout_ms",
+        "provider_call_count",
+        "model_terminal_count",
+        "run_started_at",
+        "run_completed_at",
+        "sandbox_verifier_identity_status",
+        "dependency_runner_image_ids"
+      ],
+      "properties": {
+        "configuration_sha256": { "$ref": "#/$defs/sha256" },
+        "campaign_freeze_sha256": { "$ref": "#/$defs/sha256" },
+        "runner_tool_git_sha": { "$ref": "#/$defs/git_sha" },
+        "authorization_status": { "const": "explicit_user_approval" },
+        "provider": { "const": "openai" },
+        "requested_model": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "response_models": {
+          "type": "array",
+          "maxItems": 20,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 200 }
+        },
+        "adapter_config_sha256": { "$ref": "#/$defs/sha256" },
+        "pricing_snapshot_sha256": { "$ref": "#/$defs/sha256" },
+        "feedback_policy": { "const": "none_one_shot" },
+        "candidate_budget_per_case": { "const": 1 },
+        "reserved_worst_case_microusd": { "type": "integer", "minimum": 1 },
+        "max_case_attributable_microusd": { "type": "integer", "minimum": 1 },
+        "max_campaign_attributable_microusd": { "type": "integer", "minimum": 1 },
+        "max_case_wall_ms": { "type": "integer", "minimum": 1 },
+        "provider_timeout_ms": { "type": "integer", "minimum": 1 },
+        "provider_call_count": { "type": "integer", "minimum": 0, "maximum": 20 },
+        "model_terminal_count": { "type": "integer", "minimum": 0, "maximum": 20 },
+        "run_started_at": { "$ref": "#/$defs/timestamp" },
+        "run_completed_at": { "$ref": "#/$defs/timestamp" },
+        "sandbox_verifier_identity_status": {
+          "const": "not_recorded_in_current_scored_result"
+        },
+        "dependency_runner_image_ids": {
+          "type": "array",
+          "maxItems": 20,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 200 }
+        }
+      }
+    },
+    "reproduction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "base_sha",
+        "candidate_path",
+        "candidate_sha256",
+        "source_context_sha256",
+        "evaluator_commitment_sha256",
+        "dependency_receipt_sha256",
+        "dependency_plan_sha256",
+        "dependency_tree_sha256",
+        "dependency_runner_image_id",
+        "test_command",
+        "command_scope"
+      ],
+      "properties": {
+        "repository": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$" },
+        "base_sha": { "$ref": "#/$defs/git_sha" },
+        "candidate_path": {
+          "type": "string",
+          "pattern": "^tests/reproassert/test_issue_[1-9][0-9]*\\.py$"
+        },
+        "candidate_sha256": { "$ref": "#/$defs/sha256" },
+        "source_context_sha256": { "$ref": "#/$defs/sha256" },
+        "evaluator_commitment_sha256": { "$ref": "#/$defs/sha256" },
+        "dependency_receipt_sha256": { "$ref": "#/$defs/nullable_sha256" },
+        "dependency_plan_sha256": { "$ref": "#/$defs/nullable_sha256" },
+        "dependency_tree_sha256": { "$ref": "#/$defs/nullable_sha256" },
+        "dependency_runner_image_id": {
+          "oneOf": [
+            { "type": "string", "minLength": 1, "maxLength": 200 },
+            { "type": "null" }
+          ]
+        },
+        "test_command": {
+          "type": "string",
+          "pattern": "^pytest -q tests/reproassert/test_issue_[1-9][0-9]*\\.py::test_issue_[1-9][0-9]*_reproduction$"
+        },
+        "command_scope": {
+          "const": "prepared_exact_source_and_dependencies_only_not_bootstrap"
+        }
+      }
+    },
+    "tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "git_sha"],
+      "properties": {
+        "name": { "$ref": "#/$defs/identifier" },
+        "version": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "git_sha": { "$ref": "#/$defs/git_sha" }
+      }
+    }
+  }
+}

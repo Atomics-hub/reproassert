@@ -29,6 +29,16 @@ from reproassert.benchmark_source import (
     prepare_source_case,
     verify_source_receipt,
 )
+from reproassert.benchmark_v02_campaign import (
+    finalize_v02_campaign,
+    prepare_v02_campaign_freeze,
+    seal_v02_causal_control_set,
+    seal_v02_semantic_review_set,
+    verify_v02_campaign_bundle,
+    verify_v02_campaign_freeze,
+    verify_v02_causal_control_set,
+    verify_v02_semantic_review_set,
+)
 from reproassert.dependency_execution_receipt import load_dependency_execution_receipt
 from reproassert.errors import ReproAssertError
 from reproassert.generator import (
@@ -456,6 +466,469 @@ def benchmark_verify_dependency_receipt(
     except (ReproAssertError, OSError, ValueError) as exc:
         _fail(exc)
     click.echo(json.dumps(asdict(verified), indent=2, sort_keys=True))
+
+
+@benchmark_group.command("prepare-v02-campaign")
+@click.option(
+    "--preregistration",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+    help="Exact frozen 20-case v0.2 preregistration.",
+)
+@click.option("--campaign-id", required=True, help="Bounded campaign identity.")
+@click.option("--prepared-at", required=True, help="Preparation time in RFC 3339 UTC.")
+@click.option("--tool-name", default="reproassert", show_default=True)
+@click.option("--tool-version", required=True)
+@click.option("--tool-git-sha", required=True, help="Exact 40-hex controller revision.")
+@click.option(
+    "--output",
+    type=click.Path(path_type=Path, dir_okay=False),
+    required=True,
+    help="New canonical preparation-only campaign freeze.",
+)
+def benchmark_prepare_v02_campaign(
+    preregistration: Path,
+    campaign_id: str,
+    prepared_at: str,
+    tool_name: str,
+    tool_version: str,
+    tool_git_sha: str,
+    output: Path,
+) -> None:
+    """Freeze a v0.2 campaign without authorizing or invoking any provider."""
+
+    try:
+        _ensure_private_output_root(output.parent)
+        path = prepare_v02_campaign_freeze(
+            preregistration,
+            output,
+            campaign_id=campaign_id,
+            prepared_at=prepared_at,
+            tool_name=tool_name,
+            tool_version=tool_version,
+            tool_git_sha=tool_git_sha,
+        )
+        verified = verify_v02_campaign_freeze(path, preregistration)
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(
+        json.dumps(
+            {
+                "campaign_id": verified.campaign_id,
+                "campaign_freeze": str(path),
+                "campaign_freeze_sha256": verified.raw_sha256,
+                "case_count": len(verified.case_ids),
+                "provider_authorized": False,
+                "provider_invoked_by_this_command": False,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+@benchmark_group.command("verify-v02-campaign")
+@click.argument("campaign_freeze", type=click.Path(path_type=Path, exists=True, dir_okay=False))
+@click.option(
+    "--preregistration",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+def benchmark_verify_v02_campaign(campaign_freeze: Path, preregistration: Path) -> None:
+    """Verify the exact deny-by-default campaign freeze without executing a case."""
+
+    try:
+        verified = verify_v02_campaign_freeze(campaign_freeze, preregistration)
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(
+        json.dumps(
+            {
+                "campaign_id": verified.campaign_id,
+                "campaign_freeze_sha256": verified.raw_sha256,
+                "case_count": len(verified.case_ids),
+                "preparation_only": True,
+                "provider_authorized": False,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+@benchmark_group.command("seal-v02-causal-controls")
+@click.option(
+    "--campaign-freeze",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--preregistration",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--controls-draft",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+    help="Bounded JSON array of exactly 20 already-executed causal-control cases.",
+)
+@click.option("--sealed-at", required=True, help="Control-set seal time in RFC 3339 UTC.")
+@click.option("--tool-name", default="reproassert", show_default=True)
+@click.option("--tool-version", required=True)
+@click.option("--tool-git-sha", required=True, help="Exact 40-hex controller revision.")
+@click.option(
+    "--output",
+    type=click.Path(path_type=Path, dir_okay=False),
+    required=True,
+    help="New canonical private causal-control set.",
+)
+def benchmark_seal_v02_causal_controls(
+    campaign_freeze: Path,
+    preregistration: Path,
+    controls_draft: Path,
+    sealed_at: str,
+    tool_name: str,
+    tool_version: str,
+    tool_git_sha: str,
+    output: Path,
+) -> None:
+    """Seal existing sandbox receipts; this command never runs a control or provider."""
+
+    try:
+        _ensure_private_output_root(output.parent)
+        path = seal_v02_causal_control_set(
+            campaign_freeze_path=campaign_freeze,
+            preregistration_path=preregistration,
+            controls_draft_path=controls_draft,
+            output_path=output,
+            sealed_at=sealed_at,
+            tool_name=tool_name,
+            tool_version=tool_version,
+            tool_git_sha=tool_git_sha,
+        )
+        digest = verify_v02_causal_control_set(
+            path,
+            campaign_freeze_path=campaign_freeze,
+            preregistration_path=preregistration,
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(
+        json.dumps(
+            {
+                "causal_control_set": str(path),
+                "causal_control_set_sha256": digest,
+                "case_count": 20,
+                "verification_scope": (
+                    "structural_receipts_evidence_binding_deferred_to_finalization"
+                ),
+                "provider_invoked_by_this_command": False,
+                "untrusted_code_executed_by_this_command": False,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+@benchmark_group.command("verify-v02-causal-controls")
+@click.argument(
+    "causal_control_set",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+)
+@click.option(
+    "--campaign-freeze",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--preregistration",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+def benchmark_verify_v02_causal_controls(
+    causal_control_set: Path,
+    campaign_freeze: Path,
+    preregistration: Path,
+) -> None:
+    """Verify canonical control receipts without executing code or invoking a provider."""
+
+    try:
+        digest = verify_v02_causal_control_set(
+            causal_control_set,
+            campaign_freeze_path=campaign_freeze,
+            preregistration_path=preregistration,
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(
+        json.dumps(
+            {
+                "causal_control_set": str(causal_control_set),
+                "causal_control_set_sha256": digest,
+                "case_count": 20,
+                "verified": True,
+                "provider_invoked_by_this_command": False,
+                "untrusted_code_executed_by_this_command": False,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+@benchmark_group.command("seal-v02-semantic-reviews")
+@click.option(
+    "--campaign-freeze",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--preregistration",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--reviews-draft",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+    help="Bounded JSON array of exactly 20 blinded multi-reviewer case bundles.",
+)
+@click.option("--sealed-at", required=True, help="Review-set seal time in RFC 3339 UTC.")
+@click.option("--tool-name", default="reproassert", show_default=True)
+@click.option("--tool-version", required=True)
+@click.option("--tool-git-sha", required=True, help="Exact 40-hex controller revision.")
+@click.option(
+    "--output",
+    type=click.Path(path_type=Path, dir_okay=False),
+    required=True,
+    help="New canonical private semantic review set.",
+)
+def benchmark_seal_v02_semantic_reviews(
+    campaign_freeze: Path,
+    preregistration: Path,
+    reviews_draft: Path,
+    sealed_at: str,
+    tool_name: str,
+    tool_version: str,
+    tool_git_sha: str,
+    output: Path,
+) -> None:
+    """Seal already-completed blinded attestations without opening evaluator results."""
+
+    try:
+        _ensure_private_output_root(output.parent)
+        path = seal_v02_semantic_review_set(
+            campaign_freeze_path=campaign_freeze,
+            preregistration_path=preregistration,
+            reviews_draft_path=reviews_draft,
+            output_path=output,
+            sealed_at=sealed_at,
+            tool_name=tool_name,
+            tool_version=tool_version,
+            tool_git_sha=tool_git_sha,
+        )
+        digest = verify_v02_semantic_review_set(
+            path,
+            campaign_freeze_path=campaign_freeze,
+            preregistration_path=preregistration,
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(
+        json.dumps(
+            {
+                "semantic_review_set": str(path),
+                "semantic_review_set_sha256": digest,
+                "review_count": 20,
+                "verification_scope": "structural_seals_candidate_binding_deferred_to_finalization",
+                "provider_invoked_by_this_command": False,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+@benchmark_group.command("finalize-v02-campaign")
+@click.option(
+    "--campaign-freeze",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--preregistration",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--ledger",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+    help="Private canonical v0.2 event ledger.",
+)
+@click.option(
+    "--attempts-root",
+    type=click.Path(path_type=Path, exists=True, file_okay=False),
+    required=True,
+    help="Private root containing one directory per frozen case ID.",
+)
+@click.option(
+    "--causal-control-set",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+    help="Complete sealed executed causal-control set for all 20 cases.",
+)
+@click.option(
+    "--semantic-review-set",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+    help="Complete sealed blinded-review set for all 20 cases.",
+)
+@click.option(
+    "--output-root",
+    type=click.Path(path_type=Path, file_okay=False),
+    required=True,
+    help="Private directory for new finalization and releasable aggregate files.",
+)
+@click.option("--finalized-at", required=True, help="Finalization time in RFC 3339 UTC.")
+@click.option("--tool-name", default="reproassert", show_default=True)
+@click.option("--tool-version", required=True)
+@click.option("--tool-git-sha", required=True, help="Exact 40-hex controller revision.")
+def benchmark_finalize_v02_campaign(
+    campaign_freeze: Path,
+    preregistration: Path,
+    ledger: Path,
+    attempts_root: Path,
+    causal_control_set: Path,
+    semantic_review_set: Path,
+    output_root: Path,
+    finalized_at: str,
+    tool_name: str,
+    tool_version: str,
+    tool_git_sha: str,
+) -> None:
+    """Offline-finalize only after all candidates, costs, and reviews reconcile."""
+
+    try:
+        _ensure_private_output_root(output_root)
+        result = finalize_v02_campaign(
+            campaign_freeze_path=campaign_freeze,
+            preregistration_path=preregistration,
+            ledger_path=ledger,
+            attempts_root=attempts_root,
+            causal_control_set_path=causal_control_set,
+            semantic_review_set_path=semantic_review_set,
+            output_root=output_root,
+            finalized_at=finalized_at,
+            tool_name=tool_name,
+            tool_version=tool_version,
+            tool_git_sha=tool_git_sha,
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(
+        json.dumps(
+            {
+                "private_finalization": str(result.private_path),
+                "public_aggregate": str(result.public_path),
+                "public_aggregate_sha256": result.public_sha256,
+                "provisional_candidate_count": result.provisional_candidate_count,
+                "l2_semantic_valid_count": result.l2_semantic_valid_count,
+                "review_semantic_valid_count": result.review_semantic_valid_count,
+                "total_attributable_microusd": result.total_attributable_microusd,
+                "provider_invoked_by_this_command": False,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+@benchmark_group.command("verify-v02-finalization")
+@click.option(
+    "--campaign-freeze",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--preregistration",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--private-finalization",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--public-aggregate",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--ledger",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+    help="Private canonical v0.2 event ledger.",
+)
+@click.option(
+    "--attempts-root",
+    type=click.Path(path_type=Path, exists=True, file_okay=False),
+    required=True,
+)
+@click.option(
+    "--causal-control-set",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--semantic-review-set",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+def benchmark_verify_v02_finalization(
+    campaign_freeze: Path,
+    preregistration: Path,
+    private_finalization: Path,
+    public_aggregate: Path,
+    ledger: Path,
+    attempts_root: Path,
+    causal_control_set: Path,
+    semantic_review_set: Path,
+) -> None:
+    """Rederive final artifacts from the complete private evidence bundle offline."""
+
+    try:
+        result = verify_v02_campaign_bundle(
+            campaign_freeze_path=campaign_freeze,
+            preregistration_path=preregistration,
+            ledger_path=ledger,
+            attempts_root=attempts_root,
+            causal_control_set_path=causal_control_set,
+            semantic_review_set_path=semantic_review_set,
+            private_finalization_path=private_finalization,
+            public_aggregate_path=public_aggregate,
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(
+        json.dumps(
+            {
+                "public_aggregate_sha256": result.public_sha256,
+                "provisional_candidate_count": result.provisional_candidate_count,
+                "l2_semantic_valid_count": result.l2_semantic_valid_count,
+                "review_semantic_valid_count": result.review_semantic_valid_count,
+                "total_attributable_microusd": result.total_attributable_microusd,
+                "verified": True,
+                "verification_scope": "full_bundle_rederived",
+                "provider_invoked_by_this_command": False,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
 
 
 @main.command("schema")
