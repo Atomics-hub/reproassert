@@ -14,23 +14,28 @@ reproassert issue https://github.com/OWNER/REPOSITORY/issues/123 \
   --generator-command ./your-trusted-adapter
 ```
 
-The implemented CLI claim ladder is deliberately short:
+The public issue/replay claim ladder is deliberately short:
 
 ```text
 rejected -> collected -> repeatable_base_failure  [current public ceiling]
                               |
-                              +-> differential_reproduction  [not produced yet]
+                              +-> differential_reproduction  [capability-gated primitive only]
                               +-> maintainer_validated        [external evidence only]
 ```
 
 An accepted CLI run means one generated test collected and produced the same issue-marked failure on the pinned buggy base across the configured reruns. It does **not** mean the test passes on a fix, captures the issue's true semantics, or has been accepted by a maintainer.
 
 **Benchmark status:** v0.1 is frozen at 20 historical cases and has **0 scored result rows**. Its
-historical-snapshot cutoff is not yet supported by trusted receipts, so the campaign remains blocked
-with zero authorized spend; see the [provenance erratum](benchmarks/v0.1/ERRATA.md). A
+historical-snapshot cutoff is not supported by trusted receipts, so the campaign remains blocked
+with zero Actions or model spend on this milestone; see the
+[provenance erratum](benchmarks/v0.1/ERRATA.md). A
 [public self-owned issue run](evidence/live-demo/README.md) verifies the existing exact-SHA intake,
 generation, sandbox, report, and replay path; the local differential fixture also reaches
-`pass_on_base` on the fixed source. Neither is part of the 20-case score.
+an interleaved three-fail/three-pass result. Neither is part of the 20-case score. The v0.2 package,
+preregistration, and publication-leak tooling is structural and defaults to not ready: there is no
+authentic v0.2 cohort, official application semantic issuer, production scored runner, or L1 public
+result. Capturing complete historical body revisions still requires authenticated GitHub GraphQL
+access, which has not been authorized for third-party repositories.
 
 ## Install from source
 
@@ -56,7 +61,9 @@ uv run reproassert sandbox isolation-canary
 ```
 
 `sandbox build` creates the pinned `reproassert-sandbox:0.1.0` image from the packaged Dockerfile and
-hash-locked pytest requirements. `doctor` checks the Docker CLI, engine, image, and confirms that
+hash-locked pytest requirements. The controller resolves that tag once and uses the immutable image
+ID for staging and execution; a later tag change is rejected. `doctor` checks the Docker CLI, engine,
+image, and confirms that
 native fallback is disabled. `sandbox isolation-canary` runs a standalone synthetic mount-policy
 check: its positive container reads an evaluator-only sentinel while its separate generator-view
 container must not mount or find it. This is not yet the production benchmark generator path and
@@ -200,12 +207,15 @@ replay   reproassert replay <run-dir>/reproassert-report.json
 
 By default, run directories live under `$XDG_STATE_HOME/reproassert/runs` or `~/.local/state/reproassert/runs`. Use `--run-base` to choose another controller-owned directory.
 
-`candidate.patch` adds one file at `tests/reproassert/test_issue_NUMBER.py`. `reproassert-report.json` records:
+`candidate.patch` adds one file at `tests/reproassert/test_issue_NUMBER.py`. Before execution, the
+controller revalidates the candidate, copies the pristine source, requires the reserved candidate
+directory to be absent, applies exactly that one test, attests the candidate-applied tree, and then
+attests the staged Docker volume against it. `reproassert-report.json` records:
 
 - report and tool schema versions;
 - canonical issue metadata and issue-body hash;
 - requested ref, resolved SHA, archive hash/size, Git root-tree OID, independent canonical tree
-  SHA-256, no-Git-metadata result, and bounded source facts;
+  SHA-256, candidate-applied executed-tree SHA-256, no-Git-metadata result, and bounded source facts;
 - candidate content, path, hash, expected symptom, rationale, and generator kind;
 - Docker server, pinned image and image ID, effective strict policy, and resource limits;
 - collection and repeated-run exit codes, timings, bounded output, and failure fingerprint;
@@ -215,6 +225,8 @@ The source archive and extracted workspace are removed after the run; the patch 
 
 The versioned JSON Schema is bundled in every wheel and published at
 [`reproassert-report.schema.json`](https://atomics-hub.github.io/reproassert/reproassert-report.schema.json).
+New reports use schema 1.1 and require the candidate-applied `executed_tree_sha256`; replay retains
+bounded backward support for schema-1.0 reports without inventing that missing historical evidence.
 Print the exact schema shipped with your installed controller without a network request:
 
 ```console
@@ -242,7 +254,7 @@ The first profile is intentionally narrow:
 | Surface | Current behavior |
 | --- | --- |
 | Repository | Canonical public GitHub issue and source archive only; private repositories and authenticated intake are unsupported. |
-| Dependencies | No repository dependency installation. The image contains Python 3.12 and hash-locked pytest only; otherwise valid repositories may end in `setup_failure`. |
+| Dependencies | The public issue/replay workflow performs no repository dependency installation. A separate wheel-only causal executor can prepare a reviewed hash-locked dependency volume for evaluator code, but it is not wired into the public CLI or any scored campaign. |
 | Candidate | One new synchronous pytest test, at most 32 KiB, in a controller-owned path. Async tests, unconditional failure, skip/xfail, explicit raise, obvious infinite loops, top-level execution, network/process APIs, and other blocked calls are rejected. |
 | Verification | Collect once, then run 2-10 times (default 3) with network disabled, a read-only root/workspace, non-root user, all capabilities dropped, and no native fallback. |
 | Limits | 60 seconds and 64 KiB output per verifier phase; 1 GiB memory, 1 CPU, 128 PIDs, and 64 MiB `/tmp`. |
@@ -256,9 +268,10 @@ See [sandbox profiles](docs/sandbox-profiles.md) and [architecture](docs/archite
 Repository code, issue text, source files, candidate tests, dependencies, and report files are
 untrusted. Archive paths/types are checked twice and the accepted files must reconstruct the exact
 commit tree before generation. Verification uses Docker with no network, read-only mounts, non-root
-execution, dropped capabilities, resource limits, output bounds, and cleanup. The controller passes
-no host secrets, SSH agent, browser state, cloud credentials, proxy variables, Docker socket, or
-unrelated host directory into the verifier.
+execution, dropped capabilities, resource limits, output bounds, and label-verified cleanup. JUnit is
+read through a separate inspected, resource-bounded result-volume anchor; it remains hostile and
+forgeable evidence. The controller passes no host secrets, SSH agent, browser state, cloud
+credentials, proxy variables, Docker socket, or unrelated host directory into the verifier.
 
 Important residual risks remain: Docker shares a kernel on Linux or a VM boundary on Docker Desktop; a malicious pytest process can try to forge in-process test detail; and a user-selected generator adapter runs outside the repository sandbox. Treat `repeatable_base_failure` as bounded evidence, not proof.
 
@@ -268,12 +281,23 @@ Read [Security policy](SECURITY.md), [Security model](docs/security-model.md), [
 
 The historical v0.1 cohort is preregistered at 20 cases across 10 repositories. [`results.jsonl`](benchmarks/v0.1/results.jsonl) is currently empty. The primary future benchmark metric requires hidden-fix execution, causal controls, and blinded semantic review; the current CLI alone cannot establish it.
 
-The v0.1 historical cutoff is currently blocked by its provenance erratum. The
+The v0.1 historical cutoff is blocked by its provenance erratum. The
 [v0.2 draft](benchmarks/v0.2-draft/README.md) defines a narrower, independently observable
-pre-solution-PR-publication receipt contract. Its offline producer now independently rederives
-complete supported edit histories and exact redaction, but there is no authenticated collector,
-frozen v0.2 cohort, or result; capture authenticity, fixing-PR selection, and privacy review remain
+pre-solution-PR-publication receipt contract. Its offline producer independently rederives complete
+supported edit histories and exact redaction. The structural package/preregistration/leak scanners
+also bind dataset provenance, source and dependency receipts, hidden-fix artifacts, isolation
+evidence, and reviewer roles, but they deliberately cannot issue a live evaluator capability or mark
+the cohort ready. There is no authenticated collector, frozen v0.2 cohort, production scored runner,
+model campaign, or result; capture authenticity, fixing-PR selection, and privacy review remain
 trusted evaluator inputs.
+
+The preparation-only dependency executor now creates fresh labeled tmpfs volumes, runs fixed
+networked-download and offline-install phases under the immutable runner image ID, attests the
+wheelhouse and installed tree, issues a typed read-only borrow handle, and emits a canonical receipt
+that an independent strict verifier recomputes and cross-binds to the plan, tree, image, phase
+commands, and cleanup policy. Real local Docker checks passed the pinned PyPI `six==1.17.0` download,
+offline install, typed verifier borrow, and inode-quota `ENOSPC` canary. This is execution-boundary
+evidence, not a prepared benchmark case: campaign-ready dependency/evaluator packages remain 0/20.
 
 Exact-source preparation is available independently and makes no model call:
 
@@ -325,7 +349,8 @@ Passing the internal 6/20 continuation gate would justify more validation. It wo
 - [Business model](docs/business-model.md)
 - [Launch plan](docs/launch-plan.md)
 - [Exact Git-object decision](docs/decisions/0006-repair-codeload-from-git-objects.md)
-- [Dependency preparation gate](docs/decisions/0007-dependency-preparation-remains-a-gated-prototype.md)
+- [Causal dependency preparation gate](docs/decisions/0007-dependency-preparation-remains-a-gated-prototype.md)
+- [Capability-gated differential evaluation](docs/decisions/0008-capability-gated-differential-evaluation.md)
 - [Rebrand decision](docs/decisions/0001-rebrand-to-reproassert.md)
 - [Contributing](CONTRIBUTING.md)
 - [Code of Conduct](CODE_OF_CONDUCT.md)

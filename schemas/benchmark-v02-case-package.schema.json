@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Atomics-hub/reproassert/blob/main/schemas/benchmark-v02-case-package.schema.json",
+  "title": "ReproAssert v0.2 private evaluator case package",
+  "description": "Private package receipt binding snapshot provenance, hidden fix inputs, supporting receipts, isolation policy, and an opaque public commitment.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "benchmark_version", "case", "snapshot", "fix_mapping", "supporting_inputs", "isolation", "evaluator_package", "tool"],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "benchmark_version": { "const": "0.2.0-draft" },
+    "case": { "$ref": "#/$defs/case" },
+    "snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["receipt", "raw_history", "cutoff_basis", "privacy_review", "generator_projection"],
+      "properties": {
+        "receipt": { "$ref": "#/$defs/artifact" },
+        "raw_history": { "$ref": "#/$defs/artifact" },
+        "cutoff_basis": { "$ref": "#/$defs/artifact" },
+        "privacy_review": { "$ref": "#/$defs/artifact" },
+        "generator_projection": { "$ref": "#/$defs/artifact" }
+      }
+    },
+    "fix_mapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["receipt"],
+      "properties": { "receipt": { "$ref": "#/$defs/artifact" } }
+    },
+    "supporting_inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_receipt", "dependency_receipt", "isolation_canary_receipt", "reviewer_role_seal", "semantic_verification_receipt"],
+      "properties": {
+        "source_receipt": { "$ref": "#/$defs/artifact" },
+        "dependency_receipt": { "$ref": "#/$defs/artifact" },
+        "isolation_canary_receipt": { "$ref": "#/$defs/artifact" },
+        "reviewer_role_seal": { "$ref": "#/$defs/artifact" },
+        "semantic_verification_receipt": { "$ref": "#/$defs/artifact" }
+      }
+    },
+    "isolation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policy_sha256", "generator_visible_artifacts", "evaluator_artifacts_mounted_in_generator", "network_after_dependency_prep"],
+      "properties": {
+        "policy_sha256": { "$ref": "#/$defs/sha256" },
+        "generator_visible_artifacts": { "const": ["generator_projection"] },
+        "evaluator_artifacts_mounted_in_generator": { "const": false },
+        "network_after_dependency_prep": { "const": "disabled" }
+      }
+    },
+    "evaluator_package": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "commitment_algorithm", "commitment_nonce", "nonce_generation", "identity_sha256", "public_commitment_sha256"],
+      "properties": {
+        "algorithm": { "const": "reproassert-hidden-evaluator-package-v1" },
+        "commitment_algorithm": { "const": "reproassert-salted-evaluator-commitment-v1" },
+        "commitment_nonce": { "$ref": "#/$defs/sha256" },
+        "nonce_generation": { "const": "controller_secrets_token_bytes_32" },
+        "identity_sha256": { "$ref": "#/$defs/sha256" },
+        "public_commitment_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "tool": { "$ref": "#/$defs/tool" }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "gitSha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "identifier": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{2,127}$" },
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "repo", "issue_url", "base_sha"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^rk-v0\\.2-[0-9]{3}$" },
+        "repo": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$" },
+        "issue_url": { "type": "string", "pattern": "^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/issues/[1-9][0-9]*$" },
+        "base_sha": { "$ref": "#/$defs/gitSha" }
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "bytes"],
+      "properties": {
+        "path": { "type": "string", "maxLength": 240, "pattern": "^(?!\\.{1,2}(?:/|$))(?!.*\\/\\.{1,2}(?:/|$))[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*$" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "bytes": { "type": "integer", "minimum": 1, "maximum": 33554432 }
+      }
+    },
+    "tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "git_sha"],
+      "properties": {
+        "name": { "$ref": "#/$defs/identifier" },
+        "version": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]{0,99}$" },
+        "git_sha": { "$ref": "#/$defs/gitSha" }
+      }
+    }
+  }
+}

@@ -13,7 +13,8 @@ from reproassert.errors import PolicyRejection
 from reproassert.intake import GitHubIssueLocation, parse_issue_url
 from reproassert.safeio import sha256_bytes, write_text_exclusive
 
-REPORT_SCHEMA_VERSION = "1.0"
+REPORT_SCHEMA_VERSION = "1.1"
+SUPPORTED_REPORT_SCHEMA_VERSIONS = {"1.0", REPORT_SCHEMA_VERSION}
 MAX_REPORT_BYTES = 1024 * 1024
 
 
@@ -26,6 +27,7 @@ class ReplaySpec:
     archive_sha256: str
     tree_sha256: str | None
     git_tree_oid: str | None
+    executed_tree_sha256: str | None
     candidate: ValidatedCandidate
     candidate_sha256: str
     repeats: int
@@ -44,8 +46,12 @@ def load_replay_spec(report_path: Path) -> ReplaySpec:
         report = json.loads(data)
     except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as exc:
         raise PolicyRejection("invalid_report", "Replay report is not valid JSON.") from exc
-    if not isinstance(report, dict) or report.get("schema_version") != REPORT_SCHEMA_VERSION:
+    if (
+        not isinstance(report, dict)
+        or report.get("schema_version") not in SUPPORTED_REPORT_SCHEMA_VERSIONS
+    ):
         raise PolicyRejection("invalid_report", "Unsupported report schema.")
+    schema_version = report["schema_version"]
 
     issue_data = _mapping(report.get("issue"), "issue")
     source_data = _mapping(report.get("source"), "source")
@@ -69,6 +75,7 @@ def load_replay_spec(report_path: Path) -> ReplaySpec:
     archive_sha256 = _sha256(source_data.get("archive_sha256"), "source.archive_sha256")
     tree_value = source_data.get("tree_sha256")
     git_tree_value = source_data.get("git_tree_oid")
+    executed_tree_value = source_data.get("executed_tree_sha256")
     if tree_value is None and git_tree_value is None:
         tree_sha256 = None
         git_tree_oid = None
@@ -79,6 +86,15 @@ def load_replay_spec(report_path: Path) -> ReplaySpec:
         git_tree_oid = _sha1(git_tree_value, "source.git_tree_oid")
         if source_data.get("tree_attestation_algorithm") != "reproassert-source-tree-v1":
             raise PolicyRejection("invalid_report", "Source tree attestation algorithm is invalid.")
+    executed_tree_sha256 = (
+        None
+        if executed_tree_value is None
+        else _sha256(executed_tree_value, "source.executed_tree_sha256")
+    )
+    if schema_version == REPORT_SCHEMA_VERSION and executed_tree_sha256 is None:
+        raise PolicyRejection(
+            "invalid_report", "Report 1.1 requires candidate-applied executed-tree evidence."
+        )
 
     payload = {
         "test_content": _text(candidate_data.get("test_content"), "candidate.test_content"),
@@ -102,6 +118,7 @@ def load_replay_spec(report_path: Path) -> ReplaySpec:
         archive_sha256,
         tree_sha256,
         git_tree_oid,
+        executed_tree_sha256,
         candidate,
         recorded_hash,
         repeats,

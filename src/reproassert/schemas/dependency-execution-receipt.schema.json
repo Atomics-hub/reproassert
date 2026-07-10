@@ -1,0 +1,531 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Atomics-hub/reproassert/blob/main/schemas/dependency-execution-receipt.schema.json",
+  "title": "ReproAssert causal dependency execution receipt",
+  "description": "Canonical evidence for strict hash-locked wheel acquisition, offline installation, immutable Docker policy, and an attested executor-owned dependency volume. This receipt never changes campaign readiness.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "kind", "dependency_preparation", "execution", "campaign_readiness_changed"],
+  "properties": {
+    "schema_version": { "const": "0.1.0" },
+    "kind": { "const": "dependency_execution_receipt" },
+    "dependency_preparation": { "$ref": "#/$defs/preparationReceipt" },
+    "execution": { "$ref": "#/$defs/execution" },
+    "campaign_readiness_changed": { "const": false }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "gitSha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "imageId": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "imageReference": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._/:@+-]{0,199}$" },
+    "pythonVersion": { "type": "string", "pattern": "^3\\.[0-9]{1,2}(?:\\.[0-9]{1,2})?$" },
+    "nonnegativeInteger": { "type": "integer", "minimum": 0 },
+    "positiveInteger": { "type": "integer", "minimum": 1 },
+    "preparationReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "case", "plan", "preparation", "runner", "wheelhouse", "dependencies", "evaluator_package", "tool", "campaign_readiness_changed", "limitations"],
+      "properties": {
+        "schema_version": { "const": "0.1.0" },
+        "case": { "$ref": "#/$defs/case" },
+        "plan": { "$ref": "#/$defs/plan" },
+        "preparation": { "$ref": "#/$defs/preparation" },
+        "runner": { "$ref": "#/$defs/preparationRunner" },
+        "wheelhouse": { "$ref": "#/$defs/wheelhouse" },
+        "dependencies": { "$ref": "#/$defs/dependencies" },
+        "evaluator_package": { "$ref": "#/$defs/evaluatorPackage" },
+        "tool": { "$ref": "#/$defs/tool" },
+        "campaign_readiness_changed": { "const": false },
+        "limitations": {
+          "type": "array",
+          "prefixItems": [
+            { "const": "Docker bridge egress is constrained by trusted pip argv, not a network-layer ACL." },
+            { "const": "This wheel-only profile rejects sdists, VCS dependencies, and repository build steps." },
+            { "const": "The package digest binds the runner image ID and read-only dependency tree; it is not an OCI image digest or signature." }
+          ],
+          "minItems": 3,
+          "maxItems": 3
+        }
+      }
+    },
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "base_sha", "source_tree_sha256"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^rk-v(?:0\\.1|0\\.2)-[0-9]{3}$" },
+        "base_sha": { "$ref": "#/$defs/gitSha" },
+        "source_tree_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["raw_sha256", "canonical_sha256", "requirements_sha256", "package_count"],
+      "properties": {
+        "raw_sha256": { "$ref": "#/$defs/sha256" },
+        "canonical_sha256": { "$ref": "#/$defs/sha256" },
+        "requirements_sha256": { "$ref": "#/$defs/sha256" },
+        "package_count": { "type": "integer", "minimum": 1, "maximum": 256 }
+      }
+    },
+    "preparation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policy", "policy_sha256", "network_phase", "install_network", "source_mounted_during_network_phase", "host_credentials_forwarded"],
+      "properties": {
+        "policy": { "$ref": "#/$defs/dependencyPolicy" },
+        "policy_sha256": { "$ref": "#/$defs/sha256" },
+        "network_phase": { "const": "trusted_pip_wheel_download_only" },
+        "install_network": { "const": "none" },
+        "source_mounted_during_network_phase": { "const": false },
+        "host_credentials_forwarded": { "const": false }
+      }
+    },
+    "dependencyPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "network_acquisition", "offline_install", "verification", "container", "artifact_limits"],
+      "properties": {
+        "id": { "const": "pypi-hash-locked-wheels-v1" },
+        "network_acquisition": { "$ref": "#/$defs/networkAcquisition" },
+        "offline_install": { "$ref": "#/$defs/offlineInstall" },
+        "verification": { "$ref": "#/$defs/verificationPolicy" },
+        "container": { "$ref": "#/$defs/containerPolicy" },
+        "artifact_limits": { "$ref": "#/$defs/artifactLimits" }
+      }
+    },
+    "networkAcquisition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["phase", "docker_network_mode", "index_url", "expected_artifact_host", "egress_enforcement", "source_mounted", "credentials", "proxies", "requirements", "dependencies", "artifacts"],
+      "properties": {
+        "phase": { "const": "trusted_pip_wheel_download_only" },
+        "docker_network_mode": { "const": "bridge" },
+        "index_url": { "const": "https://pypi.org/simple" },
+        "expected_artifact_host": { "const": "files.pythonhosted.org" },
+        "egress_enforcement": { "const": "fixed_pip_argv_and_post_download_hashes_not_network_acl" },
+        "source_mounted": { "const": false },
+        "credentials": { "const": "none" },
+        "proxies": { "const": "cleared" },
+        "requirements": { "const": "controller_rendered_exact_versions_and_sha256" },
+        "dependencies": { "const": "complete_reviewed_closure_no_resolver" },
+        "artifacts": { "const": "binary_wheels_only" }
+      }
+    },
+    "offlineInstall": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["network", "index", "dependencies", "source_builds", "bytecode_compile", "wheelhouse", "output"],
+      "properties": {
+        "network": { "const": "none" },
+        "index": { "const": "disabled" },
+        "dependencies": { "const": "disabled" },
+        "source_builds": { "const": "disabled" },
+        "bytecode_compile": { "const": "disabled" },
+        "wheelhouse": { "const": "read_only" },
+        "output": { "const": "controller_owned_volume" }
+      }
+    },
+    "verificationPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["network", "dependencies_mount", "fresh_container_per_execution"],
+      "properties": {
+        "network": { "const": "none" },
+        "dependencies_mount": { "const": "read_only_at_/dependencies" },
+        "fresh_container_per_execution": { "const": true }
+      }
+    },
+    "containerPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["image", "read_only_root", "user", "capabilities", "no_new_privileges", "host_bind_mounts", "docker_socket", "environment", "pids", "memory_bytes", "cpus", "tmpfs_bytes", "tmpfs_inodes", "timeout_seconds", "max_output_bytes"],
+      "properties": {
+        "image": { "$ref": "#/$defs/imageReference" },
+        "read_only_root": { "const": true },
+        "user": { "const": "65532:65532" },
+        "capabilities": { "const": "drop_all" },
+        "no_new_privileges": { "const": true },
+        "host_bind_mounts": { "const": false },
+        "docker_socket": { "const": false },
+        "environment": { "const": "cleared_allowlist_only" },
+        "pids": { "type": "integer", "minimum": 1, "maximum": 4096 },
+        "memory_bytes": { "type": "integer", "minimum": 67108864, "maximum": 17179869184 },
+        "cpus": { "type": "number", "minimum": 0.1, "maximum": 64 },
+        "tmpfs_bytes": { "type": "integer", "minimum": 1048576, "maximum": 1073741824 },
+        "tmpfs_inodes": { "type": "integer", "minimum": 1, "maximum": 1048576 },
+        "timeout_seconds": { "type": "number", "exclusiveMinimum": 0, "maximum": 3600 },
+        "max_output_bytes": { "type": "integer", "minimum": 1, "maximum": 16777216 }
+      }
+    },
+    "artifactLimits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_packages", "max_wheels", "max_wheel_bytes", "max_wheelhouse_bytes", "max_wheel_members", "max_wheel_unpacked_bytes", "max_wheelhouse_unpacked_bytes", "max_metadata_bytes"],
+      "properties": {
+        "max_packages": { "const": 256 },
+        "max_wheels": { "const": 256 },
+        "max_wheel_bytes": { "const": 134217728 },
+        "max_wheelhouse_bytes": { "const": 536870912 },
+        "max_wheel_members": { "const": 20000 },
+        "max_wheel_unpacked_bytes": { "const": 536870912 },
+        "max_wheelhouse_unpacked_bytes": { "const": 536870912 },
+        "max_metadata_bytes": { "const": 262144 }
+      }
+    },
+    "preparationRunner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["image", "image_id", "python_version"],
+      "properties": {
+        "image": { "$ref": "#/$defs/imageReference" },
+        "image_id": { "$ref": "#/$defs/imageId" },
+        "python_version": { "$ref": "#/$defs/pythonVersion" }
+      }
+    },
+    "wheelhouse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "sha256", "file_count", "total_bytes", "total_unpacked_bytes", "files"],
+      "properties": {
+        "algorithm": { "const": "reproassert-wheelhouse-v1" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "file_count": { "type": "integer", "minimum": 1, "maximum": 256 },
+        "total_bytes": { "type": "integer", "minimum": 1, "maximum": 536870912 },
+        "total_unpacked_bytes": { "type": "integer", "minimum": 1, "maximum": 536870912 },
+        "files": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "items": { "$ref": "#/$defs/wheel" }
+        }
+      }
+    },
+    "wheel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["package", "version", "filename", "sha256", "bytes", "unpacked_bytes"],
+      "properties": {
+        "package": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+        "version": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9.!+_-]{0,127}$" },
+        "filename": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]{0,249}\\.whl$" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "bytes": { "type": "integer", "minimum": 1, "maximum": 134217728 },
+        "unpacked_bytes": { "type": "integer", "minimum": 1, "maximum": 536870912 }
+      }
+    },
+    "dependencies": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attestation"],
+      "properties": { "attestation": { "$ref": "#/$defs/treeAttestation" } }
+    },
+    "treeAttestation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "tree_sha256", "member_count", "file_count", "directory_count", "total_bytes", "executable_count", "links_and_special_files_absent"],
+      "properties": {
+        "algorithm": { "const": "reproassert-source-tree-v1" },
+        "tree_sha256": { "$ref": "#/$defs/sha256" },
+        "member_count": { "type": "integer", "minimum": 1, "maximum": 20000 },
+        "file_count": { "type": "integer", "minimum": 1, "maximum": 20000 },
+        "directory_count": { "type": "integer", "minimum": 0, "maximum": 20000 },
+        "total_bytes": { "type": "integer", "minimum": 0, "maximum": 536870912 },
+        "executable_count": { "type": "integer", "minimum": 0, "maximum": 20000 },
+        "links_and_special_files_absent": { "const": true }
+      }
+    },
+    "evaluatorPackage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "sha256", "identity", "artifact_kind", "verification_mount", "verification_network"],
+      "properties": {
+        "algorithm": { "const": "reproassert-evaluator-package-v1" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "identity": { "$ref": "#/$defs/evaluatorIdentity" },
+        "artifact_kind": { "const": "controller_owned_dependency_volume" },
+        "verification_mount": { "const": "read_only_at_/dependencies" },
+        "verification_network": { "const": "none" }
+      }
+    },
+    "evaluatorIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "runner_image_id", "plan_sha256", "policy_sha256", "wheelhouse_sha256", "dependency_tree_sha256", "python_version"],
+      "properties": {
+        "algorithm": { "const": "reproassert-evaluator-package-v1" },
+        "runner_image_id": { "$ref": "#/$defs/imageId" },
+        "plan_sha256": { "$ref": "#/$defs/sha256" },
+        "policy_sha256": { "$ref": "#/$defs/sha256" },
+        "wheelhouse_sha256": { "$ref": "#/$defs/sha256" },
+        "dependency_tree_sha256": { "$ref": "#/$defs/sha256" },
+        "python_version": { "$ref": "#/$defs/pythonVersion" }
+      }
+    },
+    "tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "git_sha"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$" },
+        "version": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]{0,99}$" },
+        "git_sha": { "$ref": "#/$defs/gitSha" }
+      }
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "runner", "volume_policy", "download", "install", "causality", "cleanup"],
+      "properties": {
+        "algorithm": { "const": "reproassert-dependency-causality-v1" },
+        "runner": { "$ref": "#/$defs/executionRunner" },
+        "volume_policy": { "$ref": "#/$defs/volumePolicy" },
+        "download": { "$ref": "#/$defs/downloadPhase" },
+        "install": { "$ref": "#/$defs/installPhase" },
+        "causality": { "$ref": "#/$defs/causality" },
+        "cleanup": { "$ref": "#/$defs/cleanup" }
+      }
+    },
+    "executionRunner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["image_id", "python_version", "image_resolved_once_before_resource_creation"],
+      "properties": {
+        "image_id": { "$ref": "#/$defs/imageId" },
+        "python_version": { "$ref": "#/$defs/pythonVersion" },
+        "image_resolved_once_before_resource_creation": { "const": true }
+      }
+    },
+    "volumePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["input", "wheelhouse", "dependencies"],
+      "properties": {
+        "input": { "$ref": "#/$defs/inputVolume" },
+        "wheelhouse": { "$ref": "#/$defs/wheelhouseVolume" },
+        "dependencies": { "$ref": "#/$defs/dependencyVolume" }
+      }
+    },
+    "volumeCommonProperties": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["driver", "type", "read_only_retention_anchor", "size_bytes", "max_inodes", "uid", "gid", "mode", "labels"],
+      "properties": {
+        "driver": { "const": "local" },
+        "type": { "const": "tmpfs" },
+        "read_only_retention_anchor": { "const": true },
+        "size_bytes": { "type": "integer" },
+        "max_inodes": { "type": "integer" },
+        "uid": { "const": 65532 },
+        "gid": { "const": 65532 },
+        "mode": { "const": "0700" },
+        "labels": { "const": ["io.reproassert.owner", "io.reproassert.run", "io.reproassert.role", "io.reproassert.plan-sha256"] }
+      }
+    },
+    "inputVolume": {
+      "allOf": [
+        { "$ref": "#/$defs/volumeCommonProperties" },
+        { "properties": { "size_bytes": { "const": 1048576 }, "max_inodes": { "const": 64 } } }
+      ]
+    },
+    "wheelhouseVolume": {
+      "allOf": [
+        { "$ref": "#/$defs/volumeCommonProperties" },
+        { "properties": { "size_bytes": { "const": 536870912 }, "max_inodes": { "const": 1024 } } }
+      ]
+    },
+    "dependencyVolume": {
+      "allOf": [
+        { "$ref": "#/$defs/volumeCommonProperties" },
+        { "properties": { "size_bytes": { "const": 536870912 }, "max_inodes": { "const": 32768 } } }
+      ]
+    },
+    "mount": {
+      "type": "array",
+      "prefixItems": [
+        { "enum": ["input", "wheelhouse", "dependencies"] },
+        { "enum": ["/input", "/wheelhouse", "/dependencies"] },
+        { "type": "boolean" }
+      ],
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "phase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["phase", "image_id", "network_mode", "user", "read_only_root", "cap_drop", "no_new_privileges", "healthcheck_disabled", "trusted_phase_command", "pids", "memory_bytes", "memory_swap_bytes", "nano_cpus", "mounts", "command_sha256", "config_sha256", "outcome"],
+      "properties": {
+        "phase": { "enum": ["download", "install"] },
+        "image_id": { "$ref": "#/$defs/imageId" },
+        "network_mode": { "enum": ["bridge", "none"] },
+        "user": { "const": "65532:65532" },
+        "read_only_root": { "const": true },
+        "cap_drop": { "const": ["ALL"] },
+        "no_new_privileges": { "const": true },
+        "healthcheck_disabled": { "const": true },
+        "trusted_phase_command": { "const": true },
+        "pids": { "type": "integer", "minimum": 1, "maximum": 4096 },
+        "memory_bytes": { "type": "integer", "minimum": 67108864, "maximum": 17179869184 },
+        "memory_swap_bytes": { "type": "integer", "minimum": 67108864, "maximum": 17179869184 },
+        "nano_cpus": { "type": "integer", "minimum": 100000000, "maximum": 64000000000 },
+        "mounts": { "type": "array", "minItems": 2, "maxItems": 3, "items": { "$ref": "#/$defs/mount" } },
+        "command_sha256": { "$ref": "#/$defs/sha256" },
+        "config_sha256": { "$ref": "#/$defs/sha256" },
+        "outcome": { "$ref": "#/$defs/outcome" }
+      }
+    },
+    "downloadPhase": {
+      "allOf": [
+        { "$ref": "#/$defs/phase" },
+        {
+          "properties": {
+            "phase": { "const": "download" },
+            "network_mode": { "const": "bridge" },
+            "command_sha256": { "const": "1fabd83e76a9a056d33b0fe8fe78a993f7e2e39a11ee94f184684563ad23c89f" },
+            "mounts": { "const": [["input", "/input", false], ["wheelhouse", "/wheelhouse", true]] },
+            "outcome": { "$ref": "#/$defs/downloadOutcome" }
+          }
+        }
+      ]
+    },
+    "installPhase": {
+      "allOf": [
+        { "$ref": "#/$defs/phase" },
+        {
+          "properties": {
+            "phase": { "const": "install" },
+            "network_mode": { "const": "none" },
+            "command_sha256": { "const": "9c36d553d022e096bfece7da5796361e110fdf475cdbb5d91608017c97d03eb8" },
+            "mounts": { "const": [["dependencies", "/dependencies", true], ["input", "/input", false], ["wheelhouse", "/wheelhouse", false]] },
+            "outcome": { "$ref": "#/$defs/installOutcome" }
+          }
+        }
+      ]
+    },
+    "outcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["phase", "exit_code", "oom_killed", "timed_out", "output_truncated"],
+      "properties": {
+        "phase": { "enum": ["download", "install"] },
+        "exit_code": { "const": 0 },
+        "oom_killed": { "const": false },
+        "timed_out": { "const": false },
+        "output_truncated": { "const": false }
+      }
+    },
+    "downloadOutcome": {
+      "allOf": [
+        { "$ref": "#/$defs/outcome" },
+        { "properties": { "phase": { "const": "download" } } }
+      ]
+    },
+    "installOutcome": {
+      "allOf": [
+        { "$ref": "#/$defs/outcome" },
+        { "properties": { "phase": { "const": "install" } } }
+      ]
+    },
+    "causality": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["events", "sequence_sha256", "volumes_new_and_empty", "download_precedes_wheelhouse_attestation", "install_precedes_dependency_attestation", "wheelhouse_unchanged_across_install", "requirements_unchanged", "dependency_volume_rw_phase_count", "download_source_mounted", "install_network"],
+      "properties": {
+        "events": {
+          "type": "array",
+          "prefixItems": [
+            { "$ref": "#/$defs/event1" },
+            { "$ref": "#/$defs/event2" },
+            { "$ref": "#/$defs/event3" },
+            { "$ref": "#/$defs/event4" },
+            { "$ref": "#/$defs/event5" },
+            { "$ref": "#/$defs/event6" }
+          ],
+          "minItems": 6,
+          "maxItems": 6
+        },
+        "sequence_sha256": { "$ref": "#/$defs/sha256" },
+        "volumes_new_and_empty": { "const": true },
+        "download_precedes_wheelhouse_attestation": { "const": true },
+        "install_precedes_dependency_attestation": { "const": true },
+        "wheelhouse_unchanged_across_install": { "const": true },
+        "requirements_unchanged": { "const": true },
+        "dependency_volume_rw_phase_count": { "const": 1 },
+        "download_source_mounted": { "const": false },
+        "install_network": { "const": "none" }
+      }
+    },
+    "event1": {
+      "type": "object", "additionalProperties": false,
+      "required": ["ordinal", "state", "input_probe_sha256", "wheelhouse_probe_sha256", "dependency_probe_sha256"],
+      "properties": {
+        "ordinal": { "const": 1 }, "state": { "const": "volumes_proven_empty" },
+        "input_probe_sha256": { "const": "1975eab84445db991021e96e7870d61bfd5b1be22908a35283ee51ae9ab980ed" },
+        "wheelhouse_probe_sha256": { "const": "1975eab84445db991021e96e7870d61bfd5b1be22908a35283ee51ae9ab980ed" },
+        "dependency_probe_sha256": { "const": "1975eab84445db991021e96e7870d61bfd5b1be22908a35283ee51ae9ab980ed" }
+      }
+    },
+    "event2": {
+      "type": "object", "additionalProperties": false,
+      "required": ["ordinal", "state", "input_probe_sha256", "requirements_sha256"],
+      "properties": {
+        "ordinal": { "const": 2 }, "state": { "const": "input_staged" },
+        "input_probe_sha256": { "$ref": "#/$defs/sha256" },
+        "requirements_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "event3": {
+      "type": "object", "additionalProperties": false,
+      "required": ["ordinal", "state", "phase_policy_sha256", "network", "exit_code", "oom_killed"],
+      "properties": {
+        "ordinal": { "const": 3 }, "state": { "const": "download_completed" },
+        "phase_policy_sha256": { "$ref": "#/$defs/sha256" },
+        "network": { "const": "bridge" }, "exit_code": { "const": 0 }, "oom_killed": { "const": false }
+      }
+    },
+    "event4": {
+      "type": "object", "additionalProperties": false,
+      "required": ["ordinal", "state", "volume_probe_sha256", "wheelhouse_sha256"],
+      "properties": {
+        "ordinal": { "const": 4 }, "state": { "const": "wheelhouse_attested" },
+        "volume_probe_sha256": { "$ref": "#/$defs/sha256" },
+        "wheelhouse_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "event5": {
+      "type": "object", "additionalProperties": false,
+      "required": ["ordinal", "state", "phase_policy_sha256", "network", "exit_code", "oom_killed", "dependency_preinstall_sha256"],
+      "properties": {
+        "ordinal": { "const": 5 }, "state": { "const": "install_completed" },
+        "phase_policy_sha256": { "$ref": "#/$defs/sha256" },
+        "network": { "const": "none" }, "exit_code": { "const": 0 }, "oom_killed": { "const": false },
+        "dependency_preinstall_sha256": { "const": "1975eab84445db991021e96e7870d61bfd5b1be22908a35283ee51ae9ab980ed" }
+      }
+    },
+    "event6": {
+      "type": "object", "additionalProperties": false,
+      "required": ["ordinal", "state", "input_probe_sha256", "wheelhouse_volume_probe_sha256", "dependency_probe_sha256", "dependency_tree_sha256", "wheelhouse_sha256"],
+      "properties": {
+        "ordinal": { "const": 6 }, "state": { "const": "artifacts_attested" },
+        "input_probe_sha256": { "$ref": "#/$defs/sha256" },
+        "wheelhouse_volume_probe_sha256": { "$ref": "#/$defs/sha256" },
+        "dependency_probe_sha256": { "$ref": "#/$defs/sha256" },
+        "dependency_tree_sha256": { "$ref": "#/$defs/sha256" },
+        "wheelhouse_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "cleanup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["input_volume_removed", "wheelhouse_volume_removed", "dependency_volume_retained_inside_executor_context", "label_verification_required", "blind_force_volume_removal"],
+      "properties": {
+        "input_volume_removed": { "const": true },
+        "wheelhouse_volume_removed": { "const": true },
+        "dependency_volume_retained_inside_executor_context": { "const": true },
+        "label_verification_required": { "const": true },
+        "blind_force_volume_removal": { "const": false }
+      }
+    }
+  }
+}

@@ -4,6 +4,17 @@
   "title": "ReproAssert report v1",
   "type": "object",
   "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "required": ["schema_version"],
+        "properties": { "schema_version": { "const": "1.1" } }
+      },
+      "then": {
+        "properties": { "source": { "required": ["executed_tree_sha256"] } }
+      }
+    }
+  ],
   "required": [
     "schema_version",
     "report_id",
@@ -25,7 +36,7 @@
     "limitations"
   ],
   "properties": {
-    "schema_version": { "const": "1.0" },
+    "schema_version": { "enum": ["1.0", "1.1"] },
     "report_id": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
     "created_at": { "type": "string", "format": "date-time" },
     "tool": {
@@ -114,6 +125,7 @@
         },
         "tree_attestation_algorithm": { "const": "reproassert-source-tree-v1" },
         "tree_sha256": { "$ref": "#/$defs/sha256" },
+        "executed_tree_sha256": { "$ref": "#/$defs/sha256" },
         "git_tree_oid": { "$ref": "#/$defs/sha1" },
         "member_count": { "type": "integer", "minimum": 0, "maximum": 20000 },
         "file_count": { "type": "integer", "minimum": 0, "maximum": 20000 },

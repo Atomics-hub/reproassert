@@ -71,6 +71,21 @@ def test_verification_command_mounts_prepared_dependencies_read_only_and_offline
     assert "PYTHONPATH=/workspace:/workspace/src:/dependencies:/workspace/.reproassert-deps" in args
 
 
+def test_verification_command_mounts_only_bounded_junit_result_volume_writable() -> None:
+    sandbox = DockerSandbox(SandboxPolicy())
+    args = sandbox.verification_create_args(
+        name="run",
+        volume="source-volume",
+        result_volume="result-volume",
+        run_id="abc",
+        process_args=["python", "-m", "pytest", "test.py"],
+    )
+
+    assert "type=volume,src=source-volume,dst=/workspace,readonly" in args
+    assert "type=volume,src=result-volume,dst=/results" in args
+    assert not any("src=result-volume" in value and "readonly" in value for value in args)
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [

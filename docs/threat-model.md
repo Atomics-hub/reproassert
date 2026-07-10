@@ -41,13 +41,13 @@ Docker daemon, host kernel, or host administrator is already compromised.
 | Shell/option injection | Controller and generator use argv arrays, not a shell; pytest node is controller-selected; leading-dash target rejected; replay ignores command fields | `--generator-command` is deliberately trusted user input; displayed commands should still be reviewed before copying |
 | Host filesystem access | No host bind mounts during verification; only a read-only controller-owned volume; read-only root; no devices or Docker/SSH socket | Docker daemon and container runtime are trusted; a container escape can reach their privileges |
 | Secret theft | Public unauthenticated intake; Docker env cleared and allowlisted; no token/socket mounts; Docker control env minimized; OpenAI key sent only to a fixed TLS endpoint after explicit provider selection | Built-in provider, DNS/TLS trust, trusted command generators, daemon, and host remain outside the hostile-repository boundary |
-| Verification network exfiltration | Docker `--network none`; any prepared dependency mount is read-only and installed in a separate offline phase | Loopback remains; runtime/daemon escape bypasses this; trusted image build has network; the dependency-download prototype has bridge egress without a network ACL and no completed executor |
+| Verification network exfiltration | Docker `--network none`; a typed prepared dependency mount is revalidated and read-only, and installation occurs in a separate offline phase | Loopback remains; runtime/daemon escape bypasses this; trusted image build has network; the completed wheel downloader still has bridge egress without a network-layer ACL |
 | CPU/RAM/PID/file/output exhaustion | Cgroup CPU/memory/PID limits, ulimits, bounded tmpfs/inodes, outer timeout, controller output cap, bounded Docker logs | Shared daemon/VM storage, staging helpers, kernel bugs, I/O pressure, and crash-left resources can still affect the host |
 | Terminal/clipboard injection | CSI, OSC, C1, CR, control, and format characters stripped from captured logs and CLI errors | Arbitrary report fields are data; other renderers must still escape Markdown, HTML, and rich-text markup |
-| Forged test result | Bounded stdout and optional defused XML; exact node name, one test/failure, symptom evidence, repeated fingerprint | Repository code runs in-process with pytest and can forge either evidence form; evidence is not attestation |
-| Malicious replay report | Regular non-symlink <=1 MiB; canonical URL/repository/SHA; recorded archive hash; fresh commit-tree attestation; optional recorded tree-digest comparison; candidate schema/hash; bounded repeats; command fields ignored | Reports are unsigned; replay does not authenticate author or reuse/verify the original runner policy and result |
-| Cross-run contamination | New labeled volume/container per workflow and best-effort cleanup | No crash-recovery janitor; local Docker image/cache and daemon are shared; hosted multi-tenancy is not supported |
-| False product claim | Explicit claim levels and report limitations; `repeatable_base_failure` has a narrow definition | Semantic review, hidden-fix differential, benchmark rates, and maintainer acceptance are separate unimplemented evidence gates |
+| Forged test result | Bounded stdout plus bounded defused XML transported through an inspected quota-limited result anchor; exact node name, one test/failure or pass, symptom evidence, repeated fingerprint | Repository code runs in-process with pytest and can forge either evidence form or influence the result volume; transport integrity is not result attestation |
+| Malicious replay report | Regular non-symlink <=1 MiB; canonical URL/repository/SHA; recorded archive hash; fresh commit-tree attestation; schema-1.1 candidate-applied executed-tree equality; candidate schema/hash; bounded repeats; command fields ignored | Reports are unsigned; schema-1.0 backward replay lacks historical executed-tree evidence; replay does not authenticate author or reuse/verify the original runner policy and result |
+| Cross-run contamination | New labeled volume/container per workflow; exact-label checks before removal; authoritative post-removal absence checks; executor-owned dependency cleanup | No crash-recovery janitor; local Docker image/cache and daemon are shared; hosted multi-tenancy is not supported |
+| False product claim | Explicit claim levels and report limitations; `repeatable_base_failure` has a narrow definition; differential execution requires a nominal private capability | The official capability issuer, authentic v0.2 cases, causal review, benchmark rates, and maintainer acceptance remain separate missing evidence gates |
 
 ## Important residual risks
 
@@ -86,12 +86,15 @@ the machine under that adapter's own policy. Private repositories are not implem
 The candidate policy blocks known dangerous patterns, including the fixed top-level-assignment and
 import-alias bypass regressions. It is not a complete Python effect system. Repository code can run
 from `sitecustomize`, imports, pytest, or `conftest.py`, tamper with its process, and forge JUnit or
-stdout evidence. JUnit is optional because Docker tmpfs output may not remain copyable after stop;
-the bounded stdout fallback is conservative but equally untrusted. Repetition makes an observation
-more stable; it does not make it truthful or issue-causal.
+stdout evidence. JUnit now crosses a separate inspected, quota-bounded local-tmpfs result anchor, but
+that solves bounded transport rather than authenticity. Accepted base/fixed executions require a
+strict exact-node JUnit result; stdout is only supplemental bounded symptom evidence after JUnit
+succeeds. Repetition makes an observation more stable; it does not make it truthful or issue-causal.
 
-A stronger benchmark must apply the candidate separately to a hidden fixed revision and conduct
-blinded semantic review. A live unresolved issue cannot receive that claim automatically.
+The capability-gated primitive can apply the same candidate separately to attested hidden-fixed
+bytes and demand three exact passes, but a stronger benchmark must also establish the authentic
+private package, causal controls, and blinded semantic review. A live unresolved issue cannot
+receive that claim automatically.
 
 ### Reports are evidence bundles, not attestations
 
@@ -112,7 +115,9 @@ host disk, or kernel. tmpfs pages may be swapped by the Docker host/VM.
 
 - private GitHub repositories, GitHub Enterprise, authenticated source intake, and secrets in target
   tests;
-- arbitrary dependency installation or repository-controlled networked setup; the reviewed wheel-only primitives are not a completed executor;
+- arbitrary dependency installation or repository-controlled networked setup; only the reviewed
+  hash-locked wheel executor is implemented, and it is not wired into the public issue workflow or a
+  scored campaign;
 - repositories requiring services, databases, browsers, GPUs, privileged syscalls, or writable
   source trees;
 - Windows containers or native Windows execution;
@@ -138,5 +143,7 @@ Changes should preserve adversarial regressions for:
 - terminal CSI/OSC/clipboard/control sanitization;
 - top-level candidate execution, network/process APIs and aliases, and skip/xfail behavior;
 - Docker arguments with no binds, secret/socket/proxy forwarding, or network, plus the positive and
-  negative evaluator-isolation canary; and
+  negative evaluator-isolation canary;
+- candidate-applied host and staged-tree equality, typed dependency-handle revalidation, exact
+  tmpfs byte/inode quotas, label-verified cleanup, and bounded JUnit result-anchor policy; and
 - bounded report, generator, JUnit, log, and archive parsing.

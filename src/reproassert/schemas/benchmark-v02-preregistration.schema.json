@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Atomics-hub/reproassert/blob/main/schemas/benchmark-v02-preregistration.schema.json",
+  "title": "ReproAssert v0.2 public preregistration",
+  "description": "Public 20-case pre-inference freeze containing generator-safe digests and salted opaque evaluator commitments, never hidden fix identities.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "benchmark_version", "status", "frozen_at", "cohort", "protocol", "artifact_contract", "cases", "cohort_sha256", "tool"],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "benchmark_version": { "const": "0.2.0-draft" },
+    "status": { "const": "frozen" },
+    "frozen_at": { "$ref": "#/$defs/timestamp" },
+    "cohort": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["case_count", "selection_method", "preinference_freeze"],
+      "properties": {
+        "case_count": { "const": 20 },
+        "selection_method": { "const": "preinference_preregistered_feasibility_cohort" },
+        "preinference_freeze": { "const": true }
+      }
+    },
+    "protocol": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cutoff", "comments_included", "generator_visible_fields", "evaluator_only_fields", "submitted_candidates_per_case", "candidate_selection_uses_oracle", "semantic_valid_minimum", "semantic_valid_denominator"],
+      "properties": {
+        "cutoff": { "const": "pre_solution_pr_publication" },
+        "comments_included": { "const": false },
+        "generator_visible_fields": { "const": ["repo", "issue_url", "base_sha", "issue_snapshot"] },
+        "evaluator_only_fields": { "const": ["raw_issue_history", "fixing_pull_request", "fixed_commit_and_production_patch", "developer_tests", "oracle_rubric", "causal_controls", "reviewer_packet"] },
+        "submitted_candidates_per_case": { "const": 1 },
+        "candidate_selection_uses_oracle": { "const": false },
+        "semantic_valid_minimum": { "const": 6 },
+        "semantic_valid_denominator": { "const": 20 }
+      }
+    },
+    "artifact_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["issue_history_query_sha256", "solution_cutoff_query_sha256", "fixing_pr_identity_query_sha256", "redaction_policy_sha256", "generator_projection_algorithm", "evaluator_package_algorithm", "evaluator_commitment_algorithm", "semantic_verification_algorithm", "source_dataset_transform"],
+      "properties": {
+        "issue_history_query_sha256": { "$ref": "#/$defs/sha256" },
+        "solution_cutoff_query_sha256": { "$ref": "#/$defs/sha256" },
+        "fixing_pr_identity_query_sha256": { "$ref": "#/$defs/sha256" },
+        "redaction_policy_sha256": { "$ref": "#/$defs/sha256" },
+        "generator_projection_algorithm": { "const": "reproassert-generator-case-v1" },
+        "evaluator_package_algorithm": { "const": "reproassert-hidden-evaluator-package-v1" },
+        "evaluator_commitment_algorithm": { "const": "reproassert-salted-evaluator-commitment-v1" },
+        "semantic_verification_algorithm": { "const": "reproassert-v02-semantic-verification-v1" },
+        "source_dataset_transform": { "const": "drop_PASS_TO_PASS_and_FAIL_TO_PASS_v1" }
+      }
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 20,
+      "maxItems": 20,
+      "items": { "$ref": "#/$defs/case" }
+    },
+    "cohort_sha256": { "$ref": "#/$defs/sha256" },
+    "tool": { "$ref": "#/$defs/tool" }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "gitSha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "identifier": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{2,127}$" },
+    "timestamp": { "type": "string", "format": "date-time", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?Z$" },
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "repo", "issue_url", "base_sha", "difficulty", "smoke", "generator_projection_sha256", "evaluator_commitment_sha256"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^rk-v0\\.2-[0-9]{3}$" },
+        "repo": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$" },
+        "issue_url": { "type": "string", "pattern": "^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/issues/[1-9][0-9]*$" },
+        "base_sha": { "$ref": "#/$defs/gitSha" },
+        "difficulty": { "enum": ["lt_15m", "15m_to_1h"] },
+        "smoke": { "type": "boolean" },
+        "generator_projection_sha256": { "$ref": "#/$defs/sha256" },
+        "evaluator_commitment_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "git_sha"],
+      "properties": {
+        "name": { "$ref": "#/$defs/identifier" },
+        "version": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]{0,99}$" },
+        "git_sha": { "$ref": "#/$defs/gitSha" }
+      }
+    }
+  }
+}

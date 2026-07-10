@@ -1,8 +1,8 @@
 # Sandbox profiles
 
-Status: one dependency-free local profile is implemented. Reviewed wheel-preparation primitives are
-experimental and have no causal executor. Enhanced and hosted profiles are design paths, not shipped
-features.
+Status: one dependency-free local issue/replay profile and one preparation-only causal wheel
+executor are implemented. The wheel path is not wired into a scored campaign, and enhanced/hosted
+profiles remain design paths rather than shipped features.
 
 ## `strict-python-pytest-v1` — implemented
 
@@ -14,8 +14,10 @@ Dockerfile, setup command, Makefile, tox command, or copied issue instruction.
 The packaged image is built from a Python 3.12.13 slim Bookworm base pinned by SHA-256. Runner Python
 dependencies are installed from a hash-locked requirements file. `reproassert sandbox build` has
 network access to pull/build that trusted image; hostile repository code is not present in the build
-context. Verification later uses `--pull never`. The local image tag is mutable, so the controller
-records the actual image ID; it does not currently verify an image signature or transparency log.
+context. Verification later uses `--pull never`. The local image tag is mutable, so each sandbox
+resolves its actual immutable image ID on first readiness and uses that ID for staging, attestation,
+execution, ownership helpers, and facts. A later tag swap is rejected. The controller does not
+currently verify an image signature or transparency log.
 
 ### Verification container arguments
 
@@ -24,7 +26,7 @@ The controller currently requests:
 | Area | Docker arguments or behavior |
 | --- | --- |
 | Image/network | `--pull never`, `--network none` |
-| Filesystem | `--read-only`; controller-owned named volume at `/workspace`, `readonly`; no bind mounts |
+| Filesystem | `--read-only`; controller-owned named volume at `/workspace`, `readonly`; fresh 2 MiB/64-inode local-tmpfs result volume at `/results`; no bind mounts |
 | Identity | `--user 65532:65532`, `--cap-drop ALL`, `--security-opt no-new-privileges=true` |
 | Processes | private default PID and IPC namespaces, `--pids-limit 128`, `--init` |
 | Memory/CPU | `--memory 1073741824`, matching `--memory-swap`, `--cpus 1.0` |
@@ -54,10 +56,15 @@ base directory, a random JUnit path, and one controller-selected `tests/reproass
 beginning with `-` are rejected. No command from the issue, candidate, repository, or imported report
 is placed into Docker argv.
 
-JUnit is an optional hostile hint, not the sole classifier. It is written to `/tmp`; after a Docker
-container stops, that tmpfs may no longer be available to `docker cp`. The implemented conservative
-fallback parses bounded, sanitized pytest stdout and requires the exact target marker, exactly one
-failed test, expected symptom text, and a repeat-stable normalized fingerprint.
+JUnit is hostile evidence, not the sole classifier. Each phase writes it to a fresh quota-bounded
+local-tmpfs volume at `/results`. A separate inspected anchor container keeps the tmpfs mount alive
+only until a fixed isolated reader returns at most the allowed bytes. The anchor has no network,
+read-only root, non-root identity, dropped capabilities, no-new-privileges, private cgroup/IPC,
+16 PIDs, 64 MiB memory, 0.1 CPU, no Docker logs, and no workspace/dependency mount. Accepted base and
+fixed executions both require strict JUnit for exactly one expected node and the required
+failure/pass shape; missing or malformed JUnit fails closed. Bounded stdout is only supplemental
+symptom evidence after valid JUnit identifies the target result. Repository code can forge either
+channel.
 
 `--network none` leaves the container loopback device. It blocks normal host, LAN, DNS, and internet
 connectivity but does not prevent processes inside the same container from communicating over
@@ -70,6 +77,7 @@ run if Docker's inspected configuration does not show:
 
 - network mode `none`;
 - a read-only root filesystem;
+- healthchecks disabled and the immutable image ID selected at readiness;
 - user `65532:65532`;
 - all capabilities dropped and no-new-privileges requested;
 - non-privileged mode and private PID/IPC configuration;
@@ -84,16 +92,20 @@ Docker context points to a local engine. Docker and its defaults remain trusted.
 
 ### Staging and cleanup
 
-Source files are first copied into a new controller-labeled Docker volume with `docker cp`; no host
-directory is bind-mounted. The staging container uses `--network none` and a trusted `/bin/true`
-entrypoint. A separate short-lived helper runs trusted `/bin/chown` as root with only `CHOWN` and
-`DAC_READ_SEARCH` added, no-new-privileges, no network, and a read-only root so it can traverse
-controller-private archive directories and make the volume readable by UID 65532. These two helpers
-do not execute repository code, but they are not attested with the full verification policy.
+The controller first creates and attests a private copy containing the exact pristine source plus one
+revalidated candidate. Those bytes are copied into a new controller-labeled Docker volume with
+`docker cp`; no host directory is bind-mounted. A read-only in-container attestor must reproduce the
+candidate-applied tree evidence before pytest can run. The staging container uses `--network none`
+and a trusted `/bin/true` entrypoint. A separate short-lived helper runs trusted `/bin/chown` as root
+with only `CHOWN` and `DAC_READ_SEARCH` added, no-new-privileges, no network, and a read-only root so
+it can make the volume readable by UID 65532. These helpers do not execute repository code, but they
+are not attested with the full verification policy.
 
-Normal completion removes containers and volumes in `finally` blocks. Timeout and output overflow
-force-remove the active container. There is not yet a startup janitor for resources left after a
-controller crash, host kill, daemon failure, or power loss. Stale resources labeled
+Normal completion removes containers and volumes in `finally` blocks only after checking the exact
+controller label; removal is confirmed by inspect or an exact-name listing. Timeout and output
+overflow force-remove the active owned container. The dependency executor similarly retains sole
+ownership of borrowed dependency cleanup. There is not yet a startup janitor for resources left
+after a controller crash, host kill, daemon failure, or power loss. Stale resources labeled
 `io.reproassert.owner=controller-v1` may require operator cleanup.
 
 ### Recorded live fixture
@@ -112,21 +124,56 @@ effective image ID, network, mounts, user, capabilities, no-new-privileges flag,
 bounded log driver, process-environment clearing, and cleanup. This is a narrow mount-policy control;
 it does not strengthen ordinary Docker into a hosted hostile multi-tenant boundary.
 
-## Reviewed wheel preparation — primitives only
+The capability-gated differential integration fixture also passed locally on 2026-07-10. It staged
+separately attested candidate-applied buggy/fixed trees and executed
+`base, fixed, fixed, base, base, fixed`; the three base runs had one repeat-stable intended failure
+and the three fixed runs each had one exact JUnit pass. This is a synthetic repository fixture under
+a test-only capability, not an authentic historical package or public L1 result.
 
-The strict plan and wheel validators plus fixed Docker argv builders implement a future
-`pypi-hash-locked-wheels-v1` profile. The networked phase receives only a controller-rendered
-hash-complete requirements file and a wheelhouse volume; source and dependency output are absent.
-The install phase uses `--network none`, `--no-index`, `--no-deps`, binary wheels only, and writes a
-separate dependency volume. An ordinary verifier may mount a controller-owned dependency volume
-read-only at `/dependencies`, and its inspected mount set must contain only workspace and that
-optional dependency volume.
+## `pypi-hash-locked-wheels-v1` — causal executor implemented, campaign-gated
 
-This is not a supported preparation workflow yet. No controller currently proves volume freshness,
-labels, emptiness, or non-root ownership; inspects and binds both phase containers and immutable
-image IDs; records exit/timeout/OOM/output evidence; or causally connects the attested wheelhouse to
-the post-install dependency tree. Bridge networking constrains the process and inputs, not egress at
-the network layer. No benchmark prerequisite may rely on the receipt builder alone.
+`DependencyExecutor` accepts a strict dependency-plan path, not a caller-constructed plan object. It
+resolves the immutable runner image ID once, then creates three distinct local-driver tmpfs volumes:
+
+| Role | Size | Inodes | Runtime access |
+| --- | ---: | ---: | --- |
+| rendered input | 1 MiB | 64 | read-only in download |
+| wheelhouse | 512 MiB | 1,024 | writable only in download; read-only thereafter |
+| installed dependencies | 512 MiB | 32,768 | writable only in offline install; read-only borrow thereafter |
+
+Docker inspect must show the exact type, size, inode, UID/GID `65532:65532`, mode `0700`, owner, run,
+role, and plan labels. Read-only retention anchors keep each local tmpfs mount alive and prevent
+reuse. Newly created volumes are probed empty. The networked phase receives only the rendered
+hash-complete requirements and wheelhouse, runs `python -I -m pip --isolated download` under fixed
+source-free binary-only argv, and has no source or dependency-output mount. The install phase uses
+`--network none`, `--no-index`, `--no-deps`, binary wheels only, and writes the separate dependency
+volume.
+
+Before install, the executor individually retrieves only pre-enumerated flat regular wheel files and
+checks their hashes; it never recursively exports the hostile wheelhouse or installed tree to the
+host. It proves the wheelhouse is unchanged across install, the input is unchanged, and the
+dependency tree is stable across an in-container no-follow attestation. A nominal typed handle binds
+the exact labels, quota, immutable image ID, tree attestation, receipt digest, and executor-only
+cleanup capability. `DockerSandbox.borrow_dependency_volume()` accepts only that exact type,
+revalidates it before every `/dependencies` mount, and never takes cleanup ownership.
+
+The canonical execution receipt is below 1 MiB and deliberately records
+`campaign_readiness_changed: false`. Its separate strict loader/verifier rejects duplicate keys and
+noncanonical JSON, then recomputes the plan, requirements, policy, volume contract, command/config
+hashes, phase outcomes, causal sequence, wheelhouse/tree identities, image binding, and cleanup
+contract rather than trusting copied booleans. Root and bundled JSON Schemas describe the same
+format.
+
+Real local Docker checks passed a pinned `six==1.17.0` PyPI download, offline install, direct import,
+typed read-only verifier borrow, checked cleanup, and a separate inode-quota canary that reached
+`ENOSPC`. The opt-in network canary requires both `REPROASSERT_RUN_DOCKER_TESTS=1` and
+`REPROASSERT_RUN_DEPENDENCY_NETWORK_TESTS=1`, so ordinary CI does not download from PyPI.
+
+This profile is still preparation-only. It is not a general repository installer, does not run
+setup.py, build backends, sdists, VCS dependencies, or repository commands, and is not wired into
+`reproassert issue`/`replay`. Docker bridge egress constrains the trusted process and inputs, not the
+network layer. No authentic v0.2 case package or campaign prerequisite exists merely because the
+executor or receipt verifier passes.
 
 ## `gvisor-python-pytest` — proposed enhanced Linux profile
 

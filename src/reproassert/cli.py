@@ -29,6 +29,7 @@ from reproassert.benchmark_source import (
     prepare_source_case,
     verify_source_receipt,
 )
+from reproassert.dependency_execution_receipt import load_dependency_execution_receipt
 from reproassert.errors import ReproAssertError
 from reproassert.generator import (
     DEFAULT_OPENAI_MODEL,
@@ -427,6 +428,34 @@ def benchmark_build_source_index(
             sort_keys=True,
         )
     )
+
+
+@benchmark_group.command("verify-dependency-receipt")
+@click.argument("receipt_path", type=click.Path(path_type=Path, exists=True, dir_okay=False))
+@click.option(
+    "--plan",
+    "plan_path",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+    help="Exact reviewed dependency plan bound by the receipt.",
+)
+@click.option("--expected-receipt-sha256")
+def benchmark_verify_dependency_receipt(
+    receipt_path: Path,
+    plan_path: Path,
+    expected_receipt_sha256: str | None,
+) -> None:
+    """Independently rederive and verify one causal dependency receipt."""
+
+    try:
+        verified = load_dependency_execution_receipt(
+            receipt_path,
+            expected_plan_path=plan_path,
+            expected_receipt_sha256=expected_receipt_sha256,
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(json.dumps(asdict(verified), indent=2, sort_keys=True))
 
 
 @main.command("schema")

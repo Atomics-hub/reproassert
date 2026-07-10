@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Atomics-hub/reproassert/blob/main/schemas/benchmark-v02-fix-mapping.schema.json",
+  "title": "ReproAssert v0.2 evaluator-only fixing-PR mapping",
+  "description": "Private receipt binding a neutral case to reviewed upstream fix provenance and hidden evaluator artifacts.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "benchmark_version", "case", "provenance", "fixing_pull_request", "evaluator_artifacts", "review", "tool"],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "benchmark_version": { "const": "0.2.0-draft" },
+    "case": { "$ref": "#/$defs/case" },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tdd_bench_repository_url", "tdd_bench_git_sha", "tdd_id_list_blob_oid", "tdd_id_list", "tdd_membership_ordinal", "source_dataset_repository_url", "source_dataset_git_sha", "source_dataset_split", "source_dataset_artifact", "source_dataset_row_ordinal", "instance_id", "upstream_record", "fixing_pr_evidence", "mapping_method"],
+      "properties": {
+        "tdd_bench_repository_url": { "const": "https://github.com/IBM/TDD-Bench-Verified" },
+        "tdd_bench_git_sha": { "$ref": "#/$defs/gitSha" },
+        "tdd_id_list_blob_oid": { "$ref": "#/$defs/gitSha" },
+        "tdd_id_list": { "$ref": "#/$defs/artifact" },
+        "tdd_membership_ordinal": { "type": "integer", "minimum": 1, "maximum": 449 },
+        "source_dataset_repository_url": { "const": "https://huggingface.co/datasets/princeton-nlp/SWE-bench_Verified" },
+        "source_dataset_git_sha": { "$ref": "#/$defs/gitSha" },
+        "source_dataset_split": { "const": "test" },
+        "source_dataset_artifact": { "$ref": "#/$defs/artifact" },
+        "source_dataset_row_ordinal": { "type": "integer", "minimum": 0 },
+        "instance_id": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+__[A-Za-z0-9_.-]+-[1-9][0-9]*$" },
+        "upstream_record": { "$ref": "#/$defs/artifact" },
+        "fixing_pr_evidence": { "$ref": "#/$defs/artifact" },
+        "mapping_method": { "const": "pinned_tdd_filter_plus_upstream_row_plus_pr_capture_plus_independent_review" }
+      }
+    },
+    "fixing_pull_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["number", "url", "created_at", "published_at", "target_sha256", "fixed_commit_sha", "base_root_tree_oid", "head_root_tree_oid", "production_patch_sha256", "developer_tests_sha256"],
+      "properties": {
+        "number": { "type": "integer", "minimum": 1 },
+        "url": { "type": "string", "pattern": "^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[1-9][0-9]*$" },
+        "created_at": { "$ref": "#/$defs/timestamp" },
+        "published_at": { "$ref": "#/$defs/timestamp" },
+        "target_sha256": { "$ref": "#/$defs/sha256" },
+        "fixed_commit_sha": { "$ref": "#/$defs/gitSha" },
+        "base_root_tree_oid": { "$ref": "#/$defs/gitSha" },
+        "head_root_tree_oid": { "$ref": "#/$defs/gitSha" },
+        "production_patch_sha256": { "$ref": "#/$defs/sha256" },
+        "developer_tests_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "evaluator_artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["production_patch", "developer_tests", "oracle_rubric", "causal_controls", "reviewer_packet"],
+      "properties": {
+        "production_patch": { "$ref": "#/$defs/artifact" },
+        "developer_tests": { "$ref": "#/$defs/artifact" },
+        "oracle_rubric": { "$ref": "#/$defs/artifact" },
+        "causal_controls": { "$ref": "#/$defs/artifact" },
+        "reviewer_packet": { "$ref": "#/$defs/artifact" }
+      }
+    },
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "reviewed_at", "reviewer_ids", "checklist", "mapping_correct", "upstream_license_reviewed", "generator_access"],
+      "properties": {
+        "status": { "const": "approved" },
+        "reviewed_at": { "$ref": "#/$defs/timestamp" },
+        "reviewer_ids": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/identifier" }
+        },
+        "checklist": { "$ref": "#/$defs/artifact" },
+        "mapping_correct": { "const": true },
+        "upstream_license_reviewed": { "const": true },
+        "generator_access": { "const": "forbidden" }
+      }
+    },
+    "tool": { "$ref": "#/$defs/tool" }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "gitSha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "identifier": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{2,127}$" },
+    "timestamp": { "type": "string", "format": "date-time", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?Z$" },
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "repo", "issue_url", "base_sha"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^rk-v0\\.2-[0-9]{3}$" },
+        "repo": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$" },
+        "issue_url": { "type": "string", "pattern": "^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/issues/[1-9][0-9]*$" },
+        "base_sha": { "$ref": "#/$defs/gitSha" }
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "bytes"],
+      "properties": {
+        "path": { "type": "string", "maxLength": 240, "pattern": "^(?!\\.{1,2}(?:/|$))(?!.*\\/\\.{1,2}(?:/|$))[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*$" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "bytes": { "type": "integer", "minimum": 1, "maximum": 33554432 }
+      }
+    },
+    "tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "git_sha"],
+      "properties": {
+        "name": { "$ref": "#/$defs/identifier" },
+        "version": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]{0,99}$" },
+        "git_sha": { "$ref": "#/$defs/gitSha" }
+      }
+    }
+  }
+}

@@ -8,6 +8,11 @@ SCHEMA_FILENAMES = {
     "benchmark-source-receipt": "benchmark-source-receipt.schema.json",
     "benchmark-source-index": "benchmark-source-index.schema.json",
     "benchmark-object-source-receipt": "benchmark-object-source-receipt.schema.json",
+    "benchmark-v02-fix-mapping": "benchmark-v02-fix-mapping.schema.json",
+    "benchmark-v02-case-package": "benchmark-v02-case-package.schema.json",
+    "benchmark-v02-preregistration": "benchmark-v02-preregistration.schema.json",
+    "benchmark-v02-semantic-verification": ("benchmark-v02-semantic-verification.schema.json"),
+    "dependency-execution-receipt": "dependency-execution-receipt.schema.json",
 }
 
 

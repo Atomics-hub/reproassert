@@ -12,14 +12,20 @@ All notable changes to ReproAssert will be documented here. The format follows [
 - Offline historical snapshot production from complete GitHub edit-history evidence with strict
   pre-publication selection, fixing-PR redaction, privacy-review commitments, durable-file
   rederivation, and a self-owned live proof record.
-- Experimental hash-locked wheel preparation primitives for reviewed closures, source-free download,
-  offline install, hostile-wheel bounds, deterministic receipt identities, and optional read-only
-  dependency mounts. The causal executor remains explicitly gated.
+- A causal dependency executor for hash-locked wheel closures, with fresh byte/inode-bounded tmpfs
+  volumes, inspected networked-download and offline-install phases, installed-tree attestation,
+  typed read-only verifier handles, strict cleanup, and an independently verifiable receipt.
+- Fail-closed v0.2 evaluator-package, preregistration, semantic-receipt, provenance, and publication
+  leak-audit contracts. No cohort or official semantic capability issuer is included yet.
+- Capability-gated interleaved base/fixed differential verification with exact structured JUnit
+  evidence. This is evaluator infrastructure, not a published benchmark result.
 
 ### Changed
 
 - Documented a local-first CI budget: batch coherent pull-request updates, diagnose failures locally,
   and require an explicit cost rationale for new workflows, triggers, matrices, or metered services.
+- Report schema 1.1 now binds the exact candidate-applied tree that entered the sandbox; replay
+  recomputes that overlay while retaining read support for schema 1.0 reports.
 
 ### Fixed
 
@@ -31,7 +37,8 @@ All notable changes to ReproAssert will be documented here. The format follows [
 
 - Added adversarial Git-object, codeload, raw-blob, symlink-chain, snapshot-history, wheel-archive,
   resource-policy, receipt-tampering, and private-I/O regressions. Red-team review found no remaining
-  P0/P1 exact-source boundary bypass; aggregate declared wheel expansion is capped at 512 MiB.
+  P0/P1 in the reviewed causal dependency, candidate-overlay, JUnit transport, or differential
+  paths. Dependency bytes and inodes are bounded, and missing structured test evidence fails closed.
 
 ## [0.1.0] - 2026-07-09
 

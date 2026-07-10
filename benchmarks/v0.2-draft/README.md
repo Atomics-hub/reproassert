@@ -18,11 +18,14 @@ the fixing pull request's publication, rerun exact fixing-link redaction, and in
 the safe three-field projection. Synthetic adversarial fixtures exercise the contract. This removes
 the earlier producer-implementation blocker; it does **not** make a campaign ready.
 
-There is no authenticated collector and no v0.2 cohort. The evaluator must pre-bind the correct
-fixing pull request and preserve the raw issue-history and publication-basis artifacts outside the
-generator view. Capture authenticity remains trusted-controller evidence rather than a GitHub-signed
-attestation, and the explicit privacy review remains a human semantic gate. The fixture-only
-override is still not evidence.
+There is no authenticated collector and no v0.2 cohort. GitHub's public REST issue endpoints expose
+current issue text and selected events, but not the complete body revision history required by this
+contract; the supported history shape comes from authenticated GitHub GraphQL. No third-party
+GraphQL capture has been authorized. The evaluator must pre-bind the correct fixing pull request and
+preserve the raw issue-history and publication-basis artifacts outside the generator view. Capture
+authenticity remains trusted-controller evidence rather than a GitHub-signed attestation, and the
+explicit privacy review remains a human semantic gate. The fixture-only override is still not
+evidence, and the cutoff will not be weakened to fit unauthenticated REST data.
 
 The offline command never collects from GitHub or chooses the fixing pull request. An evaluator must
 capture the frozen query responses, choose and preserve the publication basis outside the generator
@@ -54,3 +57,50 @@ sound.
 A bounded [self-owned fixture record](../../evidence/snapshot-producer-self-fixture.json) documents
 one live derivation without committing raw history or manufacturing a privacy-approved receipt. It
 is infrastructure proof only and is not a member of a v0.2 cohort.
+
+## Structural package and freeze tooling
+
+The v0.2 draft implementation now strictly parses and cross-binds:
+
+- upstream TDD-Bench membership and source-dataset row provenance;
+- fixing-PR identity, publication/merge chronology, base/head trees, production patch, developer
+  tests, and the environment setup revision;
+- the historical snapshot receipt, raw evidence, privacy checklist, and a generator projection that
+  contains only case identity plus the frozen issue title/body commitment;
+- exact-object source, causal dependency, production-isolation, reviewer-role, and semantic
+  verification receipts; and
+- a private salted evaluator-package identity with a public commitment.
+
+The public preregistration encoder fixes 20 cases, five predeclared smoke cases, difficulty mix,
+protocol hashes, one candidate per case, and evaluator commitments. The cohort audit rejects
+duplicate upstream instances, fixing targets, base/fix pairs, or private nonces. The publication
+scanner rejects private evaluator identities, patch bytes, and package paths in a proposed public
+tree.
+
+These are structural controls, not evidence producers. Case verification requires an
+application-selected trusted semantic verifier and fails closed without one. Even a structurally
+valid package deliberately returns no live `VerifiedV02EvaluatorCapability`; the cohort audit
+therefore remains `ready: false` until an official application-owned issuer rederives the source,
+dependency, two-tree patch causality, production isolation, and reviewer seal in process. Repository
+code, issue text, model output, plugins, and package-controlled executables must never supply that
+issuer.
+
+## Implemented local evaluator primitives
+
+The preparation-only dependency executor now turns one strict reviewed wheel plan into fresh,
+distinct, quota-bounded tmpfs volumes; fixed networked download and network-disabled install phases;
+wheelhouse and installed-tree attestations; a typed read-only mount handle; and a canonical bounded
+receipt. A separate strict loader/verifier recomputes and cross-binds plan, requirements, image,
+volume policy, phase commands/results, causal sequence, tree, and cleanup fields. The receipt always
+records that campaign readiness did not change. Real local Docker checks passed a pinned
+`six==1.17.0` PyPI download, offline install, verifier borrow, and inode-quota `ENOSPC` canary.
+
+The internal differential primitive accepts only the nominal evaluator capability, revalidates and
+applies exactly one candidate to separately attested base/fixed trees, and runs the frozen schedule
+`base, fixed, fixed, base, base, fixed`. A real local Docker fixture produced three matching base
+failures and three exact fixed passes. Raw fixed stdout/JUnit is reduced to digests before the public
+record. This fixture does not come from an authentic v0.2 package and is not an L1 result.
+
+There are still no authentic v0.2 captures or case packages, no official semantic issuer, no
+production scored runner or model campaign, no public L1/L2 result, and no model/provider or GitHub
+Actions spend for this milestone.

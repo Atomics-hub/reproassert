@@ -86,6 +86,8 @@ def accepted_outcome() -> VerificationOutcome:
         fingerprint="f" * 64,
         collection=docker_result("collect"),
         runs=(docker_result("verify_1"), docker_result("verify_2"), docker_result("verify_3")),
+        candidate_sha256=candidate().sha256,
+        executed_tree_sha256="e" * 64,
     )
 
 
@@ -129,6 +131,14 @@ def test_verify_and_write_creates_patch_and_authoritative_report(
     source.mkdir(mode=0o700)
     sandbox = FakeSandbox()
     monkeypatch.setattr(workflow, "verify_candidate", lambda **_kwargs: accepted_outcome())
+    monkeypatch.setattr(
+        workflow,
+        "prepare_candidate_workspace",
+        lambda **_kwargs: SimpleNamespace(
+            path=source,
+            candidate_applied_tree=source_attestation(),
+        ),
+    )
 
     result = workflow._verify_and_write(
         run_dir=run_dir,
@@ -160,10 +170,14 @@ def test_verify_and_write_creates_patch_and_authoritative_report(
     partial_source = json.loads(json.dumps(report))
     partial_source["source"].pop("directory_count")
     assert list(validator.iter_errors(partial_source))
+    missing_executed = json.loads(json.dumps(report))
+    missing_executed["source"].pop("executed_tree_sha256")
+    assert list(validator.iter_errors(missing_executed))
     assert result.outcome == "repeatable_base_failure"
     assert result.patch_path.read_text().startswith("diff --git")
     assert report["source"]["sha"] == "a" * 40
     assert report["source"]["tree_sha256"] == "e" * 64
+    assert report["source"]["executed_tree_sha256"] == "e" * 64
     assert report["source"]["git_tree_oid"] == "f" * 40
     assert report["source"]["git_metadata_absent"] is True
     assert report["candidate"]["generator"] == "fixture"
@@ -178,6 +192,40 @@ def test_verify_and_write_creates_patch_and_authoritative_report(
         "replay",
         str(result.report_path),
     ]
+
+
+def test_verify_and_write_rejects_production_drift_after_pristine_attestation(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "run"
+    run_dir.mkdir(mode=0o700)
+    source = run_dir / "source"
+    source.mkdir(mode=0o700)
+    production = source / "example_project.py"
+    production.write_text("VALUE = 1\n")
+    pristine = workflow.attest_source_tree(source)
+    production.write_text("VALUE = 999\n")
+
+    with pytest.raises(PolicyRejection, match="pristine controller attestation"):
+        workflow._verify_and_write(
+            run_dir=run_dir,
+            report_id="a" * 32,
+            issue_url="https://github.com/owner/repo/issues/3",
+            issue_title="Fixture mismatch",
+            issue_body_sha256="b" * 64,
+            repository_url="https://github.com/owner/repo",
+            requested_ref="HEAD",
+            sha="a" * 40,
+            archive_sha256="c" * 64,
+            archive_size_bytes=90,
+            source_attestation=pristine,
+            source_root=source,
+            candidate=candidate(),
+            generator_name="fixture",
+            generation_metadata={},
+            sandbox=FakeSandbox(),  # type: ignore[arg-type]
+            repeats=3,
+        )
 
 
 def test_issue_workflow_orchestrates_bounded_inputs_and_cleans(
@@ -322,6 +370,14 @@ def test_replay_workflow_regenerates_from_schema_not_commands(
         workflow, "attest_source_tree", lambda *_args, **_kwargs: source_attestation()
     )
     monkeypatch.setattr(workflow, "verify_candidate", lambda **_kwargs: accepted_outcome())
+    monkeypatch.setattr(
+        workflow,
+        "prepare_candidate_workspace",
+        lambda **_kwargs: SimpleNamespace(
+            path=source,
+            candidate_applied_tree=source_attestation(),
+        ),
+    )
 
     result = workflow.run_replay_workflow(
         input_path,
