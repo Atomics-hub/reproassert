@@ -193,6 +193,11 @@ def test_manifest_loader_is_bounded_strict_and_case_bound(tmp_path: Path) -> Non
     with pytest.raises(PolicyRejection, match="strict UTF-8 JSON"):
         benchmark_source.load_frozen_manifest(depth_bomb)
 
+    assert benchmark_source._decode_strict_json(
+        b'{"brackets":"[[[{{{]}}}","escaped":"\\"["}',
+        "string-bracket fixture",
+    ) == {"brackets": "[[[{{{]}}}", "escaped": '"['}
+
     altered_base = tmp_path / "altered-base.json"
     coherent = json.loads(raw)
     coherent["cases"][0]["base_sha"] = "0" * 40

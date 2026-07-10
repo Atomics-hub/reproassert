@@ -55,6 +55,7 @@ MAX_RECEIPT_BYTES = 1024 * 1024
 EXPECTED_CASE_COUNT = 20
 FROZEN_MANIFEST_SHA256 = "f3e15d05f29269c6d1d067ea7327b63e9b40fcb1ef142c731a215a02b5ebbc8f"
 MAX_HTTP_TIMEOUT_SECONDS = 300.0
+MAX_JSON_NESTING = 128
 
 _CASE_ID = re.compile(r"rk-v0\.1-[0-9]{3}")
 _REPOSITORY = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
@@ -909,6 +910,7 @@ def _file_changed(before: os.stat_result, after: os.stat_result) -> bool:
 def _decode_strict_json(raw: bytes, label: str) -> object:
     try:
         text = raw.decode("utf-8")
+        _reject_excessive_json_nesting(text)
         return json.loads(
             text,
             object_pairs_hook=_reject_duplicate_keys,
@@ -916,6 +918,31 @@ def _decode_strict_json(raw: bytes, label: str) -> object:
         )
     except (UnicodeDecodeError, json.JSONDecodeError, ValueError, RecursionError) as exc:
         raise _rejection(f"{label.capitalize()} is not strict UTF-8 JSON.") from exc
+
+
+def _reject_excessive_json_nesting(text: str) -> None:
+    """Bound container depth before CPython's version-dependent JSON parser runs."""
+
+    depth = 0
+    in_string = False
+    escaped = False
+    for character in text:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == '"':
+                in_string = False
+            continue
+        if character == '"':
+            in_string = True
+        elif character in "[{":
+            depth += 1
+            if depth > MAX_JSON_NESTING:
+                raise ValueError("JSON nesting exceeds the controller limit")
+        elif character in "]}":
+            depth -= 1
 
 
 def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
