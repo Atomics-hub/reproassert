@@ -1,0 +1,88 @@
+from __future__ import annotations
+
+import os
+import shutil
+import tempfile
+from pathlib import Path
+
+import pytest
+
+import reproassert.benchmark_v02_package as package_module
+from reproassert.benchmark_v02_package import V02CaseIdentity
+from reproassert.candidate import validate_candidate_payload
+from reproassert.differential import DIFFERENTIAL_SCHEDULE, verify_differential_candidate
+from reproassert.sandbox import DockerSandbox
+from reproassert.source_attestation import attest_source_tree
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(
+    os.environ.get("REPROASSERT_RUN_DOCKER_TESTS") != "1",
+    reason="set REPROASSERT_RUN_DOCKER_TESTS=1 after building the sandbox image",
+)
+def test_real_docker_interleaves_buggy_failure_and_fixed_pass() -> None:
+    repository = Path(__file__).parents[2]
+    buggy_fixture = repository / "examples" / "fixtures" / "buggy_slug"
+    fixed_fixture = repository / "examples" / "fixtures" / "fixed_slug"
+    content = (buggy_fixture / "tests" / "reproassert" / "test_issue_1.py").read_text()
+    candidate = validate_candidate_payload(
+        {
+            "test_content": content,
+            "expected_symptom": "duplicate separators remain",
+            "rationale": "Exercises repeated whitespace through the public slug function.",
+        },
+        issue_number=1,
+    )
+    sandbox = DockerSandbox()
+    with tempfile.TemporaryDirectory(prefix="reproassert-differential-fixture-") as temporary:
+        root = Path(temporary).resolve(strict=True)
+        base = shutil.copytree(buggy_fixture, root / "base")
+        fixed = shutil.copytree(fixed_fixture, root / "fixed")
+        shutil.rmtree(base / "tests" / "reproassert")
+        shutil.rmtree(fixed / "tests" / "reproassert")
+        base_tree = attest_source_tree(base)
+        fixed_tree = attest_source_tree(fixed)
+        capability = package_module.VerifiedV02EvaluatorCapability(
+            package_module._CAPABILITY_ISSUER,
+            case=V02CaseIdentity(
+                id="rk-v0.2-001",
+                repo="owner/repo",
+                issue_url="https://github.com/owner/repo/issues/1",
+                base_sha="a" * 40,
+            ),
+            package_identity_sha256="b" * 64,
+            public_commitment_sha256="c" * 64,
+            base_commit_sha="a" * 40,
+            base_root_tree_oid=base_tree.reconstructed_git_tree_oid,
+            source_tree_sha256=base_tree.tree_sha256,
+            hidden_fixed_root_tree_oid=fixed_tree.reconstructed_git_tree_oid,
+            fixing_head_commit_sha="d" * 40,
+            fixing_head_root_tree_oid="e" * 40,
+            production_patch_sha256="f" * 64,
+            developer_tests_sha256="1" * 64,
+            dependencies_required=False,
+            dependency_receipt_sha256=None,
+            dependency_plan_sha256=None,
+            dependency_tree_sha256=None,
+            dependency_runner_image_id=None,
+        )
+
+        result = verify_differential_candidate(
+            sandbox=sandbox,
+            base_source=base,
+            fixed_source=fixed,
+            relative_path="tests/reproassert/test_issue_1.py",
+            candidate=candidate,
+            evaluator_capability=capability,
+            run_id="integration-differential",
+        )
+
+    assert result.accepted
+    assert result.outcome == "differential_reproduction"
+    assert tuple(item.source_role for item in result.scheduled_runs) == DIFFERENTIAL_SCHEDULE
+    assert len(result.base_runs) == 3
+    assert len(result.fixed_runs) == 3
+    assert all(run.exit_code == 1 for run in result.base_runs)
+    assert all(run.exit_code == 0 and run.output == "" for run in result.fixed_runs)
+    assert not sandbox._containers
+    assert not sandbox._volumes

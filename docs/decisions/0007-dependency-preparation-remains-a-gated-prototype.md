@@ -1,6 +1,6 @@
-# 0007 — Dependency preparation remains a gated prototype
+# 0007 — Causal dependency preparation remains campaign-gated
 
-Status: accepted design, executor not implemented, on 2026-07-10
+Status: accepted and locally implemented, not campaign-ready, on 2026-07-10
 
 ## Context
 
@@ -14,7 +14,7 @@ that the installed environment came from the reviewed artifacts under the record
 
 ## Decision
 
-The implemented preparation contract is deliberately narrow:
+The preparation contract is deliberately narrow:
 
 - A strict duplicate-free plan binds one case/base/source tree and runner image to a complete,
   sorted closure of normalized package names, exact versions, and reviewed SHA-256 hashes.
@@ -30,32 +30,47 @@ The implemented preparation contract is deliberately narrow:
 - The policy states plainly that Docker bridge egress is constrained by fixed trusted-process argv
   and post-download hashes, not by a network-layer PyPI allowlist.
 
-The plan parser, fixed argv builders, wheel attestation, deterministic receipt builder, and
-read-only verification mount exist as tested primitives. They are not exposed as a completed
-campaign preparation command.
+One `DependencyExecutor` now causally enforces the contract:
+
+1. it accepts only a strict plan path and resolves one immutable runner image ID before creating
+   resources;
+2. it creates distinct, fresh, empty, exactly labeled local-tmpfs input, wheelhouse, and dependency
+   volumes with fixed byte/inode quotas and read-only retention anchors;
+3. it stages only the controller-rendered requirements, runs the fixed networked download and
+   network-disabled install commands, inspects the effective container policy, and records bounded
+   exit/timeout/OOM/output state;
+4. it individually retrieves and validates only pre-enumerated wheel files, proves the input and
+   wheelhouse are unchanged, and attests the installed dependency tree in-container without
+   following links;
+5. it issues a nominal typed read-only handle binding the exact labels, quota, immutable image ID,
+   dependency tree, receipt digest, and executor-only cleanup capability; and
+6. it performs label-verified cleanup and requires authoritative resource absence.
+
+The verifier accepts only that exact handle type, revalidates it before every `/dependencies` mount,
+and never takes cleanup ownership. A separate bounded canonical receipt loader/verifier rejects
+duplicate or noncanonical JSON and recomputes the plan, requirements, policy, volume contract,
+command/config hashes, phase outcomes, causal sequence, wheelhouse/tree identities, image, and
+cleanup semantics. Root and bundled JSON Schemas describe the same receipt. The receipt deliberately
+records `campaign_readiness_changed: false`.
 
 ## Campaign gate
 
-No dependency receipt produced by assembling these primitives manually counts as execution proof.
-Before campaign readiness can change, one controller must causally enforce and record all of the
-following:
+The executor and strict verifier establish local causal execution proof for one reviewed plan; they
+do not select benchmark dependencies, authenticate a historical case, or create a hidden-fix
+evaluator package. Real local Docker checks passed a pinned `six==1.17.0` PyPI download, offline
+install, direct import, typed read-only verifier borrow, cleanup, and an input-volume inode quota
+canary that reached `ENOSPC`.
 
-1. fresh, empty, exclusively labeled input, wheelhouse, and dependency volumes;
-2. constrained ownership setup for the non-root container user;
-3. effective container inspection and the exact immutable image ID for download and install;
-4. bounded attached execution evidence, including exit, timeout, OOM, and output state;
-5. wheelhouse attestation before offline installation;
-6. a successful offline install followed by no-follow dependency-tree attestation; and
-7. cleanup plus one receipt that binds the inspected phases, reviewed plan, wheel bytes, and final
-   read-only tree.
-
-Until that executor exists and passes a real isolation canary, prepared dependency images and
-evaluator packages remain **0/20 campaign-ready**.
+Campaign readiness remains fail closed until each frozen v0.2 package is authentically bound to its
+case/source/environment setup revision, the application-owned semantic issuer verifies the receipt
+and private evaluator evidence, and the production scored runner consumes the issued capability.
+There are currently **0/20 authentic dependency/evaluator case packages and 0/20 campaign-ready**.
 
 ## Consequences
 
-The prototype rejects sdists, VCS dependencies, repository builds, editable installs, resolver
+The executor rejects sdists, VCS dependencies, repository builds, editable installs, resolver
 output, mutable version ranges, and legacy/native environments that do not have compatible reviewed
-wheels. Aggregate declared wheel expansion is capped at 512 MiB, but the eventual executor still
-needs a daemon/volume storage quota and cleanup policy. Hosted use additionally requires an egress
-proxy or equivalent network enforcement and a microVM-class tenant boundary.
+wheels. Aggregate declared wheel expansion, volume bytes, and volume inodes are bounded. The Docker
+local-driver tmpfs policy is locally checked but still trusts the daemon/host implementation. Hosted
+use additionally requires an egress proxy or equivalent network enforcement and a microVM-class
+tenant boundary.

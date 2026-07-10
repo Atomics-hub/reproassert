@@ -11,6 +11,7 @@ from rich.console import Console
 
 import reproassert.cli as cli
 from reproassert.cli import main
+from reproassert.dependency_execution_receipt import VerifiedDependencyExecutionReceipt
 from reproassert.errors import ReproAssertError
 from reproassert.generator import OpenAIResponsesGenerator
 from reproassert.isolation_canary import IsolationCanaryResult
@@ -260,10 +261,69 @@ def test_schema_command_prints_preparation_receipt_schemas() -> None:
         ("benchmark-snapshot-receipt", "benchmark-snapshot-receipt.schema.json"),
         ("benchmark-source-receipt", "benchmark-source-receipt.schema.json"),
         ("benchmark-source-index", "benchmark-source-index.schema.json"),
+        ("benchmark-v02-fix-mapping", "benchmark-v02-fix-mapping.schema.json"),
+        ("benchmark-v02-case-package", "benchmark-v02-case-package.schema.json"),
+        ("benchmark-v02-preregistration", "benchmark-v02-preregistration.schema.json"),
+        (
+            "benchmark-v02-semantic-verification",
+            "benchmark-v02-semantic-verification.schema.json",
+        ),
+        ("dependency-execution-receipt", "dependency-execution-receipt.schema.json"),
     ):
         result = CliRunner().invoke(main, ["schema", "--name", name])
         assert result.exit_code == 0, result.output
         assert result.output == (root / "schemas" / filename).read_text()
+
+
+def test_verify_dependency_receipt_command_binds_reviewed_plan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    receipt = tmp_path / "receipt.json"
+    plan = tmp_path / "plan.json"
+    receipt.write_text("{}")
+    plan.write_text("{}")
+    captured: dict[str, object] = {}
+    verified = VerifiedDependencyExecutionReceipt(
+        receipt_sha256="1" * 64,
+        case_id="rk-v0.2-001",
+        base_sha="2" * 40,
+        source_tree_sha256="3" * 64,
+        plan_raw_sha256="4" * 64,
+        plan_sha256="5" * 64,
+        requirements_sha256="6" * 64,
+        image_id=f"sha256:{'7' * 64}",
+        policy_sha256="8" * 64,
+        wheelhouse_sha256="9" * 64,
+        dependency_tree_sha256="a" * 64,
+        evaluator_package_sha256="b" * 64,
+        sequence_sha256="c" * 64,
+        tool_name="reproassert",
+        tool_version="0.1.0",
+        tool_git_sha="d" * 40,
+    )
+
+    def fake_load(path: Path, **kwargs: object) -> VerifiedDependencyExecutionReceipt:
+        captured.update({"path": path, **kwargs})
+        return verified
+
+    monkeypatch.setattr(cli, "load_dependency_execution_receipt", fake_load)
+    result = CliRunner().invoke(
+        main,
+        [
+            "benchmark",
+            "verify-dependency-receipt",
+            str(receipt),
+            "--plan",
+            str(plan),
+            "--expected-receipt-sha256",
+            "1" * 64,
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["receipt_sha256"] == "1" * 64
+    assert captured["path"] == receipt
+    assert captured["expected_plan_path"] == plan
 
 
 def test_doctor_returns_nonzero_when_boundary_missing(monkeypatch: object) -> None:

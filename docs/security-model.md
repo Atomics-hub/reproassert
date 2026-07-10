@@ -39,6 +39,13 @@ negative_control_passed: true
 cleanup_succeeded: true
 ```
 
+The preparation-only wheel executor passed two additional real-Docker checks: a reviewed
+`six==1.17.0` wheel was downloaded from PyPI, installed with network disabled, imported through the
+typed read-only verifier borrow, and removed under executor-owned cleanup; a separate input-volume
+canary reached `ENOSPC` at the declared inode quota. The capability-gated differential fixture also
+passed three interleaved intended base failures and three exact fixed passes. These are local
+mechanism checks, not authentic historical packages, scored results, or hosted-boundary evidence.
+
 ## Trust boundaries
 
 | Component or data | Trust level | Treatment |
@@ -48,11 +55,11 @@ cleanup_succeeded: true
 | User-selected generator command | Trusted executable | Runs outside Docker with a cleared environment plus only explicitly passed variables. It receives issue and selected source context. |
 | GitHub issue title/body | Hostile data | Size-bounded, labeled as untrusted in the generator protocol, never interpreted as setup or shell instructions. |
 | Repository archive, Git metadata responses, blobs, and files | Hostile data | The ordinary issue path manually extracts regular files and binds them to the commit root. The preparation-only object path reconstructs a complete Trees API response, treats codeload only as bulk transport, repairs only exact planned blob OIDs, and materializes bounded root-confined links without Git metadata. |
-| Reviewed dependency plan, wheels, and prepared tree | Hostile artifacts under an incomplete trusted-controller path | Strict plan parsing, fixed download/install argv, wheel bounds, and a read-only verification mount are implemented. The causal executor, fresh-volume proof, phase inspection/results, and post-install binding are not; no dependency receipt is campaign-ready. |
-| Draft historical snapshot receipt and raw evidence | Evaluator-only trusted capture plus hostile structured data | The default validator independently parses complete offline edit history, selects the pre-publication revision, reruns exact fixing-PR redaction, and checks byte commitments. The evaluator still chooses the fixing PR and vouches for capture authenticity and human privacy review; there is no collector or signed GitHub attestation. Current live issues are never a historical fallback. |
-| Candidate test | Hostile executable code | Schema- and AST-screened, written only to a controller-selected test path, then executed only in Docker. |
+| Reviewed dependency plan, wheels, and prepared tree | Hostile artifacts under a trusted preparation controller | A causal executor enforces fresh labeled quota-bounded tmpfs volumes, fixed download/offline-install phases, immutable image binding, pre/post attestations, a typed read-only handle, strict recomputed receipt verification, and executor-owned cleanup. It remains wheel-only, bridge egress is not an ACL, and no authentic case receipt is campaign-ready. |
+| Draft historical snapshot receipt and raw evidence | Evaluator-only trusted capture plus hostile structured data | The default validator independently parses complete offline edit history, selects the pre-publication revision, reruns exact fixing-PR redaction, and checks byte commitments. The evaluator still chooses the fixing PR and vouches for capture authenticity and human privacy review; there is no authorized third-party GraphQL collector or signed GitHub attestation. Current live issues and REST-only history are never historical fallbacks. |
+| Candidate test | Hostile executable code | Schema- and AST-screened, applied as the only artifact under a reserved controller-selected path, and bound to the candidate-applied tree independently attested after Docker staging. |
 | Repository pytest configuration, imports, `sitecustomize`, and `conftest.py` | Hostile executable code | May run inside Docker during collection or verification. |
-| Pytest stdout and optional JUnit XML | Hostile evidence | Byte-bounded and terminal-sanitized. Optional XML is element-bounded and parsed with `defusedxml`; both forms are treated as forgeable. |
+| Pytest stdout and JUnit XML | Hostile evidence | Byte-bounded and terminal-sanitized. XML crosses a fresh quota-bounded local-tmpfs result volume held by an inspected isolated anchor and is element-bounded with `defusedxml`; both forms remain forgeable. |
 | Imported replay report | Hostile data | Size-, type-, URL-, SHA-, candidate-, and repeat-count validated. Command-like fields are ignored. |
 | Generated report and patch | Controller output | Created exclusively in a private run directory; informative, not signed or remotely attested. |
 
@@ -163,51 +170,83 @@ Docker.
 
 ### 5. Verification
 
-The extracted source and candidate are copied into a controller-owned Docker volume. The verification
-container receives that volume read-only and no host bind mounts. It first collects the exact
+The controller revalidates the candidate, requires the reserved candidate directory to be absent,
+copies the pristine source, applies exactly one candidate file, and attests the complete resulting
+tree. Those bytes are copied into a controller-owned Docker volume and re-attested inside the pinned
+image before execution. The verification container receives that volume read-only and no host bind
+mounts. It first collects the exact
 controller-owned pytest node and then executes it two to ten times, three by default. The controller
 rejects collection/setup errors, missing tests, passes, inconsistent exit codes or fingerprints,
 timeouts, OOM kills, output overflow, non-pytest exits, errors, skips, multiple failures, wrong test
 names, and missing symptom evidence.
 
-The runner requests bounded JUnit XML as an optional hostile hint. In the current Docker path that
-file is written under `/tmp`; Docker's tmpfs is no longer available to `docker cp` after the stopped
-container's mounts are released. When XML is unavailable, the verifier conservatively classifies
-bounded pytest stdout: it requires the exact node marker, one failed test, expected symptom text,
-and a stable normalized fingerprint across every repeat. Missing XML alone is therefore not a
-rejection. Repository code can forge either evidence channel, so neither is an attestation.
+The runner writes bounded JUnit XML into a fresh 2 MiB/64-inode local-tmpfs result volume. A separate
+no-network, non-root, resource-bounded inspected anchor keeps that mount alive only until a fixed
+reader returns the file; the anchor cannot mount the source or dependencies. Every accepted base or
+fixed execution requires a strict JUnit summary with exactly one expected node and the required
+failure/pass shape; missing or malformed JUnit fails closed. Bounded stdout is only supplemental
+symptom evidence after valid JUnit identifies the target result. Repository code can forge either
+evidence channel, so neither is an attestation.
+
+New schema-1.1 reports bind `source.executed_tree_sha256` to that candidate-applied/staged tree;
+replay rebuilds the overlay and rejects a mismatch. Schema-1.0 reports remain readable for backward
+replay but do not gain that historical field retroactively.
 
 Acceptance as `repeatable_base_failure` means only that the recorded candidate collected and produced
 one consistent issue-marked failure on every buggy-base run. It is not a hidden-fix differential,
 root-cause proof, semantic-validity judgment, or maintainer acceptance.
 
-### Dependency preparation prototype
+### Dependency preparation executor
 
-The repository contains a wheel-only preparation contract, not a completed executor. It accepts a
-duplicate-free reviewed closure of exact versions and SHA-256 hashes, renders the only requirements
-input, constructs a source-free networked `pip download` phase, validates bounded regular wheel ZIPs,
-and constructs a separate offline install into a dependency volume. Aggregate declared wheel
-expansion is capped at 512 MiB. Verification can mount a controller-owned dependency volume read-only
-at `/dependencies` while retaining `--network none`.
+The wheel-only executor accepts a duplicate-free reviewed closure of exact versions and SHA-256
+hashes and creates fresh, distinct, exactly labeled local-tmpfs input, wheelhouse, and dependency
+volumes with fixed byte/inode quotas. It pins one immutable image ID, renders the only requirements
+input, runs source-free isolated `pip download`, validates individual bounded regular wheel ZIPs,
+and performs a separate `--network none`, `--no-index`, `--no-deps` install. The input and wheelhouse
+must remain unchanged, and an in-container no-follow traversal binds the stable installed tree.
 
-Those primitives do not yet prove that a particular final volume was produced by those phases. A
-campaign controller must still create and inspect fresh labeled volumes, constrain ownership, record
-both container image IDs and phase outcomes, attest the wheelhouse before install, attest the tree
-after install, bind the causal chain into one receipt, and clean up. Docker bridge egress is not a
-network-layer registry allowlist. See [ADR 0007](decisions/0007-dependency-preparation-remains-a-gated-prototype.md).
+The nominal typed handle carries exact labels, volume quota, image ID, dependency-tree attestation,
+receipt digest, and an executor-only cleanup capability. The sandbox accepts only that exact type,
+revalidates it before each read-only `/dependencies` mount, and never owns its cleanup. A separate
+bounded canonical receipt loader rejects duplicate/noncanonical JSON and recomputes the plan,
+requirements, policy, volume configuration, command/config hashes, phase results, causal sequence,
+wheelhouse/tree identities, and cleanup contract. Receipt construction alone does not flip campaign
+readiness, and no real v0.2 case package exists. Docker bridge egress is not a network-layer registry
+allowlist. See [ADR 0007](decisions/0007-dependency-preparation-remains-a-gated-prototype.md).
+
+### Capability-gated hidden-fix evaluation
+
+The internal differential primitive accepts only a nominal evaluator capability whose digest binds
+the exact case, base/fixed trees, production/developer patch identities, evaluator commitment, and
+complete dependency evidence when required. It independently revalidates the candidate and both
+candidate-applied staged trees, executes `base, fixed, fixed, base, base, fixed`, and requires exact
+base/fixed result shapes. Raw fixed output is reduced to digests in the public projection.
+
+The public v0.2 package verifier is structural and deliberately issues no such capability. An
+application-owned semantic verifier/issuer must rederive source, dependency, two-tree patch
+causality, isolation, and reviewer evidence in process; repository, issue, model, plugin, or
+package-controlled code cannot provide it. No official issuer, production scored runner, or public
+L1 result exists. See [ADR 0008](decisions/0008-capability-gated-differential-evaluation.md).
+
+The nominal capability is not a security boundary against Python code in the controller process;
+such code can introspect private module state and forge objects. The controller and official issuer
+are trusted computing base. Untrusted repository, model, and plugin execution must stay in separate
+sandboxed processes that receive no evaluator package paths or controller imports.
 
 ### 6. Reports and replay
 
-Reports are JSON capped at 1 MiB. They record source and archive hashes, candidate content and hash,
-runner image identity, requested policy, bounded sanitized output, phases, repeat outcomes, and
-limitations. JUnit XML is not copied into the final report. Reports are not signed; hashes detect
-internal mismatch but do not authenticate the author.
+Reports are JSON capped at 1 MiB. Schema 1.1 records source/archive hashes, candidate content/hash,
+the candidate-applied executed-tree digest, runner image identity, requested policy, bounded
+sanitized output, phases, repeat outcomes, and limitations. JUnit XML is not copied into the final
+report. Reports are not signed; hashes detect internal mismatch but do not authenticate the author.
 
 Replay treats the report as data. It accepts only a bounded regular non-symlink file, revalidates the
 canonical issue URL and repository match, exact source SHA, candidate schema and hash, and repeat
-count. It ignores all report command fields, downloads the exact source from fixed GitHub hosts, and
-regenerates pytest argv from controller code. Replay does not trust or reuse the report's runner
-image, Docker policy, displayed command, result, or claim level.
+count. It ignores all report command fields, downloads the exact source from fixed GitHub hosts,
+regenerates the candidate overlay and pytest argv from controller code, and requires schema-1.1
+executed-tree equality. Schema-1.0 backward replay cannot retroactively add that field. Replay does
+not trust or reuse the report's runner image, Docker policy, displayed command, result, or claim
+level.
 
 ## Secret handling
 

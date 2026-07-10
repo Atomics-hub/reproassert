@@ -8,6 +8,15 @@ and deny-by-default campaign gates. The 20 cases, outcome taxonomy, 6/20 target,
 and 0/20 result state did not change. This amendment closes pre-run validation gaps; it was not made
 in response to model output.
 
+Implementation note (2026-07-10): local code now binds the revalidated candidate overlay to the
+candidate-applied tree staged in Docker, preserves bounded JUnit through an inspected result-volume
+anchor, prepares reviewed wheel dependencies through a causal executor and independently verified
+receipt, and runs the six-phase interleaved differential schedule behind a nominal evaluator
+capability. Those are prerequisite mechanisms, not scored evidence. There is no authentic v0.2
+cohort, application-owned semantic capability issuer, production scored runner, model campaign, L1
+public result, or L2 result. This milestone used zero GitHub Actions runs and zero model/provider
+spend.
+
 The primary result is `semantic_valid_success_at_1`: the number of cases for which the single submitted candidate reaches L2, divided by all 20 frozen cases. Raw patch production, collection, base failure, or fail-to-pass are diagnostic milestones, not the headline success metric.
 
 ## Accounting units and fixed budgets
@@ -86,7 +95,10 @@ strictly before the fixing pull request's `publishedAt`, and independently rerun
 redaction. The fixture-only override is not evidence. No v0.2 cohort or authenticated collector
 exists; the evaluator must pre-bind the correct fixing pull request, preserve raw artifacts outside
 the generator view, and complete the human privacy review. Capture authenticity remains a trusted
-controller input rather than a signed GitHub attestation.
+controller input rather than a signed GitHub attestation. Public GitHub REST does not provide the
+required complete body-revision history; authenticated GraphQL collection for third-party public
+repositories remains separately authorization-gated. The cutoff is not weakened when that evidence
+is unavailable.
 
 The trusted preparation controller resolves the full 40-character base SHA and independently
 reconstructs its Git tree. Codeload is preserved only as bounded bulk transport; missing or changed
@@ -97,13 +109,22 @@ that exact object plan, never a repository clone. The fixed source, production p
 containing later history remain in a separate evaluator-only trust domain. The 20/20 preparation
 baseline proves source compatibility, not that this path is wired into the scored runner yet.
 
-Dependency preparation is a separate bounded phase. Strict reviewed wheel plans, fixed source-free
-download/offline-install argv, archive bounds, and a read-only dependency mount exist, but their
-causal executor does not. Before scoring, it must prove fresh labeled volumes, inspected images and
-phase outcomes, wheelhouse-before-install and tree-after-install identities, cleanup, and bounded
-egress/disk. Every generation and verification execution then starts from a fresh container or
-equivalent real sandbox with network disabled. The sandbox receives no SSH agent, cloud credentials,
-browser state, GitHub token, unrelated host directory, or evaluator artifact.
+Dependency preparation is a separate bounded phase. The implemented executor accepts only a strict
+reviewed wheel plan, resolves one immutable image ID, creates fresh labeled quota-bounded tmpfs
+volumes, runs fixed source-free download and offline install phases, records bounded inspected
+outcomes, proves wheelhouse-before/install-after causality, attests the installed tree, and retains
+sole cleanup ownership while issuing a typed read-only verifier handle. A separate strict receipt
+loader recomputes and cross-binds the plan, requirements, image, commands, volume policy, phase
+results, causal sequence, tree, and cleanup contract. Real local PyPI, typed-borrow, and inode-quota
+canaries passed. Bridge egress is still constrained by trusted pip behavior rather than a
+network-layer allowlist, and no authentic case receipt is campaign-ready.
+
+The scored generator/evaluator path must still start every generation and verification execution in
+a fresh container or equivalent real sandbox with network disabled after preparation. The sandbox
+receives no SSH agent, cloud credentials, browser state, GitHub token, unrelated host directory, or
+evaluator artifact. An arbitrary same-user host command is not an acceptable scored generator. The
+structural v0.2 package verifier requires application-selected trusted controller code and
+deliberately issues no live evaluator capability, so the cohort audit defaults to not ready.
 
 The model/provider/version, frozen prompt-template hash, per-call rendered-input hash, configuration
 hash, tool commit, image digest, limits, timestamps, token usage, cost, and submitted patch hash are
@@ -130,7 +151,7 @@ Minimality is reviewed, not enforced by an arbitrary line threshold. Fixtures an
 3. **Generate on base.** Run ReproAssert against a fresh extraction of the exact-SHA base archive with only generator-visible inputs. Preserve every started attempt, candidate, bounded log, time, token, and cost record; choose one candidate without oracle feedback.
 4. **Inspect policy and patch.** Reject empty/unapplicable patches and forbidden file or behavior changes before executing code. Parse the diff; do not rely only on filename conventions or model declarations.
 5. **Collect target nodes.** Apply the patch to a clean base tree and collect exactly the declared generated pytest node IDs. Collection must succeed without running unrelated tests.
-6. **Run interleaved verification.** In six fresh clean environments execute the schedule `base, fixed, fixed, base, base, fixed`. Each execution uses the same candidate and command. The three base results must share an issue-aligned normalized failure fingerprint; the three fixed results must pass. Interleaving reduces systematic warm-cache and time-order bias.
+6. **Run interleaved verification.** In six fresh clean environments execute the schedule `base, fixed, fixed, base, base, fixed`. Each execution uses the same revalidated candidate and command, with separately attested candidate-applied base/fixed trees. The three base results must share an issue-aligned normalized failure fingerprint; the three fixed results must each contain one exact target pass in bounded JUnit. Interleaving reduces systematic warm-cache and time-order bias. The local capability-gated primitive implements this step, but no official issuer or scored runner invokes it yet.
 7. **Apply causal controls.** When production fix hunks can be separated, `fix minus issue-relevant hunks` should continue to fail and `base plus issue-relevant hunks` should pass. Record `not_available` or `inconclusive` with a reason when hunks are inseparable. Repository-appropriate decoy or alternative-fix controls are supporting evidence and must be declared before unblinding the gold tests.
 8. **Review semantics while blinded.** Two reviewers inspect the frozen issue, candidate, normalized base failure, fixed pass evidence, and declared causal-control results without seeing developer tests or the human test patch. A third reviewer breaks a disagreement. Reviewer identities, binary rubric answers, confidence, rationale, and agreement are recorded.
 9. **Unblind after verdict.** Developer tests and gold artifacts may be inspected only after the semantic verdict is committed. They may explain divergence but cannot retroactively select or rewrite the submitted candidate.

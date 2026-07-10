@@ -5,8 +5,10 @@ from pathlib import Path
 
 import pytest
 
+from reproassert.candidate import validate_candidate_payload
 from reproassert.sandbox import DockerSandbox
-from reproassert.verifier import verify_candidate
+from reproassert.source_attestation import attest_source_tree
+from reproassert.verifier import VerificationOutcome, verify_candidate
 
 pytestmark = pytest.mark.integration
 
@@ -22,33 +24,30 @@ def test_buggy_fixture_is_repeatable_fixed_passes_and_generic_crash_is_rejected(
     generic_crash = repository / "examples" / "fixtures" / "generic_crash"
     sandbox = DockerSandbox()
 
-    buggy_outcome = verify_candidate(
-        sandbox=sandbox,
-        source=buggy,
-        relative_path="tests/reproassert/test_issue_1.py",
-        test_function="test_issue_1_reproduction",
-        expected_symptom="duplicate separators remain",
-        run_id="integration-buggy",
-        repeats=3,
-    )
-    fixed_outcome = verify_candidate(
-        sandbox=sandbox,
-        source=fixed,
-        relative_path="tests/reproassert/test_issue_1.py",
-        test_function="test_issue_1_reproduction",
-        expected_symptom="duplicate separators remain",
-        run_id="integration-fixed",
-        repeats=3,
-    )
-    generic_crash_outcome = verify_candidate(
-        sandbox=sandbox,
-        source=generic_crash,
-        relative_path="tests/reproassert/test_issue_1.py",
-        test_function="test_issue_1_reproduction",
-        expected_symptom="duplicate separators remain",
-        run_id="integration-generic-crash",
-        repeats=3,
-    )
+    def run_fixture(source: Path, run_id: str) -> VerificationOutcome:
+        content = (source / "tests" / "reproassert" / "test_issue_1.py").read_text()
+        candidate = validate_candidate_payload(
+            {
+                "test_content": content,
+                "expected_symptom": "duplicate separators remain",
+                "rationale": "Exercises repeated whitespace through the public slug function.",
+            },
+            issue_number=1,
+        )
+        expected = attest_source_tree(source)
+        return verify_candidate(
+            sandbox=sandbox,
+            source=source,
+            relative_path="tests/reproassert/test_issue_1.py",
+            candidate=candidate,
+            expected_source_tree=expected,
+            run_id=run_id,
+            repeats=3,
+        )
+
+    buggy_outcome = run_fixture(buggy, "integration-buggy")
+    fixed_outcome = run_fixture(fixed, "integration-fixed")
+    generic_crash_outcome = run_fixture(generic_crash, "integration-generic-crash")
 
     assert buggy_outcome.outcome == "repeatable_base_failure"
     assert buggy_outcome.accepted

@@ -55,6 +55,16 @@ def test_replay_parses_data_but_ignores_command_fields(tmp_path: Path) -> None:
     assert spec.candidate.test_function == "test_issue_7_reproduction"
 
 
+def test_report_11_requires_executed_tree_evidence(tmp_path: Path) -> None:
+    report = valid_report()
+    report["schema_version"] = "1.1"
+    path = tmp_path / "report.json"
+    write_report(path, report)
+
+    with pytest.raises(PolicyRejection, match="executed-tree"):
+        load_replay_spec(path)
+
+
 def test_replay_rejects_mismatched_repository(tmp_path: Path) -> None:
     report = valid_report()
     source = report["source"]
@@ -77,6 +87,7 @@ def test_replay_parses_complete_tree_attestation_and_rejects_partial_fields(
         tree_attestation_algorithm="reproassert-source-tree-v1",
         tree_sha256="d" * 64,
         git_tree_oid="e" * 40,
+        executed_tree_sha256="f" * 64,
     )
     path = tmp_path / "attested.json"
     write_report(path, report)
@@ -84,6 +95,7 @@ def test_replay_parses_complete_tree_attestation_and_rejects_partial_fields(
     spec = load_replay_spec(path)
     assert spec.tree_sha256 == "d" * 64
     assert spec.git_tree_oid == "e" * 40
+    assert spec.executed_tree_sha256 == "f" * 64
 
     partial = valid_report()
     partial_source = partial["source"]

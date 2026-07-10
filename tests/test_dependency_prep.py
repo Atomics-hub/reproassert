@@ -171,7 +171,9 @@ def test_network_exists_only_for_trusted_wheel_download_and_source_is_absent(
     install_joined = " ".join(install)
 
     assert "--network bridge" in download_joined
-    assert "pip download" in download_joined
+    assert "pip --isolated download" in download_joined
+    assert "/usr/local/bin/python -I -m pip" in download_joined
+    assert "--keyring-provider disabled" in download_joined
     assert "--require-hashes" in download
     assert "--only-binary=:all:" in download
     assert "--no-deps" in download
@@ -185,12 +187,15 @@ def test_network_exists_only_for_trusted_wheel_download_and_source_is_absent(
     assert "/var/run/docker.sock" not in download_joined
 
     assert "--network none" in install_joined
-    assert "pip install" in install_joined
+    assert "pip --isolated install" in install_joined
+    assert "/usr/local/bin/python -I -m pip" in install_joined
+    assert "--keyring-provider disabled" in install_joined
     assert "--no-index" in install
     assert "type=volume,src=wheels,dst=/wheelhouse,readonly" in install
     assert "type=volume,src=deps,dst=/dependencies" in install
     assert "--read-only" in install
     assert "--cap-drop ALL" in install_joined
+    assert "--no-healthcheck" in install
     assert "no-new-privileges=true" in install
     assert "--memory 1073741824" in install_joined
     assert "--pids-limit 128" in install_joined

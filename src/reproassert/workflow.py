@@ -3,6 +3,7 @@ from __future__ import annotations
 import platform
 import shlex
 import shutil
+import tempfile
 import uuid
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
@@ -16,6 +17,7 @@ from reproassert.candidate import (
     render_new_file_patch,
     validate_candidate_payload,
 )
+from reproassert.candidate_workspace import prepare_candidate_workspace
 from reproassert.context import build_source_context
 from reproassert.errors import PolicyRejection
 from reproassert.generator import CandidateGenerator, GenerationRequest
@@ -175,6 +177,7 @@ def run_replay_workflow(
             generation_metadata={},
             sandbox=sandbox,
             repeats=spec.repeats,
+            expected_executed_tree_sha256=spec.executed_tree_sha256,
         )
     finally:
         sandbox.cleanup()
@@ -224,24 +227,46 @@ def _verify_and_write(
     generation_metadata: Mapping[str, object],
     sandbox: DockerSandbox,
     repeats: int,
+    expected_executed_tree_sha256: str | None = None,
 ) -> WorkflowResult:
     issue_location = parse_issue_url(issue_url)
     relative_path = candidate_path(issue_location.number)
-    target_path = source_root.joinpath(*Path(relative_path).parts)
-    target_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    write_text_exclusive(target_path, candidate.test_content)
-
     status = sandbox.require_ready()
     runner_facts = sandbox.runner_facts()
-    verification = verify_candidate(
-        sandbox=sandbox,
-        source=source_root,
-        relative_path=relative_path,
-        test_function=candidate.test_function,
-        expected_symptom=candidate.expected_symptom,
-        run_id=report_id,
-        repeats=repeats,
-    )
+    with tempfile.TemporaryDirectory(prefix="candidate-", dir=run_dir) as temporary:
+        destination = Path(temporary).resolve(strict=True) / "workspace"
+        prepared = prepare_candidate_workspace(
+            source=source_root,
+            destination=destination,
+            relative_path=relative_path,
+            candidate=candidate,
+            expected_pristine=source_attestation,
+        )
+        if (
+            expected_executed_tree_sha256 is not None
+            and prepared.candidate_applied_tree.tree_sha256 != expected_executed_tree_sha256
+        ):
+            raise PolicyRejection(
+                "replay_executed_tree_mismatch",
+                "Candidate-applied source tree differs from the recorded replay evidence.",
+            )
+        verification = verify_candidate(
+            sandbox=sandbox,
+            source=prepared.path,
+            relative_path=relative_path,
+            candidate=candidate,
+            expected_source_tree=prepared.candidate_applied_tree,
+            run_id=report_id,
+            repeats=repeats,
+        )
+    if (
+        verification.candidate_sha256 != candidate.sha256
+        or verification.executed_tree_sha256 != prepared.candidate_applied_tree.tree_sha256
+    ):
+        raise PolicyRejection(
+            "verification_evidence_binding",
+            "Verifier evidence does not match the submitted candidate workspace.",
+        )
     patch = render_new_file_patch(relative_path, candidate.test_content)
     patch_path = run_dir / "candidate.patch"
     write_text_exclusive(patch_path, patch)
@@ -328,6 +353,7 @@ def _report_dict(
             "archive_size_bytes": archive_size_bytes,
             "tree_attestation_algorithm": source_attestation.algorithm,
             "tree_sha256": source_attestation.tree_sha256,
+            "executed_tree_sha256": verification.executed_tree_sha256,
             "git_tree_oid": source_attestation.reconstructed_git_tree_oid,
             "member_count": source_attestation.member_count,
             "file_count": source_attestation.file_count,

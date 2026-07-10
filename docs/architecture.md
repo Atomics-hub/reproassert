@@ -2,13 +2,18 @@
 
 Date: 2026-07-10
 
-Status: implemented strict Python/pytest base-failure slice. Differential and semantic evaluation are separate future work.
+Status: implemented strict Python/pytest base-failure slice plus preparation-only causal dependency
+and capability-gated differential primitives. No official semantic issuer, scored runner, or public
+differential benchmark result exists.
 
 ## System contract
 
 ReproAssert accepts one canonical public GitHub issue URL, one commit or ref, and exactly one candidate source. The controller resolves an exact SHA, obtains bounded public inputs, validates a test-only candidate, and runs only controller-owned pytest arguments inside Docker.
 
-The current successful terminal state is `repeatable_base_failure`. The product does not apply a production fix, run a fixed revision, or infer semantic or maintainer validity.
+The current public issue/replay terminal state is `repeatable_base_failure`. That workflow does not
+apply a production fix, run a fixed revision, or infer semantic or maintainer validity. A separate
+internal evaluator primitive can run a preverified hidden fixed tree only when given a nominal v0.2
+capability that public structural tooling deliberately cannot issue.
 
 ## Data flow and trust boundaries
 
@@ -133,7 +138,12 @@ This policy is a narrow denylist plus structural contract, not a complete Python
 
 ## Docker verification
 
-The controller stages the extracted source into a controller-owned Docker volume, changes ownership in a narrowly privileged staging container, and removes that container. Verification then mounts the volume read-only and uses the pinned image with:
+Before staging, the controller revalidates the candidate, requires the reserved
+`tests/reproassert/` path to be absent from the pristine source, creates a private copy, writes exactly
+one controller-named test, and attests the complete candidate-applied tree. It then stages that tree
+into a controller-owned Docker volume, changes ownership in a narrowly privileged staging container,
+and independently attests the staged bytes inside the immutable runner image. Verification mounts
+the volume read-only and uses that exact image ID with:
 
 | Control | Strict v1 value |
 | --- | --- |
@@ -149,12 +159,22 @@ The controller stages the extracted source into a controller-owned Docker volume
 
 The sandbox image contains Python 3.12 and hash-locked pytest dependencies. The strict profile does not install repository dependencies. This is a deliberate initial limit and a frequent expected source of `setup_failure` on real repositories.
 
-Hash-locked wheel plan parsing, fixed networked-download/offline-install argv, bounded wheel
-inspection, deterministic receipt primitives, and an optional read-only `/dependencies` verification
-mount are implemented. A causal preparation executor is not. In particular, the current code does
-not yet prove fresh volume ownership, inspected phase containers and image IDs, successful bounded
-phase outcomes, or wheelhouse-to-installed-tree causality. These primitives cannot make a benchmark
-case ready; see [ADR 0007](decisions/0007-dependency-preparation-remains-a-gated-prototype.md).
+The preparation-only wheel path now has a causal executor. It accepts only a strict plan file; pins
+one immutable runner image ID before creating resources; creates fresh, distinct, exactly labeled
+local-tmpfs input, wheelhouse, and dependency volumes with byte/inode quotas; holds their mounts with
+read-only retention anchors; and runs fixed source-free download followed by network-disabled
+offline install. The executor records bounded phase outcomes, attests the wheelhouse before and after
+install, attests the installed tree without following links, and issues a nominal typed handle whose
+labels, quota, tree, image, and receipt digest are revalidated before every verifier mount.
+
+One canonical receipt binds the strict plan, requirements, policy, immutable image, volume contract,
+fixed command/config hashes, phase results, causal sequence, wheelhouse, installed tree, and cleanup
+semantics. The independent bounded loader/verifier rejects duplicate JSON keys, noncanonical JSON,
+schema or recomputation drift, and caller-supplied readiness claims. The executor context retains sole
+cleanup ownership; the verifier only borrows the final volume read-only. Docker bridge egress is
+still constrained by fixed trusted pip behavior and post-download hashes, not a network-layer PyPI
+allowlist. The ordinary issue/replay workflow remains dependency-free, and no real v0.2 package is
+campaign-ready. See [ADR 0007](decisions/0007-dependency-preparation-remains-a-gated-prototype.md).
 
 `reproassert sandbox isolation-canary` exercises a standalone synthetic generator/evaluator mount
 profile with two real containers. It is not wired to the current host-side generators and cannot by
@@ -167,6 +187,34 @@ full expected container policy, scripts, image environment, package version, and
 caller-supplied tool Git SHA.
 
 Read [sandbox profiles](sandbox-profiles.md), [security model](security-model.md), and [threat model](threat-model.md) for the complete controls and residual risks.
+
+## Capability-gated differential evaluator
+
+The v0.2 structural package code defines a nominal `VerifiedV02EvaluatorCapability`. Its digest binds
+the case, base commit/root/content tree, hidden-fixed and fixing-head trees, production/developer
+patch identities, evaluator commitment, and either a complete dependency receipt/plan/tree/image set
+or an explicit dependency-free mode. The constructor uses an internal issuer token, and every
+consumer recomputes the capability digest. The public package verifier deliberately returns no
+capability: application-owned controller code must first rederive the private semantic evidence.
+The nominal object prevents accidental raw-path composition, not hostile same-process Python:
+anything already executing inside the trusted controller can introspect private module state. The
+production architecture must keep repository, model, plugin, and package-controlled execution in a
+separate sandboxed process; the controller and issuer remain trusted computing base.
+
+Given that capability, the internal differential verifier:
+
+1. revalidates one candidate against the issue and controller-owned path;
+2. attests separate pristine base/fixed sources to the capability's root identities;
+3. creates and attests `pristine tree + exactly one candidate` workspaces for both roles;
+4. stages and re-attests those exact executed trees inside Docker;
+5. optionally revalidates and borrows the causally prepared dependency handle; and
+6. runs `base, fixed, fixed, base, base, fixed`, requiring three matching intended base failures and
+   three exact one-target JUnit passes on the fixed tree.
+
+Raw fixed stdout and JUnit are reduced to digests in the returned public projection. A real local
+Docker fixture passes this schedule, but it uses a test-only capability rather than an authentic
+v0.2 package. There is no production scored runner, official capability issuer, or public L1 result.
+See [ADR 0008](decisions/0008-capability-gated-differential-evaluation.md).
 
 ## Collection and result classification
 
@@ -181,16 +229,29 @@ It then runs the target 2-10 times, default 3. `repeatable_base_failure` require
 
 Passing on the base, generic crashes, wrong failures, missing/untrusted test detail, multiple failures, and inconsistent fingerprints produce lower or rejected outcomes.
 
-The local `buggy_slug` integration fixture exercises three identical base failures and the `fixed_slug` fixture exercises `pass_on_base`. This checks the classifier and Docker boundary; it is not a historical issue benchmark result.
+The local `buggy_slug` integration fixture exercises three identical base failures and the
+`fixed_slug` fixture exercises `pass_on_base`. A separate differential fixture exercises the full
+six-run interleaving. These check classifiers and the Docker boundary; neither is a historical issue
+benchmark result.
+
+Each pytest phase receives a fresh 2 MiB, 64-inode local-tmpfs result volume. A separate inspected
+anchor container keeps that mount alive only long enough for the controller to read
+`/results/junit.xml` through a fixed isolated reader. The anchor has no network, a read-only root,
+non-root identity, dropped capabilities, private cgroup/IPC namespaces, 0.1 CPU, 64 MiB memory,
+16 PIDs, no Docker logs, and no source/dependency mount. JUnit remains bounded hostile evidence, not
+an attestation.
 
 ## Artifacts and cleanup
 
 Every completed workflow writes exclusive `0600` files into its private run directory:
 
 - `candidate.patch`, a new-file test patch; and
-- `reproassert-report.json`, schema `1.0` evidence and limitations.
+- `reproassert-report.json`, schema `1.1` evidence and limitations.
 
-The report includes full candidate content because replay must validate and restage it. It also includes bounded command output, so reports may contain repository or issue-derived text and should be handled accordingly.
+The report includes full candidate content because replay must validate and restage it, plus the
+candidate-applied `executed_tree_sha256`. Replay reconstructs the same private overlay and rejects a
+different executed tree. The report also includes bounded command output, so reports may contain
+repository or issue-derived text and should be handled accordingly.
 
 After writing the artifacts, the controller removes its downloaded archive, extracted source tree, Docker containers, and Docker volumes. Cleanup is best effort after abrupt host or Docker failure; stale controller-labeled resources remain a residual operational concern.
 
@@ -211,9 +272,10 @@ campaign-readiness mutation is currently implemented.
 Replay reads at most 1 MiB from a non-symlink regular report file and validates the bounded fields it
 consumes. It refetches the exact commit metadata and archive, requires the archive SHA-256 to match
 the report, reconstructs and checks the Git root tree again, compares the recorded canonical tree
-SHA-256 when present, then reruns the controller-owned verifier policy. Older schema-1.0 reports
-without the added tree fields still receive a fresh commit-tree attestation; they do not gain a
-recorded historical tree digest retroactively.
+SHA-256 when present, then reruns the controller-owned verifier policy. Schema-1.1 reports require
+the candidate-applied executed-tree SHA-256 and replay requires the rebuilt overlay to match. Older
+schema-1.0 reports remain supported and receive a fresh commit-tree attestation, but they do not gain
+the missing historical executed-tree field retroactively.
 
 The display command stored in the report is never used as execution input.
 
@@ -224,7 +286,9 @@ The display command stored in the report is never used as execution input.
 | `rejected` | Yes | Candidate failed static policy or collection-level evidence. |
 | `collected` | Yes | Candidate collected but did not meet the repeatable intended-failure contract. |
 | `repeatable_base_failure` | Yes, maximum | The exact generated test failed consistently on the pinned base under strict v1. |
-| `differential_reproduction` | No | Would require bounded repeated evidence on both buggy and fixed revisions. |
+| `differential_reproduction` | Not from issue/replay; internal primitive only | Requires a nominal evaluator capability and three matching base failures plus three exact fixed passes. No official issuer or public result exists. |
 | `maintainer_validated` | No | Requires recorded independent maintainer evidence. |
 
-The historical benchmark adds hidden-fix execution, causal controls, and blinded semantic review outside the current CLI. See [evaluation.md](evaluation.md). Its current status is 0/20 scored runs.
+The historical benchmark still adds causal controls and blinded semantic review beyond the
+differential primitive. See [evaluation.md](evaluation.md). Its current status is 0/20 scored runs,
+0/20 public L1 results, and 0/20 semantic-valid results.

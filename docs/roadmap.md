@@ -1,12 +1,15 @@
 # Roadmap
 
-Date: 2026-07-09
+Date: 2026-07-10
 
 Status: alpha, strict Python/pytest base-failure slice implemented; benchmark preregistered with
 0/20 scored runs. All-attempt accounting is fail-closed and the scored campaign is deliberately
 blocked at a $0 paid-provider cap until exact spend authorization and evaluator prerequisites exist.
-The provider observer and ledger writer are implemented, but the scored runner that owns the full
-attempt-to-cost-to-result lifecycle is not; the campaign cannot transition to `frozen_ready` yet.
+The causal wheel executor, strict receipt verifier, executed-tree/JUnit evidence binding, v0.2
+structural package tooling, and capability-gated differential primitive are implemented locally.
+The application-owned semantic issuer and scored runner that own the full
+attempt-to-cost-to-result lifecycle are not; the campaign cannot transition to `frozen_ready` yet.
+This milestone used zero GitHub Actions runs and zero model/provider spend.
 
 This roadmap is ordered by evidence, not feature count. A later phase does not begin because the earlier phase has more code; it begins when the earlier claim is reproducible and useful.
 
@@ -21,7 +24,9 @@ Implemented today:
 - strict one-test AST policy and test-only patch generation;
 - pinned Docker image build, `doctor`, no-network verification, resource limits, and no native fallback;
 - collection plus 2-10 repeated base runs, deterministic failure classification, and fingerprinting;
-- `candidate.patch`, schema-1.0 `reproassert-report.json`, and bounded replay; and
+- `pristine tree + exactly one revalidated candidate`, candidate-applied/staged executed-tree
+  attestation, schema-1.1 `reproassert-report.json`, and schema-1.0 backward replay;
+- an inspected, quota-bounded JUnit result-volume anchor; and
 - a local Docker integration fixture covering repeated buggy failure and fixed-fixture `pass_on_base` classification.
 
 Current limits are part of the product contract, not hidden backlog:
@@ -51,14 +56,20 @@ slice is:
 
 1. complete trusted offline captures, fixing-PR bindings, privacy reviews, and generator-safe
    projections for a corrected v0.2 cohort, then preregister it before inference;
-2. turn the wheel-only dependency primitives into a causally inspected executor with bounded
-   volumes, disk, egress, phase outcomes, image IDs, and post-install attestation;
-3. preserve and canary-test the production generator/hidden-fix boundary;
-4. submit exactly one candidate per newly frozen case;
-5. run interleaved repeated base and hidden-fixed verification;
+2. verify one authentic dependency receipt per case with the implemented causal executor, strict
+   loader, exact image/tree/plan binding, and label-verified cleanup;
+3. implement the application-owned semantic verifier and nominal evaluator-capability issuer, then
+   canary-test the production scored generator/hidden-fix boundary. The scored generator must be a
+   trusted built-in adapter or separate sandbox, not an arbitrary same-user host command;
+4. wire the capability-gated interleaved differential primitive into the scored runner;
+5. submit exactly one candidate per newly frozen case;
 6. apply declared causal controls and blinded semantic review;
 7. append every terminal result, including failures and infrastructure errors; and
 8. publish attributable cost and wall time without excluding failed attempts.
+
+Complete historical body revision capture is currently blocked on separately authorized,
+least-privilege read-only GitHub GraphQL access for the selected third-party public repositories.
+Public REST is not a substitute, and `pre_solution_pr_publication` will not be weakened to fit it.
 
 Continuation requires at least 6/20 semantic-valid cases, median warm runtime below 10 minutes, and attributable cost at or below roughly $1 per semantic-valid reproduction or a measured path there. Passing supports further validation only; it does not establish a population rate or state of the art.
 
@@ -78,8 +89,8 @@ Do not count stars, fixture passes, benchmark L0 results, compliments, or free t
 
 If internal and external gates pass, prioritize:
 
-1. **Dependency preparation profiles.** Explicit reviewed network policy, reproducible image inputs, cache provenance, and per-repository failure reporting.
-2. **Differential verification.** Repeated base/fixed execution and a claim that remains below semantic validity without causal review.
+1. **Dependency preparation profiles.** Extend the implemented wheel-only causal executor only where explicit reviewed network policy, reproducible image inputs, cache provenance, and per-repository failure reporting remain enforceable.
+2. **Differential verification.** Productize the implemented capability-gated repeated base/fixed primitive without upgrading it to semantic validity absent causal review.
 3. **Additional provider adapters.** Add only measured, auditable adapters that keep credentials explicit and issue/repository content untrusted.
 4. **Opt-in GitHub workflow.** Manual dispatch, label, or requested Check; exact commit required; no automatic third-party issue spam.
 5. **Report verification and export.** Stable schema evolution, redaction guidance, and independent artifact inspection.
