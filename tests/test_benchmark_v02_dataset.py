@@ -425,14 +425,23 @@ def test_real_subprocess_enforces_timeout_and_output_limit(
         )
 
 
-def test_parser_python_must_be_separate_absolute_executable(tmp_path: Path) -> None:
+def test_parser_python_must_be_separate_absolute_executable(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     with pytest.raises(PolicyRejection, match="absolute"):
         dataset._require_dedicated_parser_python(Path("python"))
     missing = tmp_path / "missing" / "bin" / "python"
     with pytest.raises(PolicyRejection, match="unavailable"):
         dataset._require_dedicated_parser_python(missing)
+    current_venv = tmp_path / "current-venv"
+    current_python = current_venv / "bin" / "python"
+    current_python.parent.mkdir(parents=True)
+    current_python.write_bytes(b"fixture")
+    current_python.chmod(0o700)
+    (current_venv / "pyvenv.cfg").write_text("home = /trusted\n")
+    monkeypatch.setattr(dataset.sys, "prefix", str(current_venv))
     with pytest.raises(PolicyRejection, match="separately supplied"):
-        dataset._require_dedicated_parser_python(Path(sys.prefix) / "bin" / "python")
+        dataset._require_dedicated_parser_python(current_python)
 
 
 class _FakeField:
@@ -495,6 +504,7 @@ class _FakeSchema(list[_FakeField]):
 def test_worker_derives_exact_transform_commitments(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    monkeypatch.setenv("REPROASSERT_DATASET_CONTAINER", "attested-v1")
     content = b"synthetic-parquet"
     path = tmp_path / "0000.parquet"
     path.write_bytes(content)
@@ -530,6 +540,7 @@ def test_worker_derives_exact_transform_commitments(
 def test_worker_rejects_wrong_bytes_version_schema_and_duplicate_ids(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    monkeypatch.setenv("REPROASSERT_DATASET_CONTAINER", "attested-v1")
     path = tmp_path / "0000.parquet"
     path.write_bytes(b"bad")
     with pytest.raises(ValueError, match="identity"):
