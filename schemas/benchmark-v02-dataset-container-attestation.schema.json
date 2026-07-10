@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reproassert.dev/schemas/benchmark-v02-dataset-container-attestation.schema.json",
+  "title": "ReproAssert benchmark v0.2 dataset parser container attestation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["algorithm", "container_inspection_sha256", "image_digest", "inputs", "parser_output_bytes", "parser_output_sha256", "parser_receipt_sha256", "policy", "production_eligible", "upstream_evidence_sha256"],
+  "properties": {
+    "algorithm": { "const": "reproassert-v02-dataset-container-attestation-v1" },
+    "container_inspection_sha256": { "$ref": "#/$defs/sha256" },
+    "image_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id_list_sha256", "parquet_sha256", "projection_request_sha256", "worker_sha256"],
+      "properties": {
+        "id_list_sha256": { "$ref": "#/$defs/sha256" },
+        "parquet_sha256": { "$ref": "#/$defs/sha256" },
+        "projection_request_sha256": { "oneOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }] },
+        "worker_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "parser_output_bytes": { "type": "integer", "minimum": 1, "maximum": 2097152 },
+    "parser_output_sha256": { "$ref": "#/$defs/sha256" },
+    "parser_receipt_sha256": { "$ref": "#/$defs/sha256" },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["capabilities_dropped", "cpus", "environment_cleared_with_env_i", "host_credentials_forwarded", "input_mount_read_only", "memory_bytes", "memory_swap_bytes", "network_mode", "no_new_privileges", "pids", "privileged", "read_only_root", "timeout_seconds", "tmpfs_bytes", "user"],
+      "properties": {
+        "capabilities_dropped": { "const": "ALL" },
+        "cpus": { "type": "number", "minimum": 0.25, "maximum": 4 },
+        "environment_cleared_with_env_i": { "const": true },
+        "host_credentials_forwarded": { "const": false },
+        "input_mount_read_only": { "const": true },
+        "memory_bytes": { "type": "integer", "minimum": 268435456, "maximum": 4294967296 },
+        "memory_swap_bytes": { "type": "integer", "minimum": 268435456, "maximum": 4294967296 },
+        "network_mode": { "const": "none" },
+        "no_new_privileges": { "const": true },
+        "pids": { "type": "integer", "minimum": 8, "maximum": 128 },
+        "privileged": { "const": false },
+        "read_only_root": { "const": true },
+        "timeout_seconds": { "type": "number", "minimum": 1, "maximum": 300 },
+        "tmpfs_bytes": { "type": "integer", "minimum": 1048576, "maximum": 134217728 },
+        "user": { "const": "65532:65532" }
+      }
+    },
+    "production_eligible": { "const": true },
+    "upstream_evidence_sha256": { "$ref": "#/$defs/sha256" }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  }
+}

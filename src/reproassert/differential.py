@@ -76,38 +76,45 @@ class DifferentialVerificationOutcome:
         return tuple(item.result for item in self.scheduled_runs if item.source_role == "fixed")
 
     def public_record(self) -> dict[str, object]:
-        """Project the evaluator result without raw fixed-tree process evidence."""
+        """Project only base evidence plus the irreducible aggregate fixed verdict.
+
+        Per-run fixed timing, exit state, output/JUnit digests, tree identities, and dependency
+        identities are evaluator-only. Even hashes become a repeated oracle when hostile candidate
+        code controls the hidden-fixed process, so the public projection deliberately omits them.
+        """
+
+        base_schedule = [
+            {
+                "source_role": item.source_role,
+                "role_ordinal": item.role_ordinal,
+                "schedule_ordinal": item.schedule_ordinal,
+                "exit_code": item.result.exit_code,
+                "duration_seconds": item.result.duration_seconds,
+                "timed_out": item.result.timed_out,
+                "oom_killed": item.result.oom_killed,
+                "output_truncated": item.result.output_truncated,
+                "output_sha256": item.output_sha256,
+                "junit_sha256": item.junit_sha256,
+            }
+            for item in self.scheduled_runs
+            if item.source_role == "base"
+        ]
+        fixed_run_count = sum(item.source_role == "fixed" for item in self.scheduled_runs)
 
         return {
             "accepted": self.accepted,
             "claim_level": self.claim_level.value,
             "outcome": self.outcome,
             "fingerprint": self.fingerprint,
-            "schedule": [
-                {
-                    "source_role": item.source_role,
-                    "role_ordinal": item.role_ordinal,
-                    "schedule_ordinal": item.schedule_ordinal,
-                    "exit_code": item.result.exit_code,
-                    "duration_seconds": item.result.duration_seconds,
-                    "timed_out": item.result.timed_out,
-                    "oom_killed": item.result.oom_killed,
-                    "output_truncated": item.result.output_truncated,
-                    "output_sha256": item.output_sha256,
-                    "junit_sha256": item.junit_sha256,
-                    "evaluator_output_redacted": item.evaluator_output_redacted,
-                }
-                for item in self.scheduled_runs
-            ],
+            "base_schedule": base_schedule,
             "base_tree": asdict(self.base_tree),
-            "fixed_tree_redacted": self.fixed_tree is not None,
-            "evaluator_commitment_sha256": self.evaluator_public_commitment_sha256,
-            "dependency": {
-                "receipt_sha256": self.dependency_receipt_sha256,
-                "plan_sha256": self.dependency_plan_sha256,
-                "tree_sha256": self.dependency_tree_sha256,
-                "image_id": self.dependency_image_id,
+            "fixed_evaluation": {
+                "executed": self.fixed_tree is not None,
+                "run_count": fixed_run_count,
+                "per_run_evidence_redacted": True,
             },
+            "evaluator_commitment_sha256": self.evaluator_public_commitment_sha256,
+            "dependency_bound": self.dependency_receipt_sha256 is not None,
         }
 
 

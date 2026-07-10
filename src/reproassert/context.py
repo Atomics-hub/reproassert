@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 import stat
@@ -12,6 +13,7 @@ from reproassert.errors import PolicyRejection
 MAX_MANIFEST_FILES = 5_000
 MAX_CONTEXT_BYTES = 96 * 1024
 MAX_FILE_BYTES = 16 * 1024
+V02_SOURCE_CONTEXT_ALGORITHM = "reproassert-v02-source-context-v1"
 
 _TEXT_SUFFIXES = {".cfg", ".ini", ".md", ".py", ".rst", ".toml", ".txt", ".yaml", ".yml"}
 _PRIORITY_NAMES = {
@@ -27,6 +29,23 @@ _SENSITIVE_COMPONENT = re.compile(
     re.I,
 )
 _WORD = re.compile(r"[a-zA-Z_][a-zA-Z0-9_]{2,}")
+
+_V02_SOURCE_CONTEXT_POLICY = {
+    "algorithm": V02_SOURCE_CONTEXT_ALGORITHM,
+    "builder": "reproassert.context.build_source_context",
+    "max_manifest_files": MAX_MANIFEST_FILES,
+    "max_context_bytes": MAX_CONTEXT_BYTES,
+    "max_file_bytes": MAX_FILE_BYTES,
+    "text_suffixes": sorted(_TEXT_SUFFIXES),
+    "priority_names": sorted(_PRIORITY_NAMES),
+    "ranking": "priority_then_issue_path_terms_then_test_path_then_depth_v1",
+    "sensitive_paths": "env_prefix_and_sensitive_component_regex_v1",
+    "issue_input": "validated_generator_projection_title_and_body",
+    "source_input": "fresh_exact_object_materialization",
+}
+V02_SOURCE_CONTEXT_POLICY_SHA256 = hashlib.sha256(
+    json.dumps(_V02_SOURCE_CONTEXT_POLICY, sort_keys=True, separators=(",", ":")).encode("utf-8")
+).hexdigest()
 
 
 @dataclass(frozen=True)

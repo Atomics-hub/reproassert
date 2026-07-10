@@ -131,11 +131,20 @@ def _capability(
             issue_url="https://github.com/owner/repo/issues/9",
             base_sha="a" * 40,
         ),
+        preregistration_sha256="6" * 64,
+        cohort_sha256="7" * 64,
+        preregistered_case_sha256="8" * 64,
         package_identity_sha256="b" * 64,
         public_commitment_sha256="c" * 64,
+        generator_projection_sha256="9" * 64,
+        dataset_evidence_sha256="a" * 64,
         base_commit_sha="a" * 40,
         base_root_tree_oid=base_tree.reconstructed_git_tree_oid,
+        source_receipt_sha256="d" * 64,
         source_tree_sha256=base_tree.tree_sha256,
+        source_context_algorithm="reproassert-v02-source-context-v1",
+        source_context_policy_sha256="e" * 64,
+        source_context_sha256="0" * 64,
         hidden_fixed_root_tree_oid=fixed_tree.reconstructed_git_tree_oid,
         fixing_head_commit_sha="d" * 40,
         fixing_head_root_tree_oid="e" * 40,
@@ -146,6 +155,10 @@ def _capability(
         dependency_plan_sha256="3" * 64 if dependencies_required else None,
         dependency_tree_sha256="4" * 64 if dependencies_required else None,
         dependency_runner_image_id=(f"sha256:{'5' * 64}" if dependencies_required else None),
+        isolation_receipt_sha256="6" * 64,
+        isolation_policy_sha256="7" * 64,
+        reviewer_role_seal_sha256="8" * 64,
+        semantic_verification_receipt_sha256="9" * 64,
     )
 
 
@@ -468,6 +481,25 @@ def test_fixed_evaluator_output_is_redacted_before_return(tmp_path: Path) -> Non
 
     assert result.accepted
     assert all(run.output == "" and run.junit_xml is None for run in result.fixed_runs)
-    assert "HIDDEN_FIXED_SENTINEL" not in json.dumps(result.public_record())
+    public = result.public_record()
+    serialized = json.dumps(public)
+    assert "HIDDEN_FIXED_SENTINEL" not in serialized
     assert result.fixed_tree is not None
-    assert result.fixed_tree.reconstructed_git_tree_oid not in json.dumps(result.public_record())
+    assert result.fixed_tree.reconstructed_git_tree_oid not in serialized
+    assert public["fixed_evaluation"] == {
+        "executed": True,
+        "run_count": 3,
+        "per_run_evidence_redacted": True,
+    }
+    assert len(public["base_schedule"]) == 3
+    assert all(run["source_role"] == "base" for run in public["base_schedule"])
+    for run in result.scheduled_runs:
+        if run.source_role != "fixed":
+            continue
+        assert run.output_sha256 not in serialized
+        assert run.junit_sha256 is not None
+        assert run.junit_sha256 not in serialized
+    assert "receipt_sha256" not in serialized
+    assert "plan_sha256" not in serialized
+    assert "tree_sha256" not in public.get("dependency", {})
+    assert "image_id" not in serialized

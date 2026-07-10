@@ -26,6 +26,7 @@ from reproassert.benchmark_snapshot_producer import (
     REDACTION_POLICY_SHA256,
     SOLUTION_CUTOFF_QUERY_SHA256,
 )
+from reproassert.context import V02_SOURCE_CONTEXT_ALGORITHM, V02_SOURCE_CONTEXT_POLICY_SHA256
 from reproassert.errors import PolicyRejection, ReproAssertError
 from reproassert.intake import parse_issue_url
 from reproassert.safeio import open_regular_file, require_private_directory
@@ -111,12 +112,21 @@ _FIX_ROOT_KEYS = {
 _PROVENANCE_KEYS = {
     "tdd_bench_repository_url",
     "tdd_bench_git_sha",
+    "tdd_bench_root_tree_oid",
+    "tdd_id_list_path",
     "tdd_id_list_blob_oid",
     "tdd_id_list",
     "tdd_membership_ordinal",
     "source_dataset_repository_url",
     "source_dataset_git_sha",
+    "source_dataset_root_tree_oid",
     "source_dataset_split",
+    "source_dataset_artifact_path",
+    "source_dataset_artifact_git_blob_oid",
+    "source_dataset_lfs_pointer",
+    "source_dataset_artifact_lfs_sha256",
+    "source_dataset_artifact_lfs_bytes",
+    "source_dataset_artifact_xet_sha256",
     "source_dataset_artifact",
     "source_dataset_row_ordinal",
     "instance_id",
@@ -225,6 +235,8 @@ _CONTRACT_KEYS = {
     "evaluator_commitment_algorithm",
     "semantic_verification_algorithm",
     "source_dataset_transform",
+    "source_context_algorithm",
+    "source_context_policy_sha256",
 }
 _UPSTREAM_RECORD_KEYS = {
     "repo",
@@ -260,7 +272,7 @@ _TREE_KEYS = {"oid"}
 _COMMITS_KEYS = {"totalCount", "nodes"}
 _COMMIT_NODE_KEYS = {"commit"}
 _UPSTREAM_DIFFICULTIES = {
-    "<15 min": "lt_15m",
+    "<15 min fix": "lt_15m",
     "15 min - 1 hour": "15m_to_1h",
 }
 _UniqueKey = TypeVar("_UniqueKey")
@@ -274,6 +286,7 @@ _PREREG_CASE_KEYS = {
     "smoke",
     "generator_projection_sha256",
     "evaluator_commitment_sha256",
+    "source_context_sha256",
 }
 
 
@@ -297,11 +310,20 @@ class FixMappingReceipt:
     case: V02CaseIdentity
     instance_id: str
     tdd_bench_git_sha: str
+    tdd_bench_root_tree_oid: str
+    tdd_id_list_path: str
     tdd_id_list_blob_oid: str
     tdd_id_list_sha256: str
     tdd_membership_ordinal: int
     source_dataset_git_sha: str
+    source_dataset_root_tree_oid: str
     source_dataset_split: str
+    source_dataset_artifact_path: str
+    source_dataset_artifact_git_blob_oid: str
+    source_dataset_lfs_pointer_sha256: str
+    source_dataset_artifact_lfs_sha256: str
+    source_dataset_artifact_lfs_bytes: int
+    source_dataset_artifact_xet_sha256: str
     source_dataset_artifact_sha256: str
     source_dataset_row_ordinal: int
     upstream_record_sha256: str
@@ -325,6 +347,7 @@ class FixMappingReceipt:
     artifacts: tuple[ArtifactReference, ...]
     tdd_id_list: ArtifactReference
     source_dataset_artifact: ArtifactReference
+    source_dataset_lfs_pointer: ArtifactReference
     upstream_record: ArtifactReference
     fixing_pr_evidence: ArtifactReference
     production_patch: ArtifactReference
@@ -357,11 +380,20 @@ class VerifiedV02EvaluatorCapability:
     """
 
     case: V02CaseIdentity
+    preregistration_sha256: str
+    cohort_sha256: str
+    preregistered_case_sha256: str
     package_identity_sha256: str
     public_commitment_sha256: str
+    generator_projection_sha256: str
+    dataset_evidence_sha256: str
     base_commit_sha: str
     base_root_tree_oid: str
+    source_receipt_sha256: str
     source_tree_sha256: str
+    source_context_algorithm: str
+    source_context_policy_sha256: str
+    source_context_sha256: str
     hidden_fixed_root_tree_oid: str
     fixing_head_commit_sha: str
     fixing_head_root_tree_oid: str
@@ -372,6 +404,10 @@ class VerifiedV02EvaluatorCapability:
     dependency_plan_sha256: str | None
     dependency_tree_sha256: str | None
     dependency_runner_image_id: str | None
+    isolation_receipt_sha256: str
+    isolation_policy_sha256: str
+    reviewer_role_seal_sha256: str
+    semantic_verification_receipt_sha256: str
     capability_sha256: str
     _issuer: object = field(repr=False, compare=False)
 
@@ -380,11 +416,20 @@ class VerifiedV02EvaluatorCapability:
         issuer: object,
         *,
         case: V02CaseIdentity,
+        preregistration_sha256: str,
+        cohort_sha256: str,
+        preregistered_case_sha256: str,
         package_identity_sha256: str,
         public_commitment_sha256: str,
+        generator_projection_sha256: str,
+        dataset_evidence_sha256: str,
         base_commit_sha: str,
         base_root_tree_oid: str,
+        source_receipt_sha256: str,
         source_tree_sha256: str,
+        source_context_algorithm: str,
+        source_context_policy_sha256: str,
+        source_context_sha256: str,
         hidden_fixed_root_tree_oid: str,
         fixing_head_commit_sha: str,
         fixing_head_root_tree_oid: str,
@@ -395,17 +440,30 @@ class VerifiedV02EvaluatorCapability:
         dependency_plan_sha256: str | None,
         dependency_tree_sha256: str | None,
         dependency_runner_image_id: str | None,
+        isolation_receipt_sha256: str,
+        isolation_policy_sha256: str,
+        reviewer_role_seal_sha256: str,
+        semantic_verification_receipt_sha256: str,
     ) -> None:
         if issuer is not _CAPABILITY_ISSUER:
             raise _rejection("Evaluator capability may only be issued by verified package loading.")
         record = {
             "algorithm": "reproassert-v02-evaluator-capability-v1",
             "case": asdict(case),
+            "preregistration_sha256": preregistration_sha256,
+            "cohort_sha256": cohort_sha256,
+            "preregistered_case_sha256": preregistered_case_sha256,
             "package_identity_sha256": package_identity_sha256,
             "public_commitment_sha256": public_commitment_sha256,
+            "generator_projection_sha256": generator_projection_sha256,
+            "dataset_evidence_sha256": dataset_evidence_sha256,
             "base_commit_sha": base_commit_sha,
             "base_root_tree_oid": base_root_tree_oid,
+            "source_receipt_sha256": source_receipt_sha256,
             "source_tree_sha256": source_tree_sha256,
+            "source_context_algorithm": source_context_algorithm,
+            "source_context_policy_sha256": source_context_policy_sha256,
+            "source_context_sha256": source_context_sha256,
             "hidden_fixed_root_tree_oid": hidden_fixed_root_tree_oid,
             "fixing_head_commit_sha": fixing_head_commit_sha,
             "fixing_head_root_tree_oid": fixing_head_root_tree_oid,
@@ -416,6 +474,10 @@ class VerifiedV02EvaluatorCapability:
             "dependency_plan_sha256": dependency_plan_sha256,
             "dependency_tree_sha256": dependency_tree_sha256,
             "dependency_runner_image_id": dependency_runner_image_id,
+            "isolation_receipt_sha256": isolation_receipt_sha256,
+            "isolation_policy_sha256": isolation_policy_sha256,
+            "reviewer_role_seal_sha256": reviewer_role_seal_sha256,
+            "semantic_verification_receipt_sha256": semantic_verification_receipt_sha256,
         }
         for name, value in record.items():
             if name in {
@@ -427,6 +489,13 @@ class VerifiedV02EvaluatorCapability:
                 "dependency_tree_sha256",
                 "dependency_runner_image_id",
             }:
+                continue
+            if name == "source_context_algorithm":
+                _require_equal(
+                    value,
+                    V02_SOURCE_CONTEXT_ALGORITHM,
+                    "capability source context algorithm",
+                )
                 continue
             if name in {
                 "base_commit_sha",
@@ -473,11 +542,20 @@ def require_v02_evaluator_capability(value: object) -> VerifiedV02EvaluatorCapab
         record = {
             "algorithm": "reproassert-v02-evaluator-capability-v1",
             "case": asdict(case),
+            "preregistration_sha256": capability.preregistration_sha256,
+            "cohort_sha256": capability.cohort_sha256,
+            "preregistered_case_sha256": capability.preregistered_case_sha256,
             "package_identity_sha256": capability.package_identity_sha256,
             "public_commitment_sha256": capability.public_commitment_sha256,
+            "generator_projection_sha256": capability.generator_projection_sha256,
+            "dataset_evidence_sha256": capability.dataset_evidence_sha256,
             "base_commit_sha": capability.base_commit_sha,
             "base_root_tree_oid": capability.base_root_tree_oid,
+            "source_receipt_sha256": capability.source_receipt_sha256,
             "source_tree_sha256": capability.source_tree_sha256,
+            "source_context_algorithm": capability.source_context_algorithm,
+            "source_context_policy_sha256": capability.source_context_policy_sha256,
+            "source_context_sha256": capability.source_context_sha256,
             "hidden_fixed_root_tree_oid": capability.hidden_fixed_root_tree_oid,
             "fixing_head_commit_sha": capability.fixing_head_commit_sha,
             "fixing_head_root_tree_oid": capability.fixing_head_root_tree_oid,
@@ -488,6 +566,12 @@ def require_v02_evaluator_capability(value: object) -> VerifiedV02EvaluatorCapab
             "dependency_plan_sha256": capability.dependency_plan_sha256,
             "dependency_tree_sha256": capability.dependency_tree_sha256,
             "dependency_runner_image_id": capability.dependency_runner_image_id,
+            "isolation_receipt_sha256": capability.isolation_receipt_sha256,
+            "isolation_policy_sha256": capability.isolation_policy_sha256,
+            "reviewer_role_seal_sha256": capability.reviewer_role_seal_sha256,
+            "semantic_verification_receipt_sha256": (
+                capability.semantic_verification_receipt_sha256
+            ),
         }
         _validate_capability_dependencies(
             required=capability.dependencies_required,
@@ -560,19 +644,32 @@ class V02SemanticVerification:
     case: V02CaseIdentity
     completed_at: str
     tdd_bench_git_sha: str
+    tdd_bench_root_tree_oid: str
+    tdd_id_list_path: str
     tdd_id_list_blob_oid: str
     tdd_id_list_sha256: str
     tdd_membership_ordinal: int
     source_dataset_git_sha: str
+    source_dataset_root_tree_oid: str
     source_dataset_split: str
+    source_dataset_artifact_path: str
+    source_dataset_artifact_git_blob_oid: str
+    source_dataset_lfs_pointer_sha256: str
+    source_dataset_artifact_lfs_sha256: str
+    source_dataset_artifact_lfs_bytes: int
+    source_dataset_artifact_xet_sha256: str
     source_dataset_artifact_sha256: str
     source_dataset_row_ordinal: int
     source_dataset_row_sha256: str
     source_dataset_transform: str
+    dataset_evidence_sha256: str
     source_receipt_sha256: str
     source_base_commit_sha: str
     source_base_root_tree_oid: str
     source_tree_sha256: str
+    source_context_algorithm: str
+    source_context_policy_sha256: str
+    source_context_sha256: str
     production_patch_sha256: str
     developer_tests_sha256: str
     hidden_fixed_root_tree_oid: str
@@ -605,6 +702,7 @@ class V02SemanticVerificationContext:
     package_root: Path
     mapping: FixMappingReceipt
     supporting_inputs: Mapping[str, ArtifactReference]
+    generator_projection: ArtifactReference
     isolation_policy_sha256: str
 
 
@@ -622,6 +720,7 @@ class PreregisteredV02Case:
     smoke: bool
     generator_projection_sha256: str
     evaluator_commitment_sha256: str
+    source_context_sha256: str
 
 
 @dataclass(frozen=True)
@@ -707,6 +806,11 @@ def load_fix_mapping_receipt(
         "TDD-Bench repository",
     )
     tdd_bench_git_sha = _git_sha(provenance.get("tdd_bench_git_sha"), "TDD-Bench Git SHA")
+    tdd_bench_root_tree_oid = _git_sha(
+        provenance.get("tdd_bench_root_tree_oid"), "TDD-Bench root tree OID"
+    )
+    tdd_id_list_path = _relative_path(provenance.get("tdd_id_list_path"), "TDD-Bench id-list")
+    _require_equal(tdd_id_list_path, "id_list.txt", "TDD-Bench id-list repository path")
     tdd_id_list_blob_oid = _git_sha(
         provenance.get("tdd_id_list_blob_oid"), "TDD-Bench id-list blob OID"
     )
@@ -724,12 +828,50 @@ def load_fix_mapping_receipt(
     source_dataset_git_sha = _git_sha(
         provenance.get("source_dataset_git_sha"), "source dataset Git SHA"
     )
+    source_dataset_root_tree_oid = _git_sha(
+        provenance.get("source_dataset_root_tree_oid"), "source dataset root tree OID"
+    )
     source_dataset_split = "test"
     _require_equal(
         provenance.get("source_dataset_split"), source_dataset_split, "source dataset split"
     )
+    source_dataset_artifact_path = _relative_path(
+        provenance.get("source_dataset_artifact_path"), "source dataset repository artifact"
+    )
+    _require_equal(
+        source_dataset_artifact_path,
+        "default/test/0000.parquet",
+        "source dataset repository artifact path",
+    )
+    source_dataset_artifact_git_blob_oid = _git_sha(
+        provenance.get("source_dataset_artifact_git_blob_oid"),
+        "source dataset artifact Git blob OID",
+    )
+    source_dataset_lfs_pointer_ref = _load_artifact_reference(
+        provenance.get("source_dataset_lfs_pointer"), package_root, "source dataset LFS pointer"
+    )
+    source_dataset_artifact_lfs_sha256 = _sha256(
+        provenance.get("source_dataset_artifact_lfs_sha256"),
+        "source dataset artifact LFS SHA-256",
+    )
+    source_dataset_artifact_lfs_bytes = _positive_int(
+        provenance.get("source_dataset_artifact_lfs_bytes"),
+        "source dataset artifact LFS byte count",
+    )
+    source_dataset_artifact_xet_sha256 = _sha256(
+        provenance.get("source_dataset_artifact_xet_sha256"),
+        "source dataset artifact Xet SHA-256",
+    )
     source_dataset_artifact_ref = _load_artifact_reference(
         provenance.get("source_dataset_artifact"), package_root, "source dataset split artifact"
+    )
+    _verify_lfs_artifact(
+        package_root,
+        pointer=source_dataset_lfs_pointer_ref,
+        artifact=source_dataset_artifact_ref,
+        expected_git_blob_oid=source_dataset_artifact_git_blob_oid,
+        expected_lfs_sha256=source_dataset_artifact_lfs_sha256,
+        expected_lfs_bytes=source_dataset_artifact_lfs_bytes,
     )
     source_dataset_row_ordinal = _nonnegative_int(
         provenance.get("source_dataset_row_ordinal"), "source dataset row ordinal"
@@ -805,6 +947,7 @@ def load_fix_mapping_receipt(
 
     artifacts = [
         tdd_id_list_ref,
+        source_dataset_lfs_pointer_ref,
         source_dataset_artifact_ref,
         upstream_ref,
         fixing_evidence_ref,
@@ -842,11 +985,20 @@ def load_fix_mapping_receipt(
         case=case,
         instance_id=instance_id,
         tdd_bench_git_sha=tdd_bench_git_sha,
+        tdd_bench_root_tree_oid=tdd_bench_root_tree_oid,
+        tdd_id_list_path=tdd_id_list_path,
         tdd_id_list_blob_oid=tdd_id_list_blob_oid,
         tdd_id_list_sha256=tdd_id_list_ref.sha256,
         tdd_membership_ordinal=tdd_membership_ordinal,
         source_dataset_git_sha=source_dataset_git_sha,
+        source_dataset_root_tree_oid=source_dataset_root_tree_oid,
         source_dataset_split=source_dataset_split,
+        source_dataset_artifact_path=source_dataset_artifact_path,
+        source_dataset_artifact_git_blob_oid=source_dataset_artifact_git_blob_oid,
+        source_dataset_lfs_pointer_sha256=source_dataset_lfs_pointer_ref.sha256,
+        source_dataset_artifact_lfs_sha256=source_dataset_artifact_lfs_sha256,
+        source_dataset_artifact_lfs_bytes=source_dataset_artifact_lfs_bytes,
+        source_dataset_artifact_xet_sha256=source_dataset_artifact_xet_sha256,
         source_dataset_artifact_sha256=source_dataset_artifact_ref.sha256,
         source_dataset_row_ordinal=source_dataset_row_ordinal,
         upstream_record_sha256=upstream_ref.sha256,
@@ -870,6 +1022,7 @@ def load_fix_mapping_receipt(
         artifacts=tuple(artifacts),
         tdd_id_list=tdd_id_list_ref,
         source_dataset_artifact=source_dataset_artifact_ref,
+        source_dataset_lfs_pointer=source_dataset_lfs_pointer_ref,
         upstream_record=upstream_ref,
         fixing_pr_evidence=fixing_evidence_ref,
         production_patch=artifact_references["production_patch"],
@@ -981,6 +1134,7 @@ def verify_v02_case_package(
             package_root=package_root,
             mapping=mapping,
             supporting_inputs=supporting_references,
+            generator_projection=projection_ref,
             isolation_policy_sha256=isolation_policy_sha256,
         )
     )
@@ -1148,6 +1302,9 @@ def load_v02_preregistration(path: Path) -> V02Preregistration:
                 evaluator_commitment_sha256=_sha256(
                     case.get("evaluator_commitment_sha256"), "evaluator commitment SHA-256"
                 ),
+                source_context_sha256=_sha256(
+                    case.get("source_context_sha256"), "source context SHA-256"
+                ),
             )
         )
     validated = tuple(_validate_preregistered_cases(cases))
@@ -1212,6 +1369,31 @@ def audit_v02_cohort_packages(
             capability = require_v02_evaluator_capability(capability)
             _require_equal(capability.case, package.case, "evaluator capability case")
             _require_equal(
+                capability.preregistration_sha256,
+                preregistration.raw_sha256,
+                "evaluator capability preregistration",
+            )
+            _require_equal(
+                capability.cohort_sha256,
+                preregistration.decoded["cohort_sha256"],
+                "evaluator capability cohort",
+            )
+            _require_equal(
+                capability.preregistered_case_sha256,
+                hashlib.sha256(_canonical_json_bytes(asdict(frozen))).hexdigest(),
+                "evaluator capability frozen case",
+            )
+            _require_equal(
+                capability.generator_projection_sha256,
+                frozen.generator_projection_sha256,
+                "evaluator capability generator projection",
+            )
+            _require_equal(
+                capability.base_commit_sha,
+                frozen.base_sha,
+                "evaluator capability base commit",
+            )
+            _require_equal(
                 capability.package_identity_sha256,
                 package.evaluator_package_sha256,
                 "evaluator capability package identity",
@@ -1225,6 +1407,11 @@ def audit_v02_cohort_packages(
                 capability.hidden_fixed_root_tree_oid,
                 package.hidden_fixed_root_tree_oid,
                 "evaluator capability hidden fixed tree",
+            )
+            _require_equal(
+                capability.source_context_sha256,
+                frozen.source_context_sha256,
+                "evaluator capability source context",
             )
             _require_equal(
                 capability.fixing_head_commit_sha,
@@ -1549,6 +1736,7 @@ def _validate_preregistered_cases(
             raise _rejection("Case smoke flag must be boolean.")
         _sha256(case.generator_projection_sha256, "generator projection SHA-256")
         _sha256(case.evaluator_commitment_sha256, "evaluator commitment SHA-256")
+        _sha256(case.source_context_sha256, "source context SHA-256")
         if case.issue_url in seen_urls:
             raise _rejection("Preregistration repeats an issue URL.")
         seen_urls.add(case.issue_url)
@@ -1570,7 +1758,13 @@ def _protocol_record() -> dict[str, object]:
     return {
         "cutoff": "pre_solution_pr_publication",
         "comments_included": False,
-        "generator_visible_fields": ["repo", "issue_url", "base_sha", "issue_snapshot"],
+        "generator_visible_fields": [
+            "repo",
+            "issue_url",
+            "base_sha",
+            "issue_snapshot",
+            "verified_source_context",
+        ],
         "evaluator_only_fields": [
             "raw_issue_history",
             "fixing_pull_request",
@@ -1598,6 +1792,8 @@ def _artifact_contract_record() -> dict[str, str]:
         "evaluator_commitment_algorithm": EVALUATOR_COMMITMENT_ALGORITHM,
         "semantic_verification_algorithm": SEMANTIC_VERIFICATION_ALGORITHM,
         "source_dataset_transform": SOURCE_DATASET_TRANSFORM,
+        "source_context_algorithm": V02_SOURCE_CONTEXT_ALGORITHM,
+        "source_context_policy_sha256": V02_SOURCE_CONTEXT_POLICY_SHA256,
     }
 
 
@@ -1786,22 +1982,40 @@ def _validate_semantic_verification(
 
     expected_dataset = (
         mapping.tdd_bench_git_sha,
+        mapping.tdd_bench_root_tree_oid,
+        mapping.tdd_id_list_path,
         mapping.tdd_id_list_blob_oid,
         mapping.tdd_id_list_sha256,
         mapping.tdd_membership_ordinal,
         mapping.source_dataset_git_sha,
+        mapping.source_dataset_root_tree_oid,
         mapping.source_dataset_split,
+        mapping.source_dataset_artifact_path,
+        mapping.source_dataset_artifact_git_blob_oid,
+        mapping.source_dataset_lfs_pointer_sha256,
+        mapping.source_dataset_artifact_lfs_sha256,
+        mapping.source_dataset_artifact_lfs_bytes,
+        mapping.source_dataset_artifact_xet_sha256,
         mapping.source_dataset_artifact_sha256,
         mapping.source_dataset_row_ordinal,
         mapping.upstream_record_sha256,
     )
     observed_dataset = (
         value.tdd_bench_git_sha,
+        value.tdd_bench_root_tree_oid,
+        value.tdd_id_list_path,
         value.tdd_id_list_blob_oid,
         value.tdd_id_list_sha256,
         value.tdd_membership_ordinal,
         value.source_dataset_git_sha,
+        value.source_dataset_root_tree_oid,
         value.source_dataset_split,
+        value.source_dataset_artifact_path,
+        value.source_dataset_artifact_git_blob_oid,
+        value.source_dataset_lfs_pointer_sha256,
+        value.source_dataset_artifact_lfs_sha256,
+        value.source_dataset_artifact_lfs_bytes,
+        value.source_dataset_artifact_xet_sha256,
         value.source_dataset_artifact_sha256,
         value.source_dataset_row_ordinal,
         value.source_dataset_row_sha256,
@@ -1812,6 +2026,7 @@ def _validate_semantic_verification(
         SOURCE_DATASET_TRANSFORM,
         "source dataset transform",
     )
+    _sha256(value.dataset_evidence_sha256, "verified dataset evidence SHA-256")
 
     _require_equal(
         value.source_receipt_sha256,
@@ -1825,6 +2040,9 @@ def _validate_semantic_verification(
         "verified source base root tree",
     )
     _sha256(value.source_tree_sha256, "verified source tree SHA-256")
+    _ascii(value.source_context_algorithm, "verified source context algorithm", _IDENTIFIER)
+    _sha256(value.source_context_policy_sha256, "verified source context policy SHA-256")
+    _sha256(value.source_context_sha256, "verified source context SHA-256")
     _require_equal(
         value.production_patch_sha256,
         mapping.production_patch_sha256,
@@ -1932,8 +2150,11 @@ def _verify_tdd_id_list(
         text = content.decode("ascii")
     except UnicodeDecodeError as exc:
         raise _rejection("TDD-Bench id list is not ASCII.") from exc
-    if not text.endswith("\n") or "\r" in text:
-        raise _rejection("TDD-Bench id list must use canonical LF lines.")
+    # The pinned upstream object is CRLF-delimited and intentionally has no final newline.
+    # Hash/OID verification above is over those exact bytes; normalization is permitted only for
+    # membership parsing and never changes the authenticated artifact identity.
+    if "\r" in text.replace("\r\n", ""):
+        raise _rejection("TDD-Bench id list contains a bare carriage return.")
     values = text.splitlines()
     if len(values) != 449 or len(values) != len(set(values)):
         raise _rejection("TDD-Bench id list is not the exact 449-member set.")
@@ -1941,6 +2162,36 @@ def _verify_tdd_id_list(
         _ascii(value, "TDD-Bench member ID", _INSTANCE_ID)
     if membership_ordinal > len(values) or values[membership_ordinal - 1] != instance_id:
         raise _rejection("TDD-Bench membership ordinal does not identify the upstream instance.")
+
+
+def _verify_lfs_artifact(
+    root: Path,
+    *,
+    pointer: ArtifactReference,
+    artifact: ArtifactReference,
+    expected_git_blob_oid: str,
+    expected_lfs_sha256: str,
+    expected_lfs_bytes: int,
+) -> None:
+    pointer_bytes = _read_artifact(root, pointer, "source dataset LFS pointer")
+    git_blob_oid = hashlib.sha1(
+        f"blob {len(pointer_bytes)}\0".encode() + pointer_bytes,
+        usedforsecurity=False,
+    ).hexdigest()
+    _require_equal(git_blob_oid, expected_git_blob_oid, "source dataset LFS pointer Git blob")
+    expected_pointer = (
+        "version https://git-lfs.github.com/spec/v1\n"
+        f"oid sha256:{expected_lfs_sha256}\n"
+        f"size {expected_lfs_bytes}\n"
+    ).encode("ascii")
+    if pointer_bytes != expected_pointer:
+        raise _rejection("Source dataset LFS pointer is not the exact canonical pointer.")
+    artifact_bytes = _read_artifact(root, artifact, "source dataset split artifact")
+    if (
+        len(artifact_bytes) != expected_lfs_bytes
+        or hashlib.sha256(artifact_bytes).hexdigest() != expected_lfs_sha256
+    ):
+        raise _rejection("Source dataset bytes do not match their LFS object identity.")
 
 
 def _load_artifact_reference(value: object, root: Path, label: str) -> ArtifactReference:

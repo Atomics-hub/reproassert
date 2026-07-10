@@ -1,0 +1,173 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Atomics-hub/reproassert/blob/main/schemas/benchmark-v02-execution-authorization.schema.json",
+  "title": "ReproAssert v0.2 execution authorization",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "benchmark_version",
+    "algorithm",
+    "visibility",
+    "authorization_kind",
+    "authorized_at",
+    "authorization_ref",
+    "authorization_text",
+    "authorization_text_sha256",
+    "campaign",
+    "provider",
+    "request_set",
+    "pricing_snapshot",
+    "pricing_snapshot_sha256",
+    "limits"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "benchmark_version": { "const": "0.2.0-draft" },
+    "algorithm": { "const": "reproassert-v02-execution-authorization-v1" },
+    "visibility": { "const": "private_controller_only" },
+    "authorization_kind": { "const": "explicit_user_approval" },
+    "authorized_at": { "$ref": "#/$defs/timestamp" },
+    "authorization_ref": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 200
+    },
+    "authorization_text": {
+      "type": "string",
+      "minLength": 10,
+      "maxLength": 4000
+    },
+    "authorization_text_sha256": { "$ref": "#/$defs/sha256" },
+    "campaign": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "campaign_id",
+        "campaign_freeze_sha256",
+        "preregistration_sha256",
+        "cohort_sha256",
+        "tool_git_sha"
+      ],
+      "properties": {
+        "campaign_id": { "$ref": "#/$defs/identifier" },
+        "campaign_freeze_sha256": { "$ref": "#/$defs/sha256" },
+        "preregistration_sha256": { "$ref": "#/$defs/sha256" },
+        "cohort_sha256": { "$ref": "#/$defs/sha256" },
+        "tool_git_sha": { "$ref": "#/$defs/git_sha" }
+      }
+    },
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "endpoint_host", "requested_model", "adapter_config_sha256"],
+      "properties": {
+        "name": { "const": "openai" },
+        "endpoint_host": { "const": "api.openai.com" },
+        "requested_model": { "$ref": "#/$defs/model" },
+        "adapter_config_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "request_set": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "request_count", "request_set_sha256", "requests"],
+      "properties": {
+        "algorithm": { "const": "reproassert-v02-execution-request-set-v1" },
+        "request_count": { "const": 20 },
+        "request_set_sha256": { "$ref": "#/$defs/sha256" },
+        "requests": {
+          "type": "array",
+          "minItems": 20,
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["case_id", "rendered_input_sha256"],
+            "properties": {
+              "case_id": { "$ref": "#/$defs/case_id" },
+              "rendered_input_sha256": { "$ref": "#/$defs/sha256" }
+            }
+          }
+        }
+      }
+    },
+    "pricing_snapshot": { "$ref": "#/$defs/pricing_snapshot" },
+    "pricing_snapshot_sha256": { "$ref": "#/$defs/sha256" },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reserved_worst_case_microusd",
+        "max_case_attributable_microusd",
+        "max_campaign_attributable_microusd",
+        "max_case_wall_ms",
+        "provider_timeout_ms",
+        "max_output_tokens"
+      ],
+      "properties": {
+        "reserved_worst_case_microusd": { "type": "integer", "minimum": 1 },
+        "max_case_attributable_microusd": { "type": "integer", "minimum": 1 },
+        "max_campaign_attributable_microusd": { "type": "integer", "minimum": 1 },
+        "max_case_wall_ms": { "type": "integer", "minimum": 1 },
+        "provider_timeout_ms": { "type": "integer", "minimum": 1000, "maximum": 600000 },
+        "max_output_tokens": { "type": "integer", "minimum": 1 }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "git_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "case_id": { "type": "string", "pattern": "^rk-v0\\.2-[0-9]{3}$" },
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{2,127}$"
+    },
+    "model": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?Z$"
+    },
+    "pricing_snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "provider",
+        "requested_model",
+        "effective_at",
+        "source",
+        "input_microusd_per_million_tokens",
+        "cached_input_microusd_per_million_tokens",
+        "output_microusd_per_million_tokens",
+        "sandbox_microusd_per_second",
+        "artifact_microusd_per_million_bytes",
+        "paid_storage_microusd",
+        "dependency_prep_microusd"
+      ],
+      "properties": {
+        "algorithm": { "const": "reproassert-v02-component-pricing-v1" },
+        "provider": { "const": "openai" },
+        "requested_model": { "$ref": "#/$defs/model" },
+        "effective_at": { "$ref": "#/$defs/timestamp" },
+        "source": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 300
+        },
+        "input_microusd_per_million_tokens": { "type": "integer", "minimum": 0 },
+        "cached_input_microusd_per_million_tokens": { "type": "integer", "minimum": 0 },
+        "output_microusd_per_million_tokens": { "type": "integer", "minimum": 0 },
+        "sandbox_microusd_per_second": { "type": "integer", "minimum": 0 },
+        "artifact_microusd_per_million_bytes": { "type": "integer", "minimum": 0 },
+        "paid_storage_microusd": { "type": "integer", "minimum": 0 },
+        "dependency_prep_microusd": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

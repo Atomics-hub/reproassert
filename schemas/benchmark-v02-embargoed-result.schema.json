@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Atomics-hub/reproassert/blob/main/schemas/benchmark-v02-embargoed-result.schema.json",
+  "title": "ReproAssert v0.2 public-safe embargoed per-case result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "benchmark_version",
+    "algorithm",
+    "visibility",
+    "publication_status",
+    "campaign_id",
+    "attempt_id",
+    "case",
+    "preregistration_sha256",
+    "cohort_sha256",
+    "runner_input_sha256",
+    "configuration_sha256",
+    "candidate",
+    "evaluation",
+    "cost",
+    "ledger_head_before_result_sha256"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "benchmark_version": { "const": "0.2.0-draft" },
+    "algorithm": { "const": "reproassert-v02-scored-result-v1" },
+    "visibility": { "const": "public_safe_embargoed" },
+    "publication_status": {
+      "const": "embargoed_until_all_20_candidates_are_durably_frozen"
+    },
+    "campaign_id": { "$ref": "#/$defs/identifier" },
+    "attempt_id": { "$ref": "#/$defs/identifier" },
+    "case": { "$ref": "#/$defs/case" },
+    "preregistration_sha256": { "$ref": "#/$defs/sha256" },
+    "cohort_sha256": { "$ref": "#/$defs/sha256" },
+    "runner_input_sha256": { "$ref": "#/$defs/sha256" },
+    "configuration_sha256": { "$ref": "#/$defs/sha256" },
+    "candidate": {
+      "oneOf": [{ "$ref": "#/$defs/candidate" }, { "type": "null" }]
+    },
+    "evaluation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "accepted",
+        "outcome",
+        "claim_level",
+        "fixed_run_evidence",
+        "evaluator_commitment_sha256",
+        "private_result_commitment"
+      ],
+      "properties": {
+        "status": { "const": "sealed" },
+        "accepted": { "type": "null" },
+        "outcome": { "type": "null" },
+        "claim_level": { "type": "null" },
+        "fixed_run_evidence": { "type": "null" },
+        "evaluator_commitment_sha256": { "$ref": "#/$defs/sha256" },
+        "private_result_commitment": { "const": "withheld_until_campaign_terminal" }
+      }
+    },
+    "cost": { "$ref": "#/$defs/cost" },
+    "ledger_head_before_result_sha256": { "$ref": "#/$defs/sha256" }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "git_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{2,127}$"
+    },
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "repo",
+        "issue_url",
+        "base_sha",
+        "difficulty",
+        "smoke",
+        "generator_projection_sha256",
+        "evaluator_commitment_sha256",
+        "source_context_sha256"
+      ],
+      "properties": {
+        "id": { "type": "string", "pattern": "^rk-v0\\.2-[0-9]{3}$" },
+        "repo": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$" },
+        "issue_url": {
+          "type": "string",
+          "pattern": "^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/issues/[1-9][0-9]*$"
+        },
+        "base_sha": { "$ref": "#/$defs/git_sha" },
+        "difficulty": { "enum": ["lt_15m", "15m_to_1h"] },
+        "smoke": { "type": "boolean" },
+        "generator_projection_sha256": { "$ref": "#/$defs/sha256" },
+        "evaluator_commitment_sha256": { "$ref": "#/$defs/sha256" },
+        "source_context_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "bytes", "test_content", "expected_symptom", "rationale"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^tests/reproassert/test_issue_[1-9][0-9]*\\.py$"
+        },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "bytes": { "type": "integer", "minimum": 1, "maximum": 32768 },
+        "test_content": { "type": "string", "minLength": 1, "maxLength": 32768 },
+        "expected_symptom": { "type": "string", "minLength": 3, "maxLength": 500 },
+        "rationale": { "type": "string", "minLength": 3, "maxLength": 2000 }
+      }
+    },
+    "cost": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["complete", "total_attributable_microusd", "categories", "pricing_snapshot_sha256"],
+      "properties": {
+        "complete": { "type": "boolean" },
+        "total_attributable_microusd": {
+          "oneOf": [{ "type": "integer", "minimum": 0 }, { "type": "null" }]
+        },
+        "categories": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "model_inference",
+            "sandbox_compute",
+            "artifact_transfer",
+            "paid_storage",
+            "dependency_prep"
+          ],
+          "properties": {
+            "model_inference": { "$ref": "#/$defs/nullable_cost" },
+            "sandbox_compute": { "$ref": "#/$defs/nullable_cost" },
+            "artifact_transfer": { "$ref": "#/$defs/nullable_cost" },
+            "paid_storage": { "$ref": "#/$defs/nullable_cost" },
+            "dependency_prep": { "$ref": "#/$defs/nullable_cost" }
+          }
+        },
+        "pricing_snapshot_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "nullable_cost": {
+      "oneOf": [{ "type": "integer", "minimum": 0 }, { "type": "null" }]
+    }
+  }
+}

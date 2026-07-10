@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reproassert.dev/schemas/benchmark-v02-selection-freeze.schema.json",
+  "title": "ReproAssert benchmark v0.2 selection-only freeze",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["algorithm", "case_count", "cohort_plan_sha256", "dataset_parser_boundary_attestation_sha256", "dataset_parser_image_digest", "dataset_parser_private_receipt_sha256", "issue_text_source", "issue_text_source_commit", "oracle_leak_audit_passed_cases", "privacy", "production_boundary_verified", "results", "selection_freeze_sha256", "status", "upstream_evidence_sha256", "upstream_object_witness_sha256"],
+  "properties": {
+    "algorithm": { "const": "reproassert-v02-selection-freeze-v1" },
+    "case_count": { "const": 20 },
+    "cohort_plan_sha256": { "$ref": "#/$defs/sha256" },
+    "dataset_parser_boundary_attestation_sha256": { "$ref": "#/$defs/sha256" },
+    "dataset_parser_image_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "dataset_parser_private_receipt_sha256": { "$ref": "#/$defs/sha256" },
+    "issue_text_source": { "const": "dataset_snapshot_at_pinned_commit" },
+    "issue_text_source_commit": { "$ref": "#/$defs/gitOid" },
+    "oracle_leak_audit_passed_cases": { "const": 20 },
+    "privacy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["developer_test_bytes_published", "generator_issue_text_published", "hints_text_published", "production_patch_bytes_published"],
+      "properties": {
+        "developer_test_bytes_published": { "const": false },
+        "generator_issue_text_published": { "const": false },
+        "hints_text_published": { "const": false },
+        "production_patch_bytes_published": { "const": false }
+      }
+    },
+    "production_boundary_verified": { "const": true },
+    "results": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["benchmark_cases_executed", "l1_valid_reproductions", "l2_semantic_valid_reproductions", "maintainer_validations"],
+      "properties": {
+        "benchmark_cases_executed": { "const": 0 },
+        "l1_valid_reproductions": { "const": 0 },
+        "l2_semantic_valid_reproductions": { "const": 0 },
+        "maintainer_validations": { "const": 0 }
+      }
+    },
+    "selection_freeze_sha256": { "$ref": "#/$defs/sha256" },
+    "status": { "const": "selection_frozen_not_campaign_preregistered" },
+    "upstream_evidence_sha256": { "$ref": "#/$defs/sha256" },
+    "upstream_object_witness_sha256": { "$ref": "#/$defs/sha256" }
+  },
+  "$defs": {
+    "gitOid": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  }
+}

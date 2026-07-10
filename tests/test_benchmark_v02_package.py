@@ -76,19 +76,32 @@ def _fixture_semantic_verification(
         case=context.case,
         completed_at="2026-07-10T15:00:00Z",
         tdd_bench_git_sha=mapping.tdd_bench_git_sha,
+        tdd_bench_root_tree_oid=mapping.tdd_bench_root_tree_oid,
+        tdd_id_list_path=mapping.tdd_id_list_path,
         tdd_id_list_blob_oid=mapping.tdd_id_list_blob_oid,
         tdd_id_list_sha256=mapping.tdd_id_list_sha256,
         tdd_membership_ordinal=mapping.tdd_membership_ordinal,
         source_dataset_git_sha=mapping.source_dataset_git_sha,
+        source_dataset_root_tree_oid=mapping.source_dataset_root_tree_oid,
         source_dataset_split=mapping.source_dataset_split,
+        source_dataset_artifact_path=mapping.source_dataset_artifact_path,
+        source_dataset_artifact_git_blob_oid=mapping.source_dataset_artifact_git_blob_oid,
+        source_dataset_lfs_pointer_sha256=mapping.source_dataset_lfs_pointer_sha256,
+        source_dataset_artifact_lfs_sha256=mapping.source_dataset_artifact_lfs_sha256,
+        source_dataset_artifact_lfs_bytes=mapping.source_dataset_artifact_lfs_bytes,
+        source_dataset_artifact_xet_sha256=mapping.source_dataset_artifact_xet_sha256,
         source_dataset_artifact_sha256=mapping.source_dataset_artifact_sha256,
         source_dataset_row_ordinal=mapping.source_dataset_row_ordinal,
         source_dataset_row_sha256=mapping.upstream_record_sha256,
         source_dataset_transform="drop_PASS_TO_PASS_and_FAIL_TO_PASS_v1",
+        dataset_evidence_sha256="a" * 64,
         source_receipt_sha256=supporting["source_receipt"].sha256,
         source_base_commit_sha=context.case.base_sha,
         source_base_root_tree_oid=mapping.base_root_tree_oid,
         source_tree_sha256=SOURCE_TREE_SHA256,
+        source_context_algorithm="reproassert-v02-source-context-v1",
+        source_context_policy_sha256="b" * 64,
+        source_context_sha256="c" * 64,
         production_patch_sha256=mapping.production_patch_sha256,
         developer_tests_sha256=mapping.developer_tests_sha256,
         hidden_fixed_root_tree_oid=HIDDEN_FIXED_TREE_OID,
@@ -284,8 +297,22 @@ def _build_case_package(tmp_path: Path) -> tuple[Path, dict[str, Any], dict[str,
         f"blob {len(tdd_id_list_bytes)}\0".encode() + tdd_id_list_bytes,
         usedforsecurity=False,
     ).hexdigest()
+    source_dataset_bytes = b"pinned split fixture\n"
+    source_dataset_lfs_sha256 = hashlib.sha256(source_dataset_bytes).hexdigest()
+    source_dataset_pointer_bytes = (
+        "version https://git-lfs.github.com/spec/v1\n"
+        f"oid sha256:{source_dataset_lfs_sha256}\n"
+        f"size {len(source_dataset_bytes)}\n"
+    ).encode("ascii")
+    source_dataset_pointer_ref = _write(
+        root, "evaluator/swe-bench-verified-test.parquet.pointer", source_dataset_pointer_bytes
+    )
+    source_dataset_pointer_oid = hashlib.sha1(
+        f"blob {len(source_dataset_pointer_bytes)}\0".encode() + source_dataset_pointer_bytes,
+        usedforsecurity=False,
+    ).hexdigest()
     source_dataset_ref = _write(
-        root, "evaluator/swe-bench-verified-test.parquet", b"pinned split fixture\n"
+        root, "evaluator/swe-bench-verified-test.parquet", source_dataset_bytes
     )
     upstream_record = {
         "repo": CASE.repo,
@@ -298,7 +325,7 @@ def _build_case_package(tmp_path: Path) -> tuple[Path, dict[str, Any], dict[str,
         "created_at": PR_CREATED_AT,
         "version": "1.0",
         "environment_setup_commit": "9" * 40,
-        "difficulty": "<15 min",
+        "difficulty": "<15 min fix",
     }
     upstream_ref = _write(root, "evaluator/upstream-record.json", _canonical(upstream_record))
     fixing_pr_evidence = {
@@ -357,6 +384,8 @@ def _build_case_package(tmp_path: Path) -> tuple[Path, dict[str, Any], dict[str,
         "provenance": {
             "tdd_bench_repository_url": "https://github.com/IBM/TDD-Bench-Verified",
             "tdd_bench_git_sha": "c" * 40,
+            "tdd_bench_root_tree_oid": "7" * 40,
+            "tdd_id_list_path": "id_list.txt",
             "tdd_id_list_blob_oid": tdd_id_list_blob_oid,
             "tdd_id_list": tdd_id_list_ref,
             "tdd_membership_ordinal": 9,
@@ -364,7 +393,14 @@ def _build_case_package(tmp_path: Path) -> tuple[Path, dict[str, Any], dict[str,
                 "https://huggingface.co/datasets/princeton-nlp/SWE-bench_Verified"
             ),
             "source_dataset_git_sha": "8" * 40,
+            "source_dataset_root_tree_oid": "6" * 40,
             "source_dataset_split": "test",
+            "source_dataset_artifact_path": "default/test/0000.parquet",
+            "source_dataset_artifact_git_blob_oid": source_dataset_pointer_oid,
+            "source_dataset_lfs_pointer": source_dataset_pointer_ref,
+            "source_dataset_artifact_lfs_sha256": source_dataset_lfs_sha256,
+            "source_dataset_artifact_lfs_bytes": len(source_dataset_bytes),
+            "source_dataset_artifact_xet_sha256": "5" * 64,
             "source_dataset_artifact": source_dataset_ref,
             "source_dataset_row_ordinal": 8,
             "instance_id": "owner__repo-9",
@@ -423,6 +459,7 @@ def _build_case_package(tmp_path: Path) -> tuple[Path, dict[str, Any], dict[str,
                 name: ArtifactReference(**cast(dict[str, Any], reference))
                 for name, reference in supporting.items()
             },
+            generator_projection=ArtifactReference(**cast(dict[str, Any], projection_ref)),
             isolation_policy_sha256="f" * 64,
         )
     )
@@ -438,6 +475,7 @@ def _build_case_package(tmp_path: Path) -> tuple[Path, dict[str, Any], dict[str,
     }
     mapping_artifacts = [
         tdd_id_list_ref,
+        source_dataset_pointer_ref,
         source_dataset_ref,
         upstream_ref,
         fixing_evidence_ref,
@@ -508,6 +546,7 @@ def _preregistered_cases() -> list[PreregisteredV02Case]:
             smoke=index in {4, 6, 10, 11, 18},
             generator_projection_sha256=f"{index + 100:064x}",
             evaluator_commitment_sha256=f"{index + 200:064x}",
+            source_context_sha256=f"{index + 300:064x}",
         )
         for index in range(1, 21)
     ]
@@ -593,11 +632,20 @@ def test_nominal_evaluator_capability_rejects_corrupted_issuer() -> None:
     capability = package_module.VerifiedV02EvaluatorCapability(
         package_module._CAPABILITY_ISSUER,
         case=CASE,
+        preregistration_sha256="1" * 64,
+        cohort_sha256="2" * 64,
+        preregistered_case_sha256="3" * 64,
         package_identity_sha256="5" * 64,
         public_commitment_sha256="6" * 64,
+        generator_projection_sha256="4" * 64,
+        dataset_evidence_sha256="a" * 64,
         base_commit_sha=CASE.base_sha,
         base_root_tree_oid=BASE_TREE_OID,
+        source_receipt_sha256="b" * 64,
         source_tree_sha256=SOURCE_TREE_SHA256,
+        source_context_algorithm="reproassert-v02-source-context-v1",
+        source_context_policy_sha256="c" * 64,
+        source_context_sha256="d" * 64,
         hidden_fixed_root_tree_oid=HIDDEN_FIXED_TREE_OID,
         fixing_head_commit_sha="7" * 40,
         fixing_head_root_tree_oid=HEAD_TREE_OID,
@@ -608,6 +656,10 @@ def test_nominal_evaluator_capability_rejects_corrupted_issuer() -> None:
         dependency_plan_sha256=None,
         dependency_tree_sha256=None,
         dependency_runner_image_id=None,
+        isolation_receipt_sha256="e" * 64,
+        isolation_policy_sha256="f" * 64,
+        reviewer_role_seal_sha256="0" * 64,
+        semantic_verification_receipt_sha256="1" * 64,
     )
     object.__setattr__(capability, "_issuer", object())
 
@@ -699,6 +751,7 @@ def test_case_package_fails_closed_on_missing_changed_or_exposed_artifacts(
         "reused_path",
         "upstream_base",
         "production_patch_drift",
+        "upstream_difficulty",
         "fix_capture_head",
         "source_revision",
     ],
@@ -736,6 +789,13 @@ def test_fix_mapping_requires_independent_review_and_exact_target(
     elif mutation == "production_patch_drift":
         fix_mapping["evaluator_artifacts"]["production_patch"] = _write(
             root, "evaluator/production.patch", b"different production fix\n"
+        )
+    elif mutation == "upstream_difficulty":
+        upstream_path = root / "evaluator/upstream-record.json"
+        upstream = json.loads(upstream_path.read_text())
+        upstream["difficulty"] = "<15 min"
+        fix_mapping["provenance"]["upstream_record"] = _write(
+            root, "evaluator/upstream-record.json", _canonical(upstream)
         )
     elif mutation == "fix_capture_head":
         evidence_path = root / "evaluator/fixing-pr-evidence.json"
@@ -872,11 +932,20 @@ def test_cohort_audit_requires_every_commitment_to_match(
         capability = package_module.VerifiedV02EvaluatorCapability(
             package_module._CAPABILITY_ISSUER,
             case=V02CaseIdentity(frozen.id, frozen.repo, frozen.issue_url, frozen.base_sha),
+            preregistration_sha256=hashlib.sha256(prereg_path.read_bytes()).hexdigest(),
+            cohort_sha256=cast(str, preregistration["cohort_sha256"]),
+            preregistered_case_sha256=hashlib.sha256(_canonical(asdict(frozen))[:-1]).hexdigest(),
             package_identity_sha256="9" * 64,
             public_commitment_sha256=frozen.evaluator_commitment_sha256,
+            generator_projection_sha256=frozen.generator_projection_sha256,
+            dataset_evidence_sha256="a" * 64,
             base_commit_sha=frozen.base_sha,
             base_root_tree_oid=f"{ordinal + 900:040x}",
+            source_receipt_sha256="b" * 64,
             source_tree_sha256="8" * 64,
+            source_context_algorithm="reproassert-v02-source-context-v1",
+            source_context_policy_sha256="c" * 64,
+            source_context_sha256=frozen.source_context_sha256,
             hidden_fixed_root_tree_oid=f"{ordinal + 1000:040x}",
             fixing_head_commit_sha=f"{ordinal + 500:040x}",
             fixing_head_root_tree_oid=f"{ordinal + 1100:040x}",
@@ -887,6 +956,10 @@ def test_cohort_audit_requires_every_commitment_to_match(
             dependency_plan_sha256=None,
             dependency_tree_sha256=None,
             dependency_runner_image_id=None,
+            isolation_receipt_sha256="e" * 64,
+            isolation_policy_sha256="f" * 64,
+            reviewer_role_seal_sha256="0" * 64,
+            semantic_verification_receipt_sha256="1" * 64,
         )
         values: dict[str, object] = {
             "case": V02CaseIdentity(frozen.id, frozen.repo, frozen.issue_url, frozen.base_sha),
