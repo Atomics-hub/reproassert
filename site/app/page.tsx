@@ -88,7 +88,7 @@ export default function Home() {
           <p className="heroLead">
             Turn a public GitHub issue and an exact commit into a minimal test
             candidate, then verify its failure inside a locked-down Docker
-            boundary—before anyone changes production code.
+            boundary—before this workflow changes production code.
           </p>
           <div className="heroActions">
             <a className="button buttonAccent" href="#install">
