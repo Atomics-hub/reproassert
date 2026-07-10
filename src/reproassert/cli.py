@@ -11,6 +11,16 @@ from rich.panel import Panel
 from rich.table import Table
 
 from reproassert import __version__
+from reproassert.benchmark_object_source import (
+    prepare_object_source_case,
+    verify_object_source_receipt,
+)
+from reproassert.benchmark_snapshot_producer import (
+    SnapshotIdentity,
+    SnapshotPrivacyReview,
+    SnapshotProducerMetadata,
+    produce_snapshot_receipt_file,
+)
 from reproassert.benchmark_source import (
     SOURCE_INDEX_FILENAME,
     SOURCE_RECEIPT_FILENAME,
@@ -62,6 +72,210 @@ def main() -> None:
 @main.group("benchmark")
 def benchmark_group() -> None:
     """Prepare inert benchmark evidence without running a generator or model."""
+
+
+@benchmark_group.command("produce-snapshot")
+@click.argument("case_id")
+@click.option("--repository", required=True, help="Exact owner/repository identity.")
+@click.option("--issue-url", required=True, help="Canonical public GitHub issue URL.")
+@click.option("--base-sha", required=True, help="Exact lowercase 40-hex buggy commit.")
+@click.option(
+    "--raw-history",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+    help="Offline evaluator-only GraphQL issue-history artifact.",
+)
+@click.option(
+    "--cutoff-basis",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+    help="Offline evaluator-selected solution-publication artifact.",
+)
+@click.option("--captured-at", required=True, help="Evidence capture time in RFC 3339 UTC.")
+@click.option("--tool-name", required=True, help="Snapshot producer tool identity.")
+@click.option("--tool-version", required=True, help="Snapshot producer version.")
+@click.option("--tool-git-sha", required=True, help="Exact 40-hex producer revision.")
+@click.option(
+    "--privacy-reviewed-at",
+    required=True,
+    help="Completed human review time in RFC 3339 UTC.",
+)
+@click.option("--privacy-reviewer-id", required=True, help="Bounded human reviewer identity.")
+@click.option(
+    "--privacy-checklist-sha256",
+    required=True,
+    help="Exact lowercase SHA-256 of the completed review checklist.",
+)
+@click.option(
+    "--output",
+    type=click.Path(path_type=Path, dir_okay=False),
+    required=True,
+    help="New canonical receipt path inside a private directory.",
+)
+def benchmark_produce_snapshot(
+    case_id: str,
+    repository: str,
+    issue_url: str,
+    base_sha: str,
+    raw_history: Path,
+    cutoff_basis: Path,
+    captured_at: str,
+    tool_name: str,
+    tool_version: str,
+    tool_git_sha: str,
+    privacy_reviewed_at: str,
+    privacy_reviewer_id: str,
+    privacy_checklist_sha256: str,
+    output: Path,
+) -> None:
+    """Produce one strictly rederived snapshot receipt from offline evidence."""
+
+    try:
+        _ensure_private_output_root(output.parent)
+        result = produce_snapshot_receipt_file(
+            identity=SnapshotIdentity(
+                case_id=case_id,
+                repository=repository,
+                issue_url=issue_url,
+                base_sha=base_sha,
+            ),
+            raw_issue_evidence_path=raw_history,
+            cutoff_basis_path=cutoff_basis,
+            output_path=output,
+            producer=SnapshotProducerMetadata(
+                captured_at=captured_at,
+                tool_name=tool_name,
+                tool_version=tool_version,
+                tool_git_sha=tool_git_sha,
+            ),
+            privacy_review=SnapshotPrivacyReview(
+                reviewed_at=privacy_reviewed_at,
+                reviewer_id=privacy_reviewer_id,
+                checklist_sha256=privacy_checklist_sha256,
+            ),
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(
+        json.dumps(
+            {
+                "case_id": case_id,
+                "receipt": str(result.receipt_path),
+                "receipt_sha256": result.receipt_sha256,
+                "snapshot_sha256": result.snapshot_sha256,
+                "offline_only": True,
+                "derivation_reverified": True,
+                "campaign_readiness_changed": False,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+@benchmark_group.command("prepare-object-source")
+@click.argument("case_id")
+@click.option(
+    "--manifest",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--output-root",
+    type=click.Path(path_type=Path, file_okay=False),
+    default=_default_benchmark_source_root,
+    show_default="private user state directory",
+)
+@click.option("--tool-git-sha", required=True, help="Exact 40-hex controller revision.")
+@click.option("--timeout-seconds", type=click.FloatRange(min=0, min_open=True), default=15.0)
+def benchmark_prepare_object_source(
+    case_id: str,
+    manifest: Path,
+    output_root: Path,
+    tool_git_sha: str,
+    timeout_seconds: float,
+) -> None:
+    """Prepare an exact Git-object workspace receipt without model execution."""
+
+    try:
+        _ensure_private_output_root(output_root)
+        receipt_path = prepare_object_source_case(
+            manifest,
+            case_id,
+            output_root,
+            tool_git_sha=tool_git_sha,
+            timeout_seconds=timeout_seconds,
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(
+        json.dumps(
+            {
+                "case_id": case_id,
+                "receipt": str(receipt_path),
+                "archive": str(receipt_path.parent / "source.tar.gz"),
+                "campaign_readiness_changed": False,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+@benchmark_group.command("verify-object-source")
+@click.argument("receipt_path", type=click.Path(path_type=Path, exists=True, dir_okay=False))
+@click.option(
+    "--manifest",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option("--case-id", required=True)
+@click.option("--expected-receipt-sha256")
+@click.option("--timeout-seconds", type=click.FloatRange(min=0, min_open=True), default=15.0)
+def benchmark_verify_object_source(
+    receipt_path: Path,
+    manifest: Path,
+    case_id: str,
+    expected_receipt_sha256: str | None,
+    timeout_seconds: float,
+) -> None:
+    """Freshly verify an exact-object source receipt and its preserved archive."""
+
+    try:
+        receipt = verify_object_source_receipt(
+            receipt_path,
+            manifest_path=manifest,
+            expected_case_id=case_id,
+            expected_receipt_sha256=expected_receipt_sha256,
+            timeout_seconds=timeout_seconds,
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    source = receipt.get("source")
+    if not isinstance(source, dict):
+        raise ReproAssertError(
+            "benchmark_object_source_receipt", "Verified object-source record is invalid."
+        )
+    workspace = source.get("verified_workspace")
+    transport = source.get("transport")
+    if not isinstance(workspace, dict) or not isinstance(transport, dict):
+        raise ReproAssertError(
+            "benchmark_object_source_receipt", "Verified object-source evidence is invalid."
+        )
+    click.echo(
+        json.dumps(
+            {
+                "case_id": case_id,
+                "archive_sha256": transport["sha256"],
+                "git_tree_oid": source["github_root_tree_oid"],
+                "tree_sha256": workspace["tree_sha256"],
+                "verified": True,
+                "campaign_readiness_changed": False,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
 
 
 @benchmark_group.command("prepare-source")

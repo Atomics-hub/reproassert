@@ -68,6 +68,28 @@ not repair the historical-snapshot erratum and does not flip `exact_sha_archives
 campaign prerequisite. Archives stay in private user state and are intentionally not committed to
 this repository.
 
+The separate object-authority path supports exact tracked symlinks, empty gitlink boundaries, and
+repair of codeload-missing or `export-subst`-changed blobs without cloning:
+
+```console
+reproassert benchmark prepare-object-source rk-v0.1-018 \
+  --manifest benchmarks/v0.1/manifest.json \
+  --output-root <private-output-root> \
+  --tool-git-sha <exact-controller-git-sha>
+
+reproassert benchmark verify-object-source \
+  <private-output-root>/rk-v0.1-018-object-v2/benchmark-object-source-receipt.json \
+  --manifest benchmarks/v0.1/manifest.json \
+  --case-id rk-v0.1-018
+```
+
+It validates and reconstructs a complete recursive Git tree, parses codeload only as bounded bulk
+transport, fetches only explicitly planned raw blob OIDs from a fixed unauthenticated GitHub API
+endpoint, materializes and rechecks a metadata-free workspace, removes that workspace, and writes a
+distinct v2 receipt last. It never overwrites the regular-file receipt directory. Gitlinks stay
+empty and uninitialized; truncated trees, unsafe symlink chains, and excess repair sets fail closed.
+No object-source receipt index or readiness mutation is implemented.
+
 The checked-in [source preparation baseline](source-preparation-baseline.json) is a compact local
 evidence record, not a receipt index or benchmark result. Sixteen cases reconstructed their Git root
 trees and passed a second fresh-metadata verification. Four failed closed: one gitlink/submodule,

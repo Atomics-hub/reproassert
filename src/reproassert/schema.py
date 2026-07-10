@@ -7,6 +7,7 @@ SCHEMA_FILENAMES = {
     "benchmark-snapshot-receipt": "benchmark-snapshot-receipt.schema.json",
     "benchmark-source-receipt": "benchmark-source-receipt.schema.json",
     "benchmark-source-index": "benchmark-source-index.schema.json",
+    "benchmark-object-source-receipt": "benchmark-object-source-receipt.schema.json",
 }
 
 

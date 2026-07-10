@@ -1,6 +1,7 @@
 # Sandbox profiles
 
-Status: one local profile is implemented. Enhanced and hosted profiles are design paths, not shipped
+Status: one dependency-free local profile is implemented. Reviewed wheel-preparation primitives are
+experimental and have no causal executor. Enhanced and hosted profiles are design paths, not shipped
 features.
 
 ## `strict-python-pytest-v1` — implemented
@@ -110,6 +111,22 @@ separate read-only `/workspace` volume and could not find it. The canary additio
 effective image ID, network, mounts, user, capabilities, no-new-privileges flag, resources, tmpfs,
 bounded log driver, process-environment clearing, and cleanup. This is a narrow mount-policy control;
 it does not strengthen ordinary Docker into a hosted hostile multi-tenant boundary.
+
+## Reviewed wheel preparation — primitives only
+
+The strict plan and wheel validators plus fixed Docker argv builders implement a future
+`pypi-hash-locked-wheels-v1` profile. The networked phase receives only a controller-rendered
+hash-complete requirements file and a wheelhouse volume; source and dependency output are absent.
+The install phase uses `--network none`, `--no-index`, `--no-deps`, binary wheels only, and writes a
+separate dependency volume. An ordinary verifier may mount a controller-owned dependency volume
+read-only at `/dependencies`, and its inspected mount set must contain only workspace and that
+optional dependency volume.
+
+This is not a supported preparation workflow yet. No controller currently proves volume freshness,
+labels, emptiness, or non-root ownership; inspects and binds both phase containers and immutable
+image IDs; records exit/timeout/OOM/output evidence; or causally connects the attested wheelhouse to
+the post-install dependency tree. Bridge networking constrains the process and inputs, not egress at
+the network layer. No benchmark prerequisite may rely on the receipt builder alone.
 
 ## `gvisor-python-pytest` — proposed enhanced Linux profile
 

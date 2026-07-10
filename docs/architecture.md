@@ -1,6 +1,6 @@
 # Architecture
 
-Date: 2026-07-09
+Date: 2026-07-10
 
 Status: implemented strict Python/pytest base-failure slice. Differential and semantic evaluation are separate future work.
 
@@ -17,19 +17,19 @@ flowchart LR
     U["User-selected issue, commit, and candidate source"]
     G["Fixed-host GitHub intake"]
     C["Controller: safe extraction and bounded context"]
-    O["Opt-in OpenAI Responses adapter\nFixed api.openai.com endpoint"]
+    AI["Opt-in OpenAI Responses adapter\nFixed api.openai.com endpoint"]
     A["Trusted generator adapter\nHost process, minimal environment"]
     M["Human candidate file"]
     P["Static candidate policy"]
     D["Docker verifier\nUntrusted repo and test"]
     V["Collection, repeated runs, classification"]
-    O["candidate.patch + reproassert-report.json"]
+    OUT["candidate.patch + reproassert-report.json"]
 
     U --> G --> C
-    C --> O --> P
+    C --> AI --> P
     C --> A --> P
     M --> P
-    P --> D --> V --> O
+    P --> D --> V --> OUT
 ```
 
 There are four materially different zones:
@@ -66,6 +66,22 @@ directories, per-file bytes, 256 MiB total unpacked data, 4,096-byte paths, and 
 components. Symlinks, hard links, devices, unsafe traversal, duplicate destinations, case/Unicode
 collisions, every canonical `.git` alias, malformed archives, and special files are rejected. The
 post-extraction attestor repeats the type/path/count checks and detects same-run filesystem changes.
+
+### Preparation-only exact-object path
+
+`benchmark prepare-object-source` is a separate source-preparation path; the ordinary issue and
+replay commands still use the regular-file contract above. The object path starts from the exact
+commit root OID, validates one complete recursive Trees API response, and reconstructs every
+subtree/root Git object. It never trusts an entry-provided URL.
+
+Codeload is then parsed as bounded bulk transport without extraction. Exact regular-file bytes and
+symlink linknames are reused only when their blob OID matches the tree. Missing or changed blobs are
+an explicit bounded repair set fetched by exact OID from a controller-constructed raw Blob API URL.
+After every blob is verified, the controller materializes regular files, root-confined tracked
+symlinks, and empty uninitialized gitlink directories into a private metadata-free workspace,
+rechecks it, commits to a SHA-256 content-tree digest, removes it, and writes the receipt last. A
+truncated tree, unsafe symlink chain, unsupported path, excess repair set, or object mismatch fails
+closed. See [ADR 0006](decisions/0006-repair-codeload-from-git-objects.md).
 
 ## Bounded source context
 
@@ -133,6 +149,13 @@ The controller stages the extracted source into a controller-owned Docker volume
 
 The sandbox image contains Python 3.12 and hash-locked pytest dependencies. The strict profile does not install repository dependencies. This is a deliberate initial limit and a frequent expected source of `setup_failure` on real repositories.
 
+Hash-locked wheel plan parsing, fixed networked-download/offline-install argv, bounded wheel
+inspection, deterministic receipt primitives, and an optional read-only `/dependencies` verification
+mount are implemented. A causal preparation executor is not. In particular, the current code does
+not yet prove fresh volume ownership, inspected phase containers and image IDs, successful bounded
+phase outcomes, or wheelhouse-to-installed-tree causality. These primitives cannot make a benchmark
+case ready; see [ADR 0007](decisions/0007-dependency-preparation-remains-a-gated-prototype.md).
+
 `reproassert sandbox isolation-canary` exercises a standalone synthetic generator/evaluator mount
 profile with two real containers. It is not wired to the current host-side generators and cannot by
 itself satisfy the benchmark's oracle-isolation prerequisite. A positive control reads a random evaluator-only sentinel; a generator-view container
@@ -176,6 +199,12 @@ its receipt last in a private case directory, while deleting the extraction. `ve
 a private copy, independently re-fetches the commit tree from the frozen manifest/base SHA, repeats
 extraction and attestation, and requires checked cleanup before returning success. The 20-receipt
 index is deterministic and inert; it does not mutate a campaign, ledger, generator, or evaluator.
+
+`prepare-object-source` likewise preserves its inert codeload archive, but writes a distinct v2
+receipt and case-directory suffix so it cannot overwrite a v1 receipt. Its verifier stages a private
+archive copy, freshly re-fetches commit/tree metadata and any planned exact blobs, re-materializes
+and removes the workspace, and compares every derived receipt field. No object-source index or
+campaign-readiness mutation is currently implemented.
 
 ## Replay
 

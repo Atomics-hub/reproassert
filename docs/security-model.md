@@ -47,8 +47,9 @@ cleanup_succeeded: true
 | Built-in OpenAI provider client | Trusted controller path plus remote service | Runs only after explicit selection, sends bounded issue/source context to fixed `api.openai.com`, and reads only `OPENAI_API_KEY`. |
 | User-selected generator command | Trusted executable | Runs outside Docker with a cleared environment plus only explicitly passed variables. It receives issue and selected source context. |
 | GitHub issue title/body | Hostile data | Size-bounded, labeled as untrusted in the generator protocol, never interpreted as setup or shell instructions. |
-| Repository archive and files | Hostile data | Downloaded from a fixed host, manually extracted without links or special files, rewalked without following links, and bound to the commit root tree before generation. |
-| Draft historical snapshot receipt and raw evidence | Controller-only producer-development input | Structural fields and byte commitments are checked, but raw-history revision/redaction derivation is not implemented. Default projection fails closed as `benchmark_snapshot_producer_unverified`; the fixture override cannot satisfy a campaign prerequisite. Current live issues are never a historical fallback. |
+| Repository archive, Git metadata responses, blobs, and files | Hostile data | The ordinary issue path manually extracts regular files and binds them to the commit root. The preparation-only object path reconstructs a complete Trees API response, treats codeload only as bulk transport, repairs only exact planned blob OIDs, and materializes bounded root-confined links without Git metadata. |
+| Reviewed dependency plan, wheels, and prepared tree | Hostile artifacts under an incomplete trusted-controller path | Strict plan parsing, fixed download/install argv, wheel bounds, and a read-only verification mount are implemented. The causal executor, fresh-volume proof, phase inspection/results, and post-install binding are not; no dependency receipt is campaign-ready. |
+| Draft historical snapshot receipt and raw evidence | Evaluator-only trusted capture plus hostile structured data | The default validator independently parses complete offline edit history, selects the pre-publication revision, reruns exact fixing-PR redaction, and checks byte commitments. The evaluator still chooses the fixing PR and vouches for capture authenticity and human privacy review; there is no collector or signed GitHub attestation. Current live issues are never a historical fallback. |
 | Candidate test | Hostile executable code | Schema- and AST-screened, written only to a controller-selected test path, then executed only in Docker. |
 | Repository pytest configuration, imports, `sitecustomize`, and `conftest.py` | Hostile executable code | May run inside Docker during collection or verification. |
 | Pytest stdout and optional JUnit XML | Hostile evidence | Byte-bounded and terminal-sanitized. Optional XML is element-bounded and parsed with `defusedxml`; both forms are treated as forgeable. |
@@ -96,7 +97,7 @@ Artifacts are opened relative to no-follow directory descriptors, created exclus
 `0600`, and never overwrite an existing file or symlink.
 
 The tar.gz archive is processed as a bounded stream. Extraction is manual; `extractall` is not used.
-Only directories and regular files are accepted. Absolute paths, empty or dot components, `..`,
+Only directories and regular files are accepted by the ordinary issue/replay path. Absolute paths, empty or dot components, `..`,
 backslashes, control characters, symlinks, hardlinks, devices, FIFOs, duplicate paths, file/directory
 collisions, case or Unicode-normalization collisions, and canonical `.git` aliases are rejected.
 Current extraction limits independently cap 20,000 members, files, and directories, 64 MiB per
@@ -110,6 +111,15 @@ Git blob/tree object IDs from the accepted bytes and executable bits and require
 match the exact commit metadata. It also records a versioned canonical SHA-256 digest that includes
 directories, paths, modes, sizes, and content hashes. This still trusts GitHub, DNS/TLS, Git's SHA-1
 identity model, the controller host, and the local filesystem implementation.
+
+The separate `benchmark prepare-object-source` path supports a wider exact Git representation
+without changing the ordinary issue workflow. It rejects truncated recursive Trees API data and
+reconstructs every subtree/root OID. It parses codeload without extracting, accepts an archive blob
+only when its Git OID is exact, and retrieves only bounded missing or `export-subst`-changed OIDs from
+a controller-constructed raw Blob API URL. Safe tracked symlinks are logically resolved across
+multi-hop chains and must remain inside the source root; gitlinks become empty uninitialized
+directories and are never followed. The metadata-free workspace is rechecked and removed before its
+preparation receipt is written. This path still does not run a generator or make a campaign ready.
 
 Source context generation reads regular text files without following final symlinks. It exposes at
 most 5,000 manifest names, 96 KiB of selected context, and 16 KiB from any one file. Names matching a
@@ -170,6 +180,21 @@ rejection. Repository code can forge either evidence channel, so neither is an a
 Acceptance as `repeatable_base_failure` means only that the recorded candidate collected and produced
 one consistent issue-marked failure on every buggy-base run. It is not a hidden-fix differential,
 root-cause proof, semantic-validity judgment, or maintainer acceptance.
+
+### Dependency preparation prototype
+
+The repository contains a wheel-only preparation contract, not a completed executor. It accepts a
+duplicate-free reviewed closure of exact versions and SHA-256 hashes, renders the only requirements
+input, constructs a source-free networked `pip download` phase, validates bounded regular wheel ZIPs,
+and constructs a separate offline install into a dependency volume. Aggregate declared wheel
+expansion is capped at 512 MiB. Verification can mount a controller-owned dependency volume read-only
+at `/dependencies` while retaining `--network none`.
+
+Those primitives do not yet prove that a particular final volume was produced by those phases. A
+campaign controller must still create and inspect fresh labeled volumes, constrain ownership, record
+both container image IDs and phase outcomes, attest the wheelhouse before install, attest the tree
+after install, bind the causal chain into one receipt, and clean up. Docker bridge egress is not a
+network-layer registry allowlist. See [ADR 0007](decisions/0007-dependency-preparation-remains-a-gated-prototype.md).
 
 ### 6. Reports and replay
 

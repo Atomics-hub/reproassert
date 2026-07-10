@@ -1,6 +1,7 @@
 # 0005 — Bind source archives to reconstructed Git trees
 
-Status: accepted on 2026-07-10
+Status: accepted for the regular-file v1 path on 2026-07-10; extended by
+[ADR 0006](0006-repair-codeload-from-git-objects.md)
 
 ## Context
 
@@ -9,8 +10,8 @@ controller received. They do not independently prove that those bytes represent 
 by the commit. A checkout, worktree, or `git archive` would introduce additional trust in local Git
 configuration, filters, hooks, untracked files, export attributes, and VCS metadata.
 
-The execution workspace must also contain no `.git` directory/file, object database, refs, remote
-configuration, linked-worktree metadata, later commits, symlinks, or submodule checkout.
+The v1 execution workspace must also contain no `.git` directory/file, object database, refs,
+remote configuration, linked-worktree metadata, later commits, symlinks, or submodule checkout.
 
 ## Decision
 
@@ -36,8 +37,10 @@ configuration, linked-worktree metadata, later commits, symlinks, or submodule c
 ## Consequences
 
 Tracked symlinks, submodules/gitlinks, Git LFS pointer expansion, export-altered archives, or other
-trees that cannot be represented by the strict regular-file policy fail closed as unsupported
-preparation. They are not flattened or silently omitted.
+trees that cannot be represented by this strict regular-file policy fail closed as unsupported
+preparation. They are not flattened or silently omitted. ADR 0006 adds a separate object-authority
+path for safe tracked symlinks, empty gitlink boundaries, and exact repair of missing or
+export-altered blobs; it does not relax this receipt's contract.
 
 The design still trusts GitHub's API and codeload service, DNS/TLS and the CA store, the controller
 host, parser/runtime correctness, and Git's SHA-1 object identity. It is not independent
