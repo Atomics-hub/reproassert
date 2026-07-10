@@ -17,6 +17,8 @@ The benchmark asks one narrow question: given only a public issue snapshot and t
   spend authorization (or a declared offline generator) exist.
 - `source-preparation-baseline.json` records the 2026-07-10 no-model exact-source pass: 16/20
   accepted and independently reverified, with four fail-closed compatibility diagnoses.
+- `object-source-preparation-baseline.json` records the follow-up object-authority pass: all 20/20
+  accepted and independently reverified, including exact symlink, gitlink, and repaired Git blobs.
 - `results.jsonl` is the append-only ledger for scored case records. It is intentionally empty at freeze time.
 - `ledger/smoke-events.jsonl` and `ledger/scored-events.jsonl` are separate canonical,
   hash-chained all-attempt event ledgers. Both are intentionally empty.
@@ -89,6 +91,15 @@ endpoint, materializes and rechecks a metadata-free workspace, removes that work
 distinct v2 receipt last. It never overwrites the regular-file receipt directory. Gitlinks stay
 empty and uninitialized; truncated trees, unsafe symlink chains, and excess repair sets fail closed.
 No object-source receipt index or readiness mutation is implemented.
+
+The checked-in [object-source preparation baseline](object-source-preparation-baseline.json) records
+20/20 accepted and independently reverified receipts. Across the cohort, four archive paths differed
+from the authoritative Git tree and three unique blobs required a raw fixed-host fallback; the other
+mismatch reused an exact blob already present in the archive. The materialized trees contained 16
+tracked symlinks and one empty gitlink boundary. Median local preparation was 3.533 seconds and
+median fresh reverify was 1.952 seconds on this one machine. Those are source-transport timings, not
+generation or benchmark-runtime evidence. The private archives/receipts remain uncommitted, no
+object-source index exists, and campaign readiness remains false.
 
 The checked-in [source preparation baseline](source-preparation-baseline.json) is a compact local
 evidence record, not a receipt index or benchmark result. Sixteen cases reconstructed their Git root

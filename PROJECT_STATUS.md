@@ -4,9 +4,11 @@ Last updated: 2026-07-10
 
 ## Current verdict
 
-**GO for the bounded local Python/pytest product slice. The historical generation campaign is
-BLOCKED pending trustworthy issue snapshots, complete exact-source preparation, dependency images,
-and evaluator isolation. Hosted-product and demand claims remain deferred.**
+**GO for the bounded local Python/pytest product slice. Exact source preparation now covers and
+freshly reverifies all 20 frozen repositories. The historical generation campaign remains BLOCKED
+pending a frozen v0.2 snapshot cohort with trusted captures, causally proven dependency/evaluator
+packages, and production generator/evaluator isolation. Hosted-product and demand claims remain
+deferred.**
 
 ## Verified now
 
@@ -38,15 +40,35 @@ and evaluator isolation. Hosted-product and demand claims remain deferred.**
   codeload `export-subst` byte change. This used no model, authorized no spend, and changed no
   campaign/result/ledger bytes. See
   [`benchmarks/v0.1/source-preparation-baseline.json`](benchmarks/v0.1/source-preparation-baseline.json).
+- Exact-object source preparation follow-up: 20/20 receipts accepted and independently reverified.
+  Codeload is bounded bulk transport, not authority; the controller reconstructed complete Git
+  trees, repaired four mismatched archive paths using three raw exact-OID fallback fetches, preserved
+  16 root-confined tracked symlinks, and represented one gitlink as an empty uninitialized directory.
+  Median local prepare/reverify time was 3.533/1.952 seconds. Private archives/receipts are not
+  committed, no object-source index exists, no model ran, and campaign readiness stayed false. See
+  [`benchmarks/v0.1/object-source-preparation-baseline.json`](benchmarks/v0.1/object-source-preparation-baseline.json).
 - A standalone real-Docker generator/evaluator mount canary passed its positive and negative
   sentinel controls and cleanup. It is synthetic infrastructure evidence, not proof that the
   production benchmark generator is isolated.
-- Historical snapshot validation is fail-closed. The v0.1 `pre_fix_source_snapshot` label is not
-  currently supportable, and the v0.2 draft projection refuses use until independent raw-history
-  derivation/redaction is implemented.
-- Public source milestone on protected `main` at commit `e96ed6585aff6385cc490d53ef8212f13076a26c`:
-  all nine CI jobs pass, including Python 3.10-3.14, distribution smoke tests, and the live Docker
-  integration fixture.
+- Historical snapshot validation is fail-closed. The v0.1 `pre_fix_source_snapshot` label remains
+  unsupported. The v0.2 draft now has an offline-only producer that requires complete issue edit
+  history, selects the last revision before fixing-PR publication, reruns exact redaction, and
+  independently rederives the durable receipt. A live self-owned issue/PR fixture rederived the
+  expected pre-publication revision; its bounded proof record is
+  [`evidence/snapshot-producer-self-fixture.json`](evidence/snapshot-producer-self-fixture.json).
+  There is still no authenticated collector or frozen v0.2 cohort; capture authenticity, fixing-PR
+  selection, and human privacy review remain trusted inputs.
+- Hash-locked wheel preparation primitives now cover strict plans, fixed source-free download and
+  offline-install argv, bounded hostile-wheel inspection, a 512 MiB aggregate declared expansion
+  cap, deterministic receipt fields, and an optional read-only dependency mount. Red-team review
+  found no P0 but confirmed that fresh-volume ownership, inspected phase execution, image IDs, and
+  wheelhouse-to-installed-tree causality are not yet implemented; dependency readiness remains 0/20.
+- Prior regular-source milestone is public on protected `main` at commit
+  `be5bdc2bd49f3ffa9b88fa5b30a7d6536f1b68d8`. The exact-object/snapshot/dependency implementation is
+  bound to commit `24571bb72abd4c618a5a1e0fd8a881b403303519`: locally, 572 tests pass at 84.13%
+  branch coverage on Python 3.10, the complete non-Docker suite passes on Python 3.11-3.14, clean
+  wheel/sdist installs pass, two real Docker integration tests and the isolation canary pass, and
+  the site rebuild/audit is green. No GitHub Actions run was used to reach this state.
 - Public proof site and canonical report schema are live over HTTPS at
   <https://atomics-hub.github.io/reproassert/>. The deployed desktop/mobile surface has no detected
   horizontal overflow, overlap, console errors, or warnings.
@@ -68,9 +90,12 @@ and evaluator isolation. Hosted-product and demand claims remain deferred.**
 
 - Historical benchmark results: **0/20 run**.
 - Semantically valid benchmark reproductions: **0/20 measured**.
-- Exact-source receipts: **16/20 accepted and independently reverified; four unsupported**.
+- Regular-file v1 source receipts: **16/20 accepted and independently reverified; four unsupported
+  under that deliberately narrower policy**.
 - Provenance-verified historical issue snapshots: **0/20 campaign-ready**.
 - Prepared dependency images and hidden-fix evaluator packages: **0/20 campaign-ready**.
+- Exact-object source receipts: **20/20 accepted and independently reverified locally**; private
+  receipts are not a public index and have not changed the frozen campaign prerequisite.
 - Independently validated or maintainer-accepted tests: **0**.
 - Maintainers willing to use it again: **0**.
 - Complete model cost across successful and failed generation attempts, warm runtime, and hosted
@@ -79,15 +104,15 @@ and evaluator isolation. Hosted-product and demand claims remain deferred.**
 
 ## Next exact build slice
 
-1. Land the source-attestation/preparation slice through one batched pull request and one existing CI
-   cycle; do not create a release or reuse the immutable `v0.1.0` tag.
-2. Choose and implement a sandboxed Git-object acquisition path that can represent tracked
-   symlinks, gitlinks, and `export-subst` repositories without silently changing bytes, or freeze a
-   corrected v0.2 cohort and record the compatibility boundary before inference.
-3. Implement independent historical raw-history derivation/redaction for the v0.2 snapshot receipt;
-   keep current-live issue text disallowed as a historical fallback.
-4. Build bounded dependency images plus the scored evaluator/oracle boundary, then run the real
-   isolation canary against that path.
+1. Publish the exact-object/snapshot/dependency preparation slice through one batched pull request
+   and one planned existing CI cycle; do not create a release or reuse the immutable `v0.1.0` tag.
+2. Freeze a corrected v0.2 cohort only after its evaluator-side fixing-PR mappings, raw GraphQL
+   captures, privacy reviews, and generator-safe projections are complete and independently audited.
+3. Implement the dependency executor: fresh labeled/empty volumes, constrained ownership, inspected
+   image IDs and phase outcomes, wheelhouse-before-install and tree-after-install attestations,
+   bounded disk/egress policy, causal receipt, and cleanup.
+4. Wire exact-object source plus prepared dependencies into the scored generator/evaluator split and
+   rerun the real isolation canary against that production path.
 5. Authorize any model smoke only after every prerequisite is true and a separate explicit spend cap
    is recorded. Prepare maintainer-validation packets, but contact nobody without exact approval.
 

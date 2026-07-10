@@ -4,11 +4,34 @@ All notable changes to ReproAssert will be documented here. The format follows [
 
 ## [Unreleased]
 
+### Added
+
+- Exact Git-object benchmark preparation and replay commands with complete Trees API
+  reconstruction, bounded codeload transport, exact raw-blob repair, root-confined tracked
+  symlinks, empty gitlink boundaries, deterministic receipts, and a public 20/20 no-model baseline.
+- Offline historical snapshot production from complete GitHub edit-history evidence with strict
+  pre-publication selection, fixing-PR redaction, privacy-review commitments, durable-file
+  rederivation, and a self-owned live proof record.
+- Experimental hash-locked wheel preparation primitives for reviewed closures, source-free download,
+  offline install, hostile-wheel bounds, deterministic receipt identities, and optional read-only
+  dependency mounts. The causal executor remains explicitly gated.
+
+### Changed
+
+- Documented a local-first CI budget: batch coherent pull-request updates, diagnose failures locally,
+  and require an explicit cost rationale for new workflows, triggers, matrices, or metered services.
+
 ### Fixed
 
 - Made tag-release staging remove the `uv build`-generated `dist/.gitignore` sentinel and added a
   guarded manual recovery path that rebuilds an existing immutable tag at its exact verified commit,
   with a signed attestation binding the tag to that commit alongside workflow provenance.
+
+### Security
+
+- Added adversarial Git-object, codeload, raw-blob, symlink-chain, snapshot-history, wheel-archive,
+  resource-policy, receipt-tampering, and private-I/O regressions. Red-team review found no remaining
+  P0/P1 exact-source boundary bypass; aggregate declared wheel expansion is capped at 512 MiB.
 
 ## [0.1.0] - 2026-07-09
 

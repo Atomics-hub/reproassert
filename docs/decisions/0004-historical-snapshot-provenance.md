@@ -44,6 +44,11 @@ calls, but the v0.1 historical-snapshot prerequisite remains false. No smoke or 
 start against these cases. Public claims stay limited to a hidden-fix historical evaluation design,
 not “before anyone attempted a fix.”
 
+The v0.2-draft offline producer now implements independent derivation for its supported frozen
+GraphQL capture shape. That closes the code-path gap described here, but not the evidence gap: there
+is no authenticated collector or frozen v0.2 cohort, and evaluator selection of the fixing PR,
+capture authenticity, and the human privacy review remain trusted inputs.
+
 Primary implementation evidence:
 
 - [SWE-bench issue and hint extraction](https://github.com/SWE-bench/SWE-bench/blob/main/swebench/collect/utils.py)

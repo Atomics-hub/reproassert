@@ -50,3 +50,7 @@ rederives it through the strict default validator, and writes exclusively. Its o
 receipt/snapshot digests and paths, not raw history or the fixing-PR basis. A successful derivation is
 not proof that the capture is authentic, the selected fixing PR is correct, or the human review was
 sound.
+
+A bounded [self-owned fixture record](../../evidence/snapshot-producer-self-fixture.json) documents
+one live derivation without committing raw history or manufacturing a privacy-approved receipt. It
+is infrastructure proof only and is not a member of a v0.2 cohort.
