@@ -1,6 +1,6 @@
 # ReproAssert evaluation protocol
 
-Version 0.1 evaluates whether ReproAssert can turn a historical GitHub issue into a verified failing pytest reproduction before a fix is attempted. The protocol is frozen before scored runs and separates generation from hidden-fix evaluation.
+Version 0.1 evaluates whether ReproAssert can turn a historical GitHub issue into a verified failing pytest reproduction before applying the known human fix. The protocol is frozen before scored runs and separates generation from hidden-fix evaluation. Its historical issue-snapshot limitation is recorded in the [v0.1 provenance erratum](../benchmarks/v0.1/ERRATA.md).
 
 Hardening note (2026-07-10): before any live-model smoke or scored attempt, the executable contract
 added hash-chained all-attempt accounting, cross-field claim invariants, explicit unknown-cost state,
@@ -69,11 +69,22 @@ fresh workspaces, does not reuse smoke candidates, and does not feed one case's 
 | --- | --- |
 | Repository and canonical issue URL | Fixing pull request URL or number |
 | Exact buggy base SHA and checked-out base tree | Fixed commit and production patch |
-| Frozen pre-fix issue title and body | Developer-written tests and gold patch |
+| Provenance-verified historical issue title and body | Developer-written tests and gold patch |
 | Repository-owned documentation and tests present at the base SHA | Oracle symptom rubric, decoys, and alternative-fix controls |
 | Declared resource policy and generated-run feedback | Other benchmark cases' hidden artifacts or verdicts |
 
-Issue comments are excluded. Backlinks or automatic references to a fixing pull request are stripped from the issue snapshot. The snapshot hash, capture time, cutoff, included fields, and stripping decision are recorded. Generation has no access to benchmark source records that encode a fix.
+Issue comments are excluded. Historical text is accepted only from a trusted offline receipt that
+binds its bytes, evidence grade, history-completeness statement, cutoff, capture method, and exact
+redaction decision. A current live issue response is never a historical fallback. Raw revision
+history and fixing-PR identity remain evaluator-only. The v0.1 manifest's stronger
+`pre_fix_source_snapshot` label is currently unsubstantiated, so that campaign remains blocked; see
+[ADR 0004](decisions/0004-historical-snapshot-provenance.md).
+
+The v0.2-draft receipt validator currently checks only structural consistency and external byte
+commitments. It does not yet parse raw issue-edit history, select the revision, and rerun the exact
+fix-link redaction itself. Its default API therefore rejects projection as
+`benchmark_snapshot_producer_unverified`; the fixture-only override is not evidence and cannot make
+a campaign ready.
 
 The trusted preparation controller resolves the full 40-character base SHA and creates a content-addressed source archive from exactly that commit. Generation receives a fresh extraction of that archive, never the repository clone used to create it. Before launch, the controller verifies that the archive and extraction contain no `.git` directory or file, remote configuration, refs, reflogs, object database, alternates, linked-worktree metadata, or future commit history. It records the archive digest, extracted-tree digest, source SHA, and preparation tool version. The fixed archive, production patch, and any clone containing later history remain in a separate evaluator-only trust domain.
 
@@ -101,7 +112,10 @@ Minimality is reviewed, not enforced by an arbitrary line threshold. Fixtures an
 
 ## Scored procedure
 
-1. **Freeze inputs.** Verify the manifest and schemas; snapshot issue title/body at the declared pre-fix cutoff; freeze campaign budgets; construct and hash exact-SHA base archives with no Git metadata or future history. Neither cohort nor scoring rules change after generation output is observed.
+1. **Freeze inputs.** Verify the manifest and schemas; validate a trusted historical issue-snapshot
+   receipt at the declared cutoff; freeze campaign budgets; construct and hash exact-SHA base
+   archives with no Git metadata or future history. Neither cohort nor scoring rules change after
+   generation output is observed.
 2. **Prepare dependencies.** Build the case image with bounded network policy, record the digest and cold cost/time, then disable network. A repository that cannot be prepared for benchmark reasons is `benchmark_infrastructure_error`; a setup error caused by the candidate is `setup_failure`.
 3. **Generate on base.** Run ReproAssert against a fresh extraction of the exact-SHA base archive with only generator-visible inputs. Preserve every started attempt, candidate, bounded log, time, token, and cost record; choose one candidate without oracle feedback.
 4. **Inspect policy and patch.** Reject empty/unapplicable patches and forbidden file or behavior changes before executing code. Parse the diff; do not rely only on filename conventions or model declarations.

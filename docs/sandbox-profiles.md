@@ -104,6 +104,13 @@ for a bundled buggy slug fixture, cleanup, and three passes for the bundled fixe
 This is one fixture on one machine. It does not establish cross-platform compatibility, production
 hardening, escape resistance, benchmark success, or a semantic reproduction rate.
 
+On 2026-07-10, `reproassert sandbox isolation-canary --json-output` also passed locally. The
+canary's evaluator-only view read a random sentinel, while the generator view had exactly one
+separate read-only `/workspace` volume and could not find it. The canary additionally inspected its
+effective image ID, network, mounts, user, capabilities, no-new-privileges flag, resources, tmpfs,
+bounded log driver, process-environment clearing, and cleanup. This is a narrow mount-policy control;
+it does not strengthen ordinary Docker into a hosted hostile multi-tenant boundary.
+
 ## `gvisor-python-pytest` — proposed enhanced Linux profile
 
 An enhanced Linux path may retain the same controller, image, argv, and report contract while using

@@ -54,10 +54,18 @@ It rejects alternate schemes, ports, credentials, query strings, fragments, non-
 1. fetches title and body from `api.github.com` with byte limits;
 2. normalizes an already-full SHA or resolves a requested symbolic ref through the commits API;
 3. records the exact 40-hex SHA;
-4. downloads the SHA-pinned archive from `codeload.github.com`; and
-5. safely extracts only bounded regular files into a private `0700` run directory.
+4. fetches that commit's root tree OID from GitHub's bounded Git-database endpoint;
+5. downloads the SHA-pinned archive from `codeload.github.com`;
+6. safely extracts only bounded regular files into a private `0700` run directory; and
+7. rewalks the inert extraction through no-follow directory descriptors, computes an independent
+   canonical SHA-256 tree digest, reconstructs every Git blob/tree SHA-1 object ID, and requires the
+   root tree to equal the commit metadata before generation starts.
 
-The source archive is limited to 64 MiB compressed. Extraction permits at most 20,000 members, 256 MiB unpacked data, 4,096-byte paths, and 255-byte path components. Symlinks, hard links, devices, unsafe traversal, duplicate destinations, malformed archives, and special files are rejected.
+The source archive is limited to 64 MiB compressed. Extraction independently caps members, files,
+directories, per-file bytes, 256 MiB total unpacked data, 4,096-byte paths, and 255-byte path
+components. Symlinks, hard links, devices, unsafe traversal, duplicate destinations, case/Unicode
+collisions, every canonical `.git` alias, malformed archives, and special files are rejected. The
+post-extraction attestor repeats the type/path/count checks and detects same-run filesystem changes.
 
 ## Bounded source context
 
@@ -125,6 +133,16 @@ The controller stages the extracted source into a controller-owned Docker volume
 
 The sandbox image contains Python 3.12 and hash-locked pytest dependencies. The strict profile does not install repository dependencies. This is a deliberate initial limit and a frequent expected source of `setup_failure` on real repositories.
 
+`reproassert sandbox isolation-canary` exercises a standalone synthetic generator/evaluator mount
+profile with two real containers. It is not wired to the current host-side generators and cannot by
+itself satisfy the benchmark's oracle-isolation prerequisite. A positive control reads a random evaluator-only sentinel; a generator-view container
+has exactly one separate source volume and must neither mount the evaluator path nor find the
+sentinel hash in its bounded workspace. Docker's effective image, mounts, network, user,
+capabilities, security options, resources, environment clearing, and cleanup are inspected before
+the receipt can pass. Only the sentinel SHA-256 is returned. The configuration hash commits the
+full expected container policy, scripts, image environment, package version, and optional
+caller-supplied tool Git SHA.
+
 Read [sandbox profiles](sandbox-profiles.md), [security model](security-model.md), and [threat model](threat-model.md) for the complete controls and residual risks.
 
 ## Collection and result classification
@@ -153,9 +171,20 @@ The report includes full candidate content because replay must validate and rest
 
 After writing the artifacts, the controller removes its downloaded archive, extracted source tree, Docker containers, and Docker volumes. Cleanup is best effort after abrupt host or Docker failure; stale controller-labeled resources remain a residual operational concern.
 
+Benchmark `prepare-source` is intentionally different: it preserves the source archive and writes
+its receipt last in a private case directory, while deleting the extraction. `verify-source` stages
+a private copy, independently re-fetches the commit tree from the frozen manifest/base SHA, repeats
+extraction and attestation, and requires checked cleanup before returning success. The 20-receipt
+index is deterministic and inert; it does not mutate a campaign, ledger, generator, or evaluator.
+
 ## Replay
 
-Replay reads at most 1 MiB from a non-symlink regular report file, validates schema `1.0`, canonical issue URL, repository relationship, full source SHA, candidate hash, candidate policy, and repeat count. It refetches that exact SHA, reruns the same bounded verifier policy, and emits a new report and patch.
+Replay reads at most 1 MiB from a non-symlink regular report file and validates the bounded fields it
+consumes. It refetches the exact commit metadata and archive, requires the archive SHA-256 to match
+the report, reconstructs and checks the Git root tree again, compares the recorded canonical tree
+SHA-256 when present, then reruns the controller-owned verifier policy. Older schema-1.0 reports
+without the added tree fields still receive a fresh commit-tree attestation; they do not gain a
+recorded historical tree digest retroactively.
 
 The display command stored in the report is never used as execution input.
 

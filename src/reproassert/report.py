@@ -23,6 +23,9 @@ class ReplaySpec:
     issue_title: str
     issue_body_sha256: str
     source_sha: str
+    archive_sha256: str
+    tree_sha256: str | None
+    git_tree_oid: str | None
     candidate: ValidatedCandidate
     candidate_sha256: str
     repeats: int
@@ -39,7 +42,7 @@ def load_replay_spec(report_path: Path) -> ReplaySpec:
     data = _read_regular_bounded(report_path, MAX_REPORT_BYTES)
     try:
         report = json.loads(data)
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as exc:
         raise PolicyRejection("invalid_report", "Replay report is not valid JSON.") from exc
     if not isinstance(report, dict) or report.get("schema_version") != REPORT_SCHEMA_VERSION:
         raise PolicyRejection("invalid_report", "Unsupported report schema.")
@@ -63,6 +66,19 @@ def load_replay_spec(report_path: Path) -> ReplaySpec:
     repository_url = _text(source_data.get("repository_url"), "source.repository_url")
     if repository_url != issue.repository_url:
         raise PolicyRejection("invalid_report", "Issue and source repository do not match.")
+    archive_sha256 = _sha256(source_data.get("archive_sha256"), "source.archive_sha256")
+    tree_value = source_data.get("tree_sha256")
+    git_tree_value = source_data.get("git_tree_oid")
+    if tree_value is None and git_tree_value is None:
+        tree_sha256 = None
+        git_tree_oid = None
+    elif tree_value is None or git_tree_value is None:
+        raise PolicyRejection("invalid_report", "Source tree attestation fields are incomplete.")
+    else:
+        tree_sha256 = _sha256(tree_value, "source.tree_sha256")
+        git_tree_oid = _sha1(git_tree_value, "source.git_tree_oid")
+        if source_data.get("tree_attestation_algorithm") != "reproassert-source-tree-v1":
+            raise PolicyRejection("invalid_report", "Source tree attestation algorithm is invalid.")
 
     payload = {
         "test_content": _text(candidate_data.get("test_content"), "candidate.test_content"),
@@ -83,6 +99,9 @@ def load_replay_spec(report_path: Path) -> ReplaySpec:
         issue_title,
         issue_body_sha256,
         sha,
+        archive_sha256,
+        tree_sha256,
+        git_tree_oid,
         candidate,
         recorded_hash,
         repeats,
@@ -119,3 +138,17 @@ def _text(value: object, name: str) -> str:
     if not isinstance(value, str):
         raise PolicyRejection("invalid_report", f"{name} must be text.")
     return value
+
+
+def _sha256(value: object, name: str) -> str:
+    text = _text(value, name)
+    if len(text) != 64 or any(character not in "0123456789abcdef" for character in text):
+        raise PolicyRejection("invalid_report", f"{name} is not a SHA-256 digest.")
+    return text
+
+
+def _sha1(value: object, name: str) -> str:
+    text = _text(value, name)
+    if len(text) != 40 or any(character not in "0123456789abcdef" for character in text):
+        raise PolicyRejection("invalid_report", f"{name} is not a Git object ID.")
+    return text

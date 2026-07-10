@@ -2,6 +2,11 @@
 
 This directory freezes ReproAssert's first public historical benchmark before any scored generation run. Its status is `preregistered_no_results`: the cohort and pass/fail rules are published, but no result is claimed yet.
 
+**Provenance blocker:** the frozen `pre_fix_source_snapshot` label is not yet supported by trusted
+historical receipts for all 20 cases. The campaign stays blocked at zero authorized spend and 0/20;
+see [`ERRATA.md`](ERRATA.md). A current live issue response is never accepted as a historical
+fallback.
+
 The benchmark asks one narrow question: given only a public issue snapshot and the exact buggy repository commit, can ReproAssert produce one test-only patch that reliably fails for the reported symptom, passes after a hidden human fix, and survives blinded semantic review?
 
 ## Contents
@@ -10,6 +15,8 @@ The benchmark asks one narrow question: given only a public issue snapshot and t
 - `campaign.json` is the deny-by-default scored-run freeze. It currently blocks inference and
   enforces a zero paid-provider budget until the missing evaluator prerequisites and an explicit
   spend authorization (or a declared offline generator) exist.
+- `source-preparation-baseline.json` records the 2026-07-10 no-model exact-source pass: 16/20
+  accepted and independently reverified, with four fail-closed compatibility diagnoses.
 - `results.jsonl` is the append-only ledger for scored case records. It is intentionally empty at freeze time.
 - `ledger/smoke-events.jsonl` and `ledger/scored-events.jsonl` are separate canonical,
   hash-chained all-attempt event ledgers. Both are intentionally empty.
@@ -26,6 +33,47 @@ Validate the freeze without installing ReproAssert or any third-party package:
 ```console
 python3 scripts/validate_benchmark.py
 ```
+
+### Exact-source preparation (no model call)
+
+The preparation-only CLI pins this manifest's exact checked-in SHA-256, fetches fresh Git commit-tree
+metadata without authentication, downloads the codeload archive, and writes the archive plus a
+deterministic receipt under a private `0700` output root:
+
+```console
+reproassert benchmark prepare-source rk-v0.1-018 \
+  --manifest benchmarks/v0.1/manifest.json \
+  --output-root <private-output-root> \
+  --tool-git-sha <exact-controller-git-sha>
+
+reproassert benchmark verify-source \
+  <private-output-root>/rk-v0.1-018/benchmark-source-receipt.json \
+  --manifest benchmarks/v0.1/manifest.json \
+  --case-id rk-v0.1-018
+```
+
+After all 20 case receipts exist, `benchmark build-source-index` re-fetches every commit tree,
+re-extracts and reattests every archive, and writes one deterministic index. It refuses missing,
+duplicate, mixed-manifest, mixed-policy, mixed-producer, noncanonical, or tampered receipts:
+
+```console
+reproassert benchmark build-source-index \
+  --manifest benchmarks/v0.1/manifest.json \
+  --receipts-root <private-output-root> \
+  --tool-git-sha <exact-index-builder-git-sha>
+```
+
+These commands never invoke a generator/model or edit the campaign/ledger. Source-only success does
+not repair the historical-snapshot erratum and does not flip `exact_sha_archives_ready` or any other
+campaign prerequisite. Archives stay in private user state and are intentionally not committed to
+this repository.
+
+The checked-in [source preparation baseline](source-preparation-baseline.json) is a compact local
+evidence record, not a receipt index or benchmark result. Sixteen cases reconstructed their Git root
+trees and passed a second fresh-metadata verification. Four failed closed: one gitlink/submodule,
+two tracked symlinks, and one codeload `export-subst` mutation. Because the private archives and
+receipts are not committed and all 20 did not pass, the required deterministic receipt index was not
+built and `exact_sha_archives_ready` remains false.
 
 Regenerate the deterministic projection to stdout (the validator also requires byte identity with
 the checked-in `summary.json`):
@@ -77,7 +125,11 @@ The public manifest contains only neutral case IDs, repository names, issue URLs
 
 The trusted preparation controller resolves the declared full base SHA and produces a content-addressed source archive from that exact commit. The generation workspace is extracted from that archive, not mounted from a clone: it contains no `.git` directory or file, remote configuration, refs, reflogs, object database, alternate worktree metadata, or commits after the base SHA. The archive digest and extracted-tree digest are recorded, and the fixed source archive remains evaluator-only.
 
-After dependency preparation, generation runs with network access disabled. The generator receives the frozen pre-fix issue title/body and exact-SHA base archive only. Issue comments and links back to the fixing pull request are excluded. One candidate is selected without consulting the hidden fix.
+After dependency preparation, generation runs with network access disabled. The generator may
+receive only a provenance-verified historical issue title/body and exact-SHA base archive. Issue
+comments are excluded; redaction is receipt-bound and evaluator-controlled. The fixing-PR identity
+and raw history never enter the generator trust domain. One candidate is selected without consulting
+the hidden fix.
 
 The cohort is immutable for v0.1. A failed case may not be replaced. A factual correction requires a documented erratum; any change that can affect a score requires a new benchmark version. Every
 attempt and infrastructure error remains in the append-only event ledger. `results.jsonl` receives

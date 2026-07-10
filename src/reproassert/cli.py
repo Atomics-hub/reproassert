@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from dataclasses import asdict
 from pathlib import Path
 
 import click
@@ -10,6 +11,14 @@ from rich.panel import Panel
 from rich.table import Table
 
 from reproassert import __version__
+from reproassert.benchmark_source import (
+    SOURCE_INDEX_FILENAME,
+    SOURCE_RECEIPT_FILENAME,
+    build_source_index,
+    load_frozen_manifest,
+    prepare_source_case,
+    verify_source_receipt,
+)
 from reproassert.errors import ReproAssertError
 from reproassert.generator import (
     DEFAULT_OPENAI_MODEL,
@@ -19,9 +28,10 @@ from reproassert.generator import (
     StaticGenerator,
 )
 from reproassert.intake import parse_issue_url
-from reproassert.safeio import sanitize_log
+from reproassert.isolation_canary import IsolationCanaryResult, run_isolation_canary
+from reproassert.safeio import require_private_directory, sanitize_log
 from reproassert.sandbox import DEFAULT_IMAGE, DockerSandbox, SandboxPolicy
-from reproassert.schema import report_schema_text
+from reproassert.schema import SCHEMA_FILENAMES, schema_text
 from reproassert.workflow import (
     WorkflowResult,
     candidate_from_file,
@@ -38,17 +48,185 @@ def _default_run_base() -> Path:
     return state_home / "reproassert" / "runs"
 
 
+def _default_benchmark_source_root() -> Path:
+    state_home = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state"))
+    return state_home / "reproassert" / "benchmark-sources" / "v0.1"
+
+
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
 @click.version_option(__version__, prog_name="reproassert")
 def main() -> None:
     """The test before the fix: generate and verify failing pytest candidates."""
 
 
-@main.command("schema")
-def schema_command() -> None:
-    """Print the bundled ReproAssert report JSON Schema."""
+@main.group("benchmark")
+def benchmark_group() -> None:
+    """Prepare inert benchmark evidence without running a generator or model."""
 
-    click.echo(report_schema_text(), nl=False)
+
+@benchmark_group.command("prepare-source")
+@click.argument("case_id")
+@click.option(
+    "--manifest",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--output-root",
+    type=click.Path(path_type=Path, file_okay=False),
+    default=_default_benchmark_source_root,
+    show_default="private user state directory",
+)
+@click.option("--tool-git-sha", required=True, help="Exact 40-hex controller revision.")
+@click.option("--timeout-seconds", type=click.FloatRange(min=0, min_open=True), default=15.0)
+def benchmark_prepare_source(
+    case_id: str,
+    manifest: Path,
+    output_root: Path,
+    tool_git_sha: str,
+    timeout_seconds: float,
+) -> None:
+    """Prepare one exact source archive and deterministic receipt."""
+
+    try:
+        _ensure_private_output_root(output_root)
+        receipt_path = prepare_source_case(
+            manifest,
+            case_id,
+            output_root,
+            tool_git_sha=tool_git_sha,
+            timeout_seconds=timeout_seconds,
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(
+        json.dumps(
+            {
+                "case_id": case_id,
+                "receipt": str(receipt_path),
+                "archive": str(receipt_path.parent / "source.tar.gz"),
+                "campaign_readiness_changed": False,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+@benchmark_group.command("verify-source")
+@click.argument("receipt_path", type=click.Path(path_type=Path, exists=True, dir_okay=False))
+@click.option(
+    "--manifest",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option("--case-id", required=True)
+@click.option("--expected-receipt-sha256")
+@click.option("--timeout-seconds", type=click.FloatRange(min=0, min_open=True), default=15.0)
+def benchmark_verify_source(
+    receipt_path: Path,
+    manifest: Path,
+    case_id: str,
+    expected_receipt_sha256: str | None,
+    timeout_seconds: float,
+) -> None:
+    """Re-fetch commit metadata, then rehash, extract, and attest one receipt."""
+
+    try:
+        receipt = verify_source_receipt(
+            receipt_path,
+            manifest_path=manifest,
+            expected_case_id=case_id,
+            expected_receipt_sha256=expected_receipt_sha256,
+            timeout_seconds=timeout_seconds,
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    source = receipt["source"]
+    if not isinstance(source, dict):
+        raise ReproAssertError("benchmark_source_receipt", "Verified source record is invalid.")
+    attestation = source["attestation"]
+    archive = source["archive"]
+    if not isinstance(attestation, dict) or not isinstance(archive, dict):
+        raise ReproAssertError("benchmark_source_receipt", "Verified source evidence is invalid.")
+    click.echo(
+        json.dumps(
+            {
+                "case_id": case_id,
+                "archive_sha256": archive["sha256"],
+                "git_tree_oid": source["github_root_tree_oid"],
+                "tree_sha256": attestation["tree_sha256"],
+                "verified": True,
+                "campaign_readiness_changed": False,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+@benchmark_group.command("build-source-index")
+@click.option(
+    "--manifest",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--receipts-root",
+    type=click.Path(path_type=Path, exists=True, file_okay=False),
+    required=True,
+)
+@click.option("--output", type=click.Path(path_type=Path, dir_okay=False))
+@click.option("--tool-git-sha", required=True, help="Exact 40-hex index-builder revision.")
+@click.option("--timeout-seconds", type=click.FloatRange(min=0, min_open=True), default=15.0)
+def benchmark_build_source_index(
+    manifest: Path,
+    receipts_root: Path,
+    output: Path | None,
+    tool_git_sha: str,
+    timeout_seconds: float,
+) -> None:
+    """Reverify exactly 20 source receipts and write an inert deterministic index."""
+
+    try:
+        frozen = load_frozen_manifest(manifest)
+        receipt_paths = [f"{case.id}/{SOURCE_RECEIPT_FILENAME}" for case in frozen.cases]
+        destination = output or receipts_root / SOURCE_INDEX_FILENAME
+        index_path = build_source_index(
+            manifest,
+            receipts_root,
+            receipt_paths,
+            destination,
+            tool_git_sha=tool_git_sha,
+            timeout_seconds=timeout_seconds,
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(
+        json.dumps(
+            {
+                "index": str(index_path),
+                "receipt_count": len(receipt_paths),
+                "campaign_readiness_changed": False,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+@main.command("schema")
+@click.option(
+    "name",
+    "--name",
+    type=click.Choice(sorted(SCHEMA_FILENAMES)),
+    default="report",
+    show_default=True,
+)
+def schema_command(name: str) -> None:
+    """Print one exact JSON Schema bundled with the installed controller."""
+
+    click.echo(schema_text(name), nl=False)
 
 
 @main.command()
@@ -85,6 +263,27 @@ def sandbox_build(image: str) -> None:
     except ReproAssertError as exc:
         _fail(exc)
     console.print(f"[green]Built[/green] {image}\n[dim]{image_id}[/dim]")
+
+
+@sandbox_group.command("isolation-canary")
+@click.option("--image", default=DEFAULT_IMAGE, show_default=True)
+@click.option(
+    "--tool-git-sha",
+    help="Optional exact controller revision to bind into the receipt; no Git command is run.",
+)
+@click.option("--json-output", is_flag=True, help="Print the complete bounded receipt as JSON.")
+def sandbox_isolation_canary(image: str, tool_git_sha: str | None, json_output: bool) -> None:
+    """Run a standalone synthetic generator/evaluator mount-policy canary."""
+
+    try:
+        result = run_isolation_canary(
+            DockerSandbox(SandboxPolicy(image=image)), tool_git_sha=tool_git_sha
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    _render_isolation_canary(result, json_output=json_output)
+    if not result.accepted:
+        raise click.exceptions.Exit(1)
 
 
 @main.command("issue")
@@ -299,6 +498,34 @@ def _render_result(result: WorkflowResult, *, json_output: bool) -> None:
     click.echo(f"patch    {result.patch_path}")
     click.echo(f"report   {result.report_path}")
     click.echo(f"replay   {result.replay_command}")
+
+
+def _render_isolation_canary(result: IsolationCanaryResult, *, json_output: bool) -> None:
+    payload = asdict(result)
+    payload["accepted"] = result.accepted
+    if json_output:
+        click.echo(json.dumps(payload, indent=2, sort_keys=True))
+        return
+    table = Table(title="Generator / evaluator isolation canary", box=None, show_header=False)
+    table.add_column("Check", style="bold")
+    table.add_column("Status")
+    table.add_row("Positive evaluator control", _status(result.positive_control_passed))
+    table.add_row("Generator sentinel absence", _status(result.negative_control_passed))
+    table.add_row("Cleanup", _status(result.cleanup_succeeded))
+    table.add_row("Image", f"[dim]{result.image_id}[/dim]")
+    table.add_row("Receipt", f"[dim]{result.config_sha256}[/dim]")
+    console.print(table)
+
+
+def _ensure_private_output_root(path: Path) -> None:
+    target = Path(path)
+    try:
+        target.mkdir(mode=0o700, parents=True)
+    except FileExistsError:
+        pass
+    else:
+        os.chmod(target, 0o700, follow_symlinks=False)
+    require_private_directory(target)
 
 
 def _status(ok: bool, detail: str | None = None) -> str:

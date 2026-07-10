@@ -1,0 +1,250 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Atomics-hub/reproassert/blob/main/schemas/benchmark-snapshot-receipt.schema.json",
+  "title": "ReproAssert historical issue snapshot receipt",
+  "description": "Draft structural contract for controller-only historical snapshot provenance. Independent producer rederivation is not implemented, so this schema alone is not scoring evidence.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "benchmark_version",
+    "identity",
+    "capture",
+    "history",
+    "cutoff",
+    "selected_revision",
+    "temporal_provenance",
+    "content",
+    "comments_excluded",
+    "redaction",
+    "privacy_review"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "benchmark_version": { "const": "0.2.0-draft" },
+    "identity": { "$ref": "#/$defs/identity" },
+    "capture": { "$ref": "#/$defs/capture" },
+    "history": { "$ref": "#/$defs/history" },
+    "cutoff": { "$ref": "#/$defs/cutoff" },
+    "selected_revision": { "$ref": "#/$defs/selectedRevision" },
+    "temporal_provenance": { "$ref": "#/$defs/temporalProvenance" },
+    "content": { "$ref": "#/$defs/content" },
+    "comments_excluded": { "const": true },
+    "redaction": { "$ref": "#/$defs/redaction" },
+    "privacy_review": { "$ref": "#/$defs/privacyReview" }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "gitSha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?Z$",
+      "format": "date-time"
+    },
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{2,127}$"
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["case_id", "repo", "issue_url", "issue_number", "base_sha"],
+      "properties": {
+        "case_id": { "type": "string", "pattern": "^rk-v0\\.2-[0-9]{3}$" },
+        "repo": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+        },
+        "issue_url": {
+          "type": "string",
+          "pattern": "^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/issues/[1-9][0-9]*$"
+        },
+        "issue_number": { "type": "integer", "minimum": 1 },
+        "base_sha": { "$ref": "#/$defs/gitSha" }
+      }
+    },
+    "capture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "captured_at",
+        "source",
+        "api",
+        "tool",
+        "raw_receipt_sha256",
+        "raw_receipt_bytes"
+      ],
+      "properties": {
+        "captured_at": { "$ref": "#/$defs/timestamp" },
+        "source": { "const": "trusted_local_receipt" },
+        "api": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "version", "request_sha256"],
+          "properties": {
+            "kind": { "enum": ["github_graphql", "trusted_archive"] },
+            "version": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]{0,99}$"
+            },
+            "request_sha256": { "$ref": "#/$defs/sha256" }
+          }
+        },
+        "tool": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "version", "git_sha"],
+          "properties": {
+            "name": { "$ref": "#/$defs/identifier" },
+            "version": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]{0,99}$"
+            },
+            "git_sha": { "$ref": "#/$defs/gitSha" }
+          }
+        },
+        "raw_receipt_sha256": { "$ref": "#/$defs/sha256" },
+        "raw_receipt_bytes": { "type": "integer", "minimum": 1, "maximum": 8388608 }
+      }
+    },
+    "history": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "complete",
+        "current_live_only",
+        "body_edits_complete",
+        "title_edits_complete",
+        "creation_revision_included",
+        "deleted_edits_present"
+      ],
+      "properties": {
+        "complete": { "type": "boolean" },
+        "current_live_only": { "type": "boolean" },
+        "body_edits_complete": { "type": "boolean" },
+        "title_edits_complete": { "type": "boolean" },
+        "creation_revision_included": { "type": "boolean" },
+        "deleted_edits_present": { "type": "boolean" }
+      }
+    },
+    "cutoff": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "policy",
+        "timestamp",
+        "publication_proven",
+        "basis_sha256",
+        "basis_bytes"
+      ],
+      "properties": {
+        "policy": { "const": "pre_solution_pr_publication" },
+        "timestamp": { "$ref": "#/$defs/timestamp" },
+        "publication_proven": { "type": "boolean" },
+        "basis_sha256": { "$ref": "#/$defs/sha256" },
+        "basis_bytes": { "type": "integer", "minimum": 1, "maximum": 1048576 }
+      }
+    },
+    "selectedRevision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provenance", "evidence_grade", "selected_at", "revision_sha256"],
+      "properties": {
+        "provenance": {
+          "enum": ["complete_issue_edit_history", "trusted_archival_snapshot"]
+        },
+        "evidence_grade": { "enum": ["complete_history", "trusted_archive"] },
+        "selected_at": { "$ref": "#/$defs/timestamp" },
+        "revision_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "temporalProvenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "issue_created_at", "selected_revision_at", "reason"],
+      "properties": {
+        "status": {
+          "enum": ["pre_fix_chronology_proven", "pre_fix_chronology_unproven"]
+        },
+        "issue_created_at": { "$ref": "#/$defs/timestamp" },
+        "selected_revision_at": { "$ref": "#/$defs/timestamp" },
+        "reason": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "string", "minLength": 1, "maxLength": 500 }
+          ]
+        }
+      }
+    },
+    "content": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "encoding",
+        "canonicalization",
+        "title",
+        "body",
+        "title_bytes",
+        "body_bytes",
+        "canonical_bytes",
+        "title_sha256",
+        "body_sha256",
+        "snapshot_sha256"
+      ],
+      "properties": {
+        "encoding": { "const": "utf-8" },
+        "canonicalization": { "const": "nfc_lf_v1" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "body": { "type": "string", "maxLength": 65536 },
+        "title_bytes": { "type": "integer", "minimum": 1, "maximum": 4096 },
+        "body_bytes": { "type": "integer", "minimum": 0, "maximum": 65536 },
+        "canonical_bytes": { "type": "integer", "minimum": 1, "maximum": 147456 },
+        "title_sha256": { "$ref": "#/$defs/sha256" },
+        "body_sha256": { "$ref": "#/$defs/sha256" },
+        "snapshot_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "redaction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "policy",
+        "policy_sha256",
+        "target_sha256",
+        "count",
+        "pre_redaction_sha256",
+        "post_redaction_sha256",
+        "forbidden_backlinks_remaining",
+        "oracle_material_detected"
+      ],
+      "properties": {
+        "policy": { "const": "fix_backlinks_v1" },
+        "policy_sha256": { "$ref": "#/$defs/sha256" },
+        "target_sha256": { "$ref": "#/$defs/sha256" },
+        "count": { "type": "integer", "minimum": 0 },
+        "pre_redaction_sha256": { "$ref": "#/$defs/sha256" },
+        "post_redaction_sha256": { "$ref": "#/$defs/sha256" },
+        "forbidden_backlinks_remaining": { "type": "integer", "minimum": 0 },
+        "oracle_material_detected": { "type": "boolean" }
+      }
+    },
+    "privacyReview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "reviewed_at",
+        "reviewer_id",
+        "checklist_sha256",
+        "sensitive_material_excluded"
+      ],
+      "properties": {
+        "status": { "enum": ["approved", "pending", "rejected"] },
+        "reviewed_at": { "$ref": "#/$defs/timestamp" },
+        "reviewer_id": { "$ref": "#/$defs/identifier" },
+        "checklist_sha256": { "$ref": "#/$defs/sha256" },
+        "sensitive_material_excluded": { "type": "boolean" }
+      }
+    }
+  }
+}

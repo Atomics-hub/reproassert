@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Atomics-hub/reproassert/blob/main/schemas/benchmark-source-index.schema.json",
+  "title": "ReproAssert benchmark exact-source index",
+  "description": "Deterministic index of exactly 20 independently verified source receipts. This preparation artifact carries no campaign-readiness state.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "benchmark_version",
+    "manifest",
+    "acquisition_policy_sha256",
+    "receipt_count",
+    "receipts",
+    "tool"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "benchmark_version": { "const": "0.1.0" },
+    "manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["raw_sha256", "case_count"],
+      "properties": {
+        "raw_sha256": {
+          "const": "f3e15d05f29269c6d1d067ea7327b63e9b40fcb1ef142c731a215a02b5ebbc8f"
+        },
+        "case_count": { "const": 20 }
+      }
+    },
+    "acquisition_policy_sha256": {
+      "const": "95218b983abb009f425c2c49ec0bfecdf8b01402d6354f06ecfd3b6822efa712"
+    },
+    "receipt_count": { "const": 20 },
+    "receipts": {
+      "type": "array",
+      "minItems": 20,
+      "maxItems": 20,
+      "uniqueItems": true,
+      "prefixItems": [
+        { "allOf": [{ "$ref": "#/$defs/receipt_entry" }, { "$ref": "#/$defs/case_001" }] },
+        { "allOf": [{ "$ref": "#/$defs/receipt_entry" }, { "$ref": "#/$defs/case_002" }] },
+        { "allOf": [{ "$ref": "#/$defs/receipt_entry" }, { "$ref": "#/$defs/case_003" }] },
+        { "allOf": [{ "$ref": "#/$defs/receipt_entry" }, { "$ref": "#/$defs/case_004" }] },
+        { "allOf": [{ "$ref": "#/$defs/receipt_entry" }, { "$ref": "#/$defs/case_005" }] },
+        { "allOf": [{ "$ref": "#/$defs/receipt_entry" }, { "$ref": "#/$defs/case_006" }] },
+        { "allOf": [{ "$ref": "#/$defs/receipt_entry" }, { "$ref": "#/$defs/case_007" }] },
+        { "allOf": [{ "$ref": "#/$defs/receipt_entry" }, { "$ref": "#/$defs/case_008" }] },
+        { "allOf": [{ "$ref": "#/$defs/receipt_entry" }, { "$ref": "#/$defs/case_009" }] },
+        { "allOf": [{ "$ref": "#/$defs/receipt_entry" }, { "$ref": "#/$defs/case_010" }] },
+        { "allOf": [{ "$ref": "#/$defs/receipt_entry" }, { "$ref": "#/$defs/case_011" }] },
+        { "allOf": [{ "$ref": "#/$defs/receipt_entry" }, { "$ref": "#/$defs/case_012" }] },
+        { "allOf": [{ "$ref": "#/$defs/receipt_entry" }, { "$ref": "#/$defs/case_013" }] },
+        { "allOf": [{ "$ref": "#/$defs/receipt_entry" }, { "$ref": "#/$defs/case_014" }] },
+        { "allOf": [{ "$ref": "#/$defs/receipt_entry" }, { "$ref": "#/$defs/case_015" }] },
+        { "allOf": [{ "$ref": "#/$defs/receipt_entry" }, { "$ref": "#/$defs/case_016" }] },
+        { "allOf": [{ "$ref": "#/$defs/receipt_entry" }, { "$ref": "#/$defs/case_017" }] },
+        { "allOf": [{ "$ref": "#/$defs/receipt_entry" }, { "$ref": "#/$defs/case_018" }] },
+        { "allOf": [{ "$ref": "#/$defs/receipt_entry" }, { "$ref": "#/$defs/case_019" }] },
+        { "allOf": [{ "$ref": "#/$defs/receipt_entry" }, { "$ref": "#/$defs/case_020" }] }
+      ],
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "case_id",
+          "path",
+          "sha256",
+          "bytes",
+          "archive_sha256",
+          "source_tree_sha256",
+          "git_tree_oid"
+        ],
+        "properties": {
+          "case_id": { "type": "string", "pattern": "^rk-v0\\.1-[0-9]{3}$" },
+          "path": {
+            "type": "string",
+            "pattern": "^rk-v0\\.1-[0-9]{3}/benchmark-source-receipt\\.json$"
+          },
+          "sha256": { "$ref": "#/$defs/sha256" },
+          "bytes": { "$ref": "#/$defs/nonnegative_integer" },
+          "archive_sha256": { "$ref": "#/$defs/sha256" },
+          "source_tree_sha256": { "$ref": "#/$defs/sha256" },
+          "git_tree_oid": { "$ref": "#/$defs/git_oid" }
+        }
+      }
+    },
+    "tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "git_sha"],
+      "properties": {
+        "name": { "const": "reproassert" },
+        "version": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]{0,99}$"
+        },
+        "git_sha": { "$ref": "#/$defs/git_oid" }
+      }
+    }
+  },
+  "$defs": {
+    "receipt_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["case_id", "path", "sha256", "bytes", "archive_sha256", "source_tree_sha256", "git_tree_oid"],
+      "properties": {
+        "case_id": { "type": "string", "pattern": "^rk-v0\\.1-[0-9]{3}$" },
+        "path": { "type": "string", "pattern": "^rk-v0\\.1-[0-9]{3}/benchmark-source-receipt\\.json$" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "bytes": { "$ref": "#/$defs/nonnegative_integer" },
+        "archive_sha256": { "$ref": "#/$defs/sha256" },
+        "source_tree_sha256": { "$ref": "#/$defs/sha256" },
+        "git_tree_oid": { "$ref": "#/$defs/git_oid" }
+      }
+    },
+    "case_001": { "properties": { "case_id": { "const": "rk-v0.1-001" }, "path": { "const": "rk-v0.1-001/benchmark-source-receipt.json" } } },
+    "case_002": { "properties": { "case_id": { "const": "rk-v0.1-002" }, "path": { "const": "rk-v0.1-002/benchmark-source-receipt.json" } } },
+    "case_003": { "properties": { "case_id": { "const": "rk-v0.1-003" }, "path": { "const": "rk-v0.1-003/benchmark-source-receipt.json" } } },
+    "case_004": { "properties": { "case_id": { "const": "rk-v0.1-004" }, "path": { "const": "rk-v0.1-004/benchmark-source-receipt.json" } } },
+    "case_005": { "properties": { "case_id": { "const": "rk-v0.1-005" }, "path": { "const": "rk-v0.1-005/benchmark-source-receipt.json" } } },
+    "case_006": { "properties": { "case_id": { "const": "rk-v0.1-006" }, "path": { "const": "rk-v0.1-006/benchmark-source-receipt.json" } } },
+    "case_007": { "properties": { "case_id": { "const": "rk-v0.1-007" }, "path": { "const": "rk-v0.1-007/benchmark-source-receipt.json" } } },
+    "case_008": { "properties": { "case_id": { "const": "rk-v0.1-008" }, "path": { "const": "rk-v0.1-008/benchmark-source-receipt.json" } } },
+    "case_009": { "properties": { "case_id": { "const": "rk-v0.1-009" }, "path": { "const": "rk-v0.1-009/benchmark-source-receipt.json" } } },
+    "case_010": { "properties": { "case_id": { "const": "rk-v0.1-010" }, "path": { "const": "rk-v0.1-010/benchmark-source-receipt.json" } } },
+    "case_011": { "properties": { "case_id": { "const": "rk-v0.1-011" }, "path": { "const": "rk-v0.1-011/benchmark-source-receipt.json" } } },
+    "case_012": { "properties": { "case_id": { "const": "rk-v0.1-012" }, "path": { "const": "rk-v0.1-012/benchmark-source-receipt.json" } } },
+    "case_013": { "properties": { "case_id": { "const": "rk-v0.1-013" }, "path": { "const": "rk-v0.1-013/benchmark-source-receipt.json" } } },
+    "case_014": { "properties": { "case_id": { "const": "rk-v0.1-014" }, "path": { "const": "rk-v0.1-014/benchmark-source-receipt.json" } } },
+    "case_015": { "properties": { "case_id": { "const": "rk-v0.1-015" }, "path": { "const": "rk-v0.1-015/benchmark-source-receipt.json" } } },
+    "case_016": { "properties": { "case_id": { "const": "rk-v0.1-016" }, "path": { "const": "rk-v0.1-016/benchmark-source-receipt.json" } } },
+    "case_017": { "properties": { "case_id": { "const": "rk-v0.1-017" }, "path": { "const": "rk-v0.1-017/benchmark-source-receipt.json" } } },
+    "case_018": { "properties": { "case_id": { "const": "rk-v0.1-018" }, "path": { "const": "rk-v0.1-018/benchmark-source-receipt.json" } } },
+    "case_019": { "properties": { "case_id": { "const": "rk-v0.1-019" }, "path": { "const": "rk-v0.1-019/benchmark-source-receipt.json" } } },
+    "case_020": { "properties": { "case_id": { "const": "rk-v0.1-020" }, "path": { "const": "rk-v0.1-020/benchmark-source-receipt.json" } } },
+    "git_oid": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "nonnegative_integer": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9223372036854775807
+    }
+  }
+}

@@ -1,6 +1,6 @@
 # Threat model
 
-Status: current local strict profile, reviewed 2026-07-09.
+Status: current local strict profile, reviewed 2026-07-10.
 
 This model assumes an attacker can fully control a public GitHub issue, the referenced repository at
 the selected commit, repository configuration, imports and tests, the generated candidate, or an
@@ -25,7 +25,7 @@ Docker daemon, host kernel, or host administrator is already compromised.
 | Issue author | Prompt injection, copied shell commands, huge text, misleading expected behavior, malicious links |
 | Repository commit | Import hooks, pytest plugins, `conftest.py`, `sitecustomize.py`, native code, fork bombs, output floods, forged JUnit |
 | Candidate generator output | Production edits, unconditional failure, network/process calls, skip/xfail, top-level execution, deceptive assertions |
-| Source archive | Traversal, absolute paths, links, devices, FIFOs, bombs, duplicate/case-colliding paths |
+| Source archive | Traversal, absolute paths, `.git` aliases, links, devices, FIFOs, bombs, duplicate/case-colliding paths, or bytes inconsistent with the declared commit tree |
 | Imported report | Command fields, alternate repository, malformed SHA, candidate substitution, huge JSON, symlink path |
 | Dependency or runner supply chain | Malicious image layer, base image, Python package, registry, or mutable local tag |
 | Local operator configuration | Remote Docker context, untrusted generator command, explicit network provider, passed secrets, compromised daemon |
@@ -35,7 +35,7 @@ Docker daemon, host kernel, or host administrator is already compromised.
 | Threat | Implemented control | Remaining exposure |
 | --- | --- | --- |
 | URL/parser SSRF | Canonical `https://github.com/.../issues/N`; fixed API and codeload hosts; no redirects, proxies, auth, ports, queries, or fragments | DNS, TLS trust store, OS resolver, and GitHub are trusted; GitHub Enterprise is unsupported |
-| Archive traversal or host overwrite | Private `0700` run directory; exclusive no-follow `0600` files; manual regular-file extraction; path, link, collision, count, and byte limits | Host tar/gzip/JSON/Python parsers still process hostile bytes; parser/runtime vulnerabilities remain |
+| Archive traversal, substitution, or host overwrite | Private `0700` run directory; exclusive no-follow `0600` files; manual regular-file extraction; repeated path/type/link/count limits; reconstructed Git root-tree match; independent canonical tree SHA-256 | GitHub, DNS/TLS, Git SHA-1 identity, host tar/gzip/JSON/Python parsers, controller, and local filesystem remain trusted |
 | Issue prompt injection | Issue labeled as hostile data; generator returns an exact three-field schema; issue commands never become controller argv | A model can still produce an irrelevant or deceptive test; prompt text is not a security boundary |
 | Candidate command/network behavior | AST defense in depth; dangerous imports/calls and aliases rejected; Docker has no network and receives no host secrets | Python static screening is incomplete by nature; loopback and in-container process behavior remain; Docker is the real boundary |
 | Shell/option injection | Controller and generator use argv arrays, not a shell; pytest node is controller-selected; leading-dash target rejected; replay ignores command fields | `--generator-command` is deliberately trusted user input; displayed commands should still be reviewed before copying |
@@ -45,7 +45,7 @@ Docker daemon, host kernel, or host administrator is already compromised.
 | CPU/RAM/PID/file/output exhaustion | Cgroup CPU/memory/PID limits, ulimits, bounded tmpfs/inodes, outer timeout, controller output cap, bounded Docker logs | Shared daemon/VM storage, staging helpers, kernel bugs, I/O pressure, and crash-left resources can still affect the host |
 | Terminal/clipboard injection | CSI, OSC, C1, CR, control, and format characters stripped from captured logs and CLI errors | Arbitrary report fields are data; other renderers must still escape Markdown, HTML, and rich-text markup |
 | Forged test result | Bounded stdout and optional defused XML; exact node name, one test/failure, symptom evidence, repeated fingerprint | Repository code runs in-process with pytest and can forge either evidence form; evidence is not attestation |
-| Malicious replay report | Regular non-symlink <=1 MiB; canonical URL/repository/SHA; candidate schema/hash; bounded repeats; command fields ignored | Reports are unsigned; replay does not authenticate author or reuse/verify the recorded runner policy and result |
+| Malicious replay report | Regular non-symlink <=1 MiB; canonical URL/repository/SHA; recorded archive hash; fresh commit-tree attestation; optional recorded tree-digest comparison; candidate schema/hash; bounded repeats; command fields ignored | Reports are unsigned; replay does not authenticate author or reuse/verify the original runner policy and result |
 | Cross-run contamination | New labeled volume/container per workflow and best-effort cleanup | No crash-recovery janitor; local Docker image/cache and daemon are shared; hosted multi-tenancy is not supported |
 | False product claim | Explicit claim levels and report limitations; `repeatable_base_failure` has a narrow definition | Semantic review, hidden-fix differential, benchmark rates, and maintainer acceptance are separate unimplemented evidence gates |
 
@@ -96,9 +96,10 @@ blinded semantic review. A live unresolved issue cannot receive that claim autom
 ### Reports are evidence bundles, not attestations
 
 The report records hashes and runner facts but is not signed. A user can edit a report and recompute
-internal hashes. Replay deliberately regenerates controller commands and source intake, but it does
-not authenticate the original runner, policy, archive hash, outcome, or author. Treat reports from
-others as untrusted until independently replayed and reviewed.
+internal hashes. Replay deliberately regenerates controller commands and source intake, requires the
+new archive bytes to match the recorded archive hash, and freshly binds the extraction to the commit
+tree. It still does not authenticate the original runner, policy, outcome, or author. Treat reports
+from others as untrusted until independently replayed and reviewed.
 
 ### Cleanup and availability are best effort
 
@@ -128,11 +129,13 @@ host disk, or kernel. tmpfs pages may be swapped by the Docker host/VM.
 Changes should preserve adversarial regressions for:
 
 - SSRF-shaped issue URLs and redirect attempts;
-- tar traversal, links, devices, FIFOs, bombs, and path/case/Unicode collisions;
+- tar traversal, `.git` aliases, links, devices, FIFOs, bombs, path/case/Unicode collisions, and
+  archive-to-Git-tree mismatches;
 - exclusive no-follow report and artifact I/O;
 - inert command fields in reports and generated JSON;
 - leading-dash pytest targets and controller-owned paths;
 - terminal CSI/OSC/clipboard/control sanitization;
 - top-level candidate execution, network/process APIs and aliases, and skip/xfail behavior;
-- Docker arguments with no binds, secret/socket/proxy forwarding, or network; and
+- Docker arguments with no binds, secret/socket/proxy forwarding, or network, plus the positive and
+  negative evaluator-isolation canary; and
 - bounded report, generator, JUnit, log, and archive parsing.
