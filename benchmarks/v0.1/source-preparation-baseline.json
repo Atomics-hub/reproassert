@@ -1,0 +1,194 @@
+{
+  "schema_version": "1.0.0",
+  "kind": "source_preparation_baseline",
+  "observed_date": "2026-07-10",
+  "controller": {
+    "name": "reproassert",
+    "version": "0.1.0",
+    "git_sha": "6b38b9334a39c2a8d6f37c61924c0a3dc79fc98d"
+  },
+  "manifest": {
+    "benchmark_version": "0.1.0",
+    "sha256": "f3e15d05f29269c6d1d067ea7327b63e9b40fcb1ef142c731a215a02b5ebbc8f"
+  },
+  "acquisition_policy_sha256": "95218b983abb009f425c2c49ec0bfecdf8b01402d6354f06ecfd3b6822efa712",
+  "summary": {
+    "case_count": 20,
+    "accepted_count": 16,
+    "rejected_count": 4,
+    "independently_reverified_count": 16,
+    "receipt_index_built": false,
+    "model_call_count": 0,
+    "authorized_spend_microusd": 0,
+    "campaign_readiness_changed": false,
+    "benchmark_result_rows_appended": 0,
+    "benchmark_events_appended": 0
+  },
+  "protected_state": {
+    "campaign_sha256_before_and_after": "5a14b672bad6b78f0c0a8e3fa1909975a592c6007fdc0189db6243a582688995",
+    "results_sha256_before_and_after": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "smoke_ledger_sha256_before_and_after": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "scored_ledger_sha256_before_and_after": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "summary_sha256_before_and_after": "7e1f41b89643f7d3d43ed23f1a0ffa98259dd8be78039437e62509263c7606e8"
+  },
+  "cases": [
+    {
+      "case_id": "rk-v0.1-001",
+      "status": "accepted",
+      "receipt_sha256": "cd1719294df11d850176804ba7829829a369c73be51c3bb57ae16e8e065cae1a",
+      "archive_sha256": "d4636ea153ac42621f942bbf2d80ebacb01dcfea13eec07bc68b9c816bdae02a",
+      "source_tree_sha256": "65d59fc415b448fad8553db35a28488fc5bcc9848849d39bdea2d9aa0e39ce6c",
+      "git_tree_oid": "c6d23ecf4ad7fbcb218728100497a40f579b51d7"
+    },
+    {
+      "case_id": "rk-v0.1-002",
+      "status": "accepted",
+      "receipt_sha256": "6e1b93a482a8d213b1aa8a4e2062e6fbffa6d53bdc98d3c434b41662214a3467",
+      "archive_sha256": "535f337c32d8f446046d577548f9f306d8295bfc25e1ac9575b8bab12e96b22e",
+      "source_tree_sha256": "18281f2e095f7d7936041bf397fa100d0d2842b2721c8f8e22ad44ed89891b6c",
+      "git_tree_oid": "42f255fb9186aed651a8ec96ec19a92d2c68ed77"
+    },
+    {
+      "case_id": "rk-v0.1-003",
+      "status": "rejected",
+      "code": "source_git_tree_mismatch",
+      "diagnosis": "The commit contains gitlink astropy_helpers at 7f11678c03286f72acc9bab77868dabaeb368fda, which the regular-file codeload workspace cannot represent."
+    },
+    {
+      "case_id": "rk-v0.1-004",
+      "status": "rejected",
+      "code": "archive_special_file",
+      "diagnosis": "The archive contains tracked symlink lib/matplotlib/mpl-data/images/back-symbolic.svg -> back.svg; the frozen no-links policy rejects it."
+    },
+    {
+      "case_id": "rk-v0.1-005",
+      "status": "rejected",
+      "code": "archive_special_file",
+      "diagnosis": "The archive contains tracked symlink lib/matplotlib/mpl-data/images/back-symbolic.svg -> back.svg; the frozen no-links policy rejects it."
+    },
+    {
+      "case_id": "rk-v0.1-006",
+      "status": "accepted",
+      "receipt_sha256": "90b78f16c57ac82b28559a4c7ee429f5dc3cc4c79e532ec9398868c9ec9bd96e",
+      "archive_sha256": "1138452fa4b85cc2ebabd5ef0492493ffdb89d2e4dd3a4369d00a2d6d97e80c1",
+      "source_tree_sha256": "7aa03d2cd1b819cb0aac657958cf4ce5cc06bd3c77d8042d7277ce32ef9c0df8",
+      "git_tree_oid": "96511ff23b1cba0cd610a1cc5969021df9f440d8"
+    },
+    {
+      "case_id": "rk-v0.1-007",
+      "status": "accepted",
+      "receipt_sha256": "d0c52514cb90343ff96d94a736e5106d5f774c0d654cfe9e8dcb122d8397e6fe",
+      "archive_sha256": "3cf55cdd787eff50ac512e6654c9130b223d89ebecfbe9b06b47c4ecc83a1910",
+      "source_tree_sha256": "733ec5141a8510b61c3d4ae4ea2e5c3e619c9397f59771c38105a95ef43627b1",
+      "git_tree_oid": "db78dd3cfd247d5ee956ade98032b830e5776205"
+    },
+    {
+      "case_id": "rk-v0.1-008",
+      "status": "accepted",
+      "receipt_sha256": "7344a217d44ef29a5198680d2d55253b58afa6cd6322936a233f3d0045ae2787",
+      "archive_sha256": "bfa5293354f4a057929fb46e1fafbfb2f6ddea9d296d18623502c94a7c812606",
+      "source_tree_sha256": "8e39f814d058e23c5fc27c5a60ecac5886b93f96ff685be2390e9b242d587984",
+      "git_tree_oid": "c154d0ae882be41bd047d8535aae07b08def288e"
+    },
+    {
+      "case_id": "rk-v0.1-009",
+      "status": "accepted",
+      "receipt_sha256": "58bd57c488ca2d14a9969ed569530378c9f46ec8ca9fcce41966d1ef579ab6a2",
+      "archive_sha256": "160415366a032d5701056064cbdfc5f5b59c2321fbff973dc4f012418e855fb9",
+      "source_tree_sha256": "5ff80996f391089f6fbf054719be72aef461362daf815a6411d8353097372bdb",
+      "git_tree_oid": "a5b5371c4a71b240342c5dd81f340ba29c6fe2c5"
+    },
+    {
+      "case_id": "rk-v0.1-010",
+      "status": "accepted",
+      "receipt_sha256": "9a2044a2c193d4d9c81e3c18e1c4bc4b092b6f6aefaf062fd3982731d5000d4c",
+      "archive_sha256": "01f413ea4b59c69ae85e9362af513949615eff491aca607c17576453d66dfad4",
+      "source_tree_sha256": "14e4f8b9ed4eb847dcf087e28f4358a06388df93b2a30aa5410b69d7be553eb2",
+      "git_tree_oid": "52151016863265e75c2230d839c60957afd02f98"
+    },
+    {
+      "case_id": "rk-v0.1-011",
+      "status": "accepted",
+      "receipt_sha256": "8bb88af60f323e11c2758008aaf2a9d33ec17857793c634dbf335e9688a34249",
+      "archive_sha256": "d147e6ea4f606e9f8798dbab2eba6bb6d0268b607f8c8ec5255ec8c9c1517f31",
+      "source_tree_sha256": "139100b195be46f36d2cb40fea8a1e529bdb557665e6c30a61bbf0808dafe787",
+      "git_tree_oid": "3bf98cbdbbae631df845ad6b3d3df31beb0cb40f"
+    },
+    {
+      "case_id": "rk-v0.1-012",
+      "status": "accepted",
+      "receipt_sha256": "e52e31eed8ed5d1b022fd4df63abc3eac40d776cebafae9400edc6ed7fb61971",
+      "archive_sha256": "f0eca4a8a8908f9cd6f3a5c47f6bf0453560a0ad51858c7a6e2d1b76221b7ddb",
+      "source_tree_sha256": "67f5399915a3bdd006eb140d7495ff880f734c388f8f3a5a8cc4aaeace3db61a",
+      "git_tree_oid": "73db37719e21b452e11d33eff6471ea89752c2bf"
+    },
+    {
+      "case_id": "rk-v0.1-013",
+      "status": "rejected",
+      "code": "source_git_tree_mismatch",
+      "diagnosis": "Codeload export-subst changed .git_archival.txt from Git blob 95cb3eea4e336c70fb50a38b6e59771f4e76649c to archive blob 43de5c1cd39a82d3868b0a598c29b7969b55aea6."
+    },
+    {
+      "case_id": "rk-v0.1-014",
+      "status": "accepted",
+      "receipt_sha256": "f8687f87e945e782d428c70ae76c2327a64172df78a347b03bba8c959f1da127",
+      "archive_sha256": "0f6375a24b3322b74234f1a6c12d7759c304e9c4c4739ad059d30072deda8269",
+      "source_tree_sha256": "0f9357592337a99f1c0848dbf298f96ae83afe3a0045276a0a4ba3ac40c29758",
+      "git_tree_oid": "cf441cdcaa76806a078893bffa79922351a92b0a"
+    },
+    {
+      "case_id": "rk-v0.1-015",
+      "status": "accepted",
+      "receipt_sha256": "4a65b7901b3499522d3102da70bc24f00687717018b635a46caf3f049cc056e6",
+      "archive_sha256": "801f72f33e9b0440145cb838ab4454f6d5f3e75621a89cc41357dfe829ebb323",
+      "source_tree_sha256": "1d227441a1c468f69c4cb127dbec20adbf4ec3c00c0bc816e89f7cf101cc60b4",
+      "git_tree_oid": "bf39b3a48488c8921c8ef8a6447c4db507f62418"
+    },
+    {
+      "case_id": "rk-v0.1-016",
+      "status": "accepted",
+      "receipt_sha256": "5f3478c96425c54edb4242de10507e0de79e7bd68ecd6a78420cee6e875caff5",
+      "archive_sha256": "9bf710a1dc4f8cbef351cf4b7f4faaf694ac41ab2e091645f8f5bcfeb3e9b40a",
+      "source_tree_sha256": "139c9618547bc9f66d1f80c0a15960a3d8e2e86ac70045400b28d8c75593367e",
+      "git_tree_oid": "2a16dcf2243721d348504312f039ae052d82f036"
+    },
+    {
+      "case_id": "rk-v0.1-017",
+      "status": "accepted",
+      "receipt_sha256": "b246cad16655a23f6ddbbc6eed3aa92be1f04deeb8e275caf2943aea3572fa1c",
+      "archive_sha256": "f6e55368dd83f7115b1055e6ed0e58ba59c609fb0359cacb10800a7f1585efb8",
+      "source_tree_sha256": "5974500bbc231fcb35b7557f20d49f56a35097010c6425ce132a18c88bd39c17",
+      "git_tree_oid": "cb2e71a8734560a1433ca337586649c56667ccb1"
+    },
+    {
+      "case_id": "rk-v0.1-018",
+      "status": "accepted",
+      "receipt_sha256": "debe380fdd662a06284c6786753bc0df41921720174d4a01601ebe6f61420021",
+      "archive_sha256": "b1a4c83b7d12981b81e5f8d2028a73eacfbd153f4e425504c254a6f177b99997",
+      "source_tree_sha256": "5fa086ba3e8ee321744db7154496024aaa63291224ff8224b54fe595bc458321",
+      "git_tree_oid": "c3d16a156c9206389b230b2884557c486e871589"
+    },
+    {
+      "case_id": "rk-v0.1-019",
+      "status": "accepted",
+      "receipt_sha256": "406224ee4a049baaa26dc3489667e154bc9f73f6bc78016004d746c18bc10383",
+      "archive_sha256": "1f50c370c40507425018a560e945be9b76552734a893dd3bd4eeefa7afe902dc",
+      "source_tree_sha256": "4ecf77e83d02071a730255f503e3841ef67d0e32c13bf2ead3c87e0febd39d00",
+      "git_tree_oid": "8b530ce017437324b9e3a39af220965bf0e71558"
+    },
+    {
+      "case_id": "rk-v0.1-020",
+      "status": "accepted",
+      "receipt_sha256": "1783856a7a7de6461d06d7e4a190bb3050217d69d54c725f41bb8d9a58988a2b",
+      "archive_sha256": "1b7f0146e8091589eb51d6e76a17a6d85e736ae70ecd90a483d63f92f4ba640f",
+      "source_tree_sha256": "b54fb117c969caf8139960fdbc2d7bb1b09b0654c76bc6fc28584b926f216f38",
+      "git_tree_oid": "c70d57802c3e3c2459b69bb9b4e814134de01465"
+    }
+  ],
+  "limitations": [
+    "The controller Git SHA is operator-asserted provenance, not a signed attestation.",
+    "Private source archives and receipts are not committed, so this compact baseline is not independently replayable from repository bytes alone.",
+    "These are source-preparation outcomes, not generated reproductions, benchmark results, or maintainer validation.",
+    "Four rejected cases prevent construction of the required all-20 source receipt index."
+  ]
+}

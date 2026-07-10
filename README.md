@@ -284,6 +284,11 @@ See the [benchmark preparation commands](benchmarks/v0.1/README.md#exact-source-
 They preserve archives in private user state, re-fetch commit metadata during verification, and
 never change campaign readiness automatically.
 
+The first no-model preparation pass accepted and independently reverified 16/20 frozen sources;
+four failed closed on a gitlink, tracked symlinks, or codeload byte substitution. See the
+[source-preparation baseline](benchmarks/v0.1/source-preparation-baseline.json). This is preparation
+compatibility evidence, not a reproduction score.
+
 - [Benchmark freeze and status](benchmarks/v0.1/README.md)
 - [Evaluation protocol and claim ladder](docs/evaluation.md)
 - [Market validation gates](docs/market-validation.md)

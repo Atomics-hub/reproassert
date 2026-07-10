@@ -5,6 +5,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import shutil
 import tarfile
 from pathlib import Path
@@ -19,6 +20,7 @@ from reproassert.source_attestation import attest_source_tree
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = REPOSITORY_ROOT / "benchmarks" / "v0.1" / "manifest.json"
+BASELINE_PATH = REPOSITORY_ROOT / "benchmarks" / "v0.1" / "source-preparation-baseline.json"
 ROOT_SCHEMA = REPOSITORY_ROOT / "schemas" / "benchmark-source-receipt.schema.json"
 BUNDLED_SCHEMA = (
     REPOSITORY_ROOT / "src" / "reproassert" / "schemas" / "benchmark-source-receipt.schema.json"
@@ -707,3 +709,65 @@ def test_module_has_no_generation_campaign_or_ledger_dependencies() -> None:
     assert "from reproassert.workflow import" not in source
     assert "fix_patch" not in source
     assert "model_provider" not in source
+
+
+def test_prepare_does_not_mutate_public_campaign_results_or_ledgers(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    protected_paths = [
+        REPOSITORY_ROOT / "benchmarks" / "v0.1" / "campaign.json",
+        REPOSITORY_ROOT / "benchmarks" / "v0.1" / "results.jsonl",
+        REPOSITORY_ROOT / "benchmarks" / "v0.1" / "ledger" / "smoke-events.jsonl",
+        REPOSITORY_ROOT / "benchmarks" / "v0.1" / "ledger" / "scored-events.jsonl",
+        REPOSITORY_ROOT / "benchmarks" / "v0.1" / "summary.json",
+    ]
+    before = {path: path.read_bytes() for path in protected_paths}
+
+    _prepare_one(tmp_path, monkeypatch)
+
+    assert {path: path.read_bytes() for path in protected_paths} == before
+
+
+def test_checked_in_source_preparation_baseline_is_complete_and_bounded() -> None:
+    baseline = json.loads(BASELINE_PATH.read_text())
+    manifest = benchmark_source.load_frozen_manifest(MANIFEST_PATH)
+    cases = baseline["cases"]
+
+    assert baseline["schema_version"] == "1.0.0"
+    assert baseline["kind"] == "source_preparation_baseline"
+    assert baseline["manifest"]["sha256"] == manifest.raw_sha256
+    assert baseline["acquisition_policy_sha256"] == (
+        benchmark_source.SOURCE_ACQUISITION_POLICY_SHA256
+    )
+    assert [case["case_id"] for case in cases] == [case.id for case in manifest.cases]
+    assert len(cases) == 20
+    accepted = [case for case in cases if case["status"] == "accepted"]
+    rejected = [case for case in cases if case["status"] == "rejected"]
+    assert len(accepted) == 16
+    assert len(rejected) == 4
+    assert baseline["summary"]["accepted_count"] == len(accepted)
+    assert baseline["summary"]["rejected_count"] == len(rejected)
+    assert baseline["summary"]["model_call_count"] == 0
+    assert baseline["summary"]["authorized_spend_microusd"] == 0
+    assert baseline["summary"]["campaign_readiness_changed"] is False
+    assert baseline["summary"]["benchmark_result_rows_appended"] == 0
+    assert baseline["summary"]["benchmark_events_appended"] == 0
+    for case in accepted:
+        assert set(case) == {
+            "case_id",
+            "status",
+            "receipt_sha256",
+            "archive_sha256",
+            "source_tree_sha256",
+            "git_tree_oid",
+        }
+        assert all(
+            re.fullmatch(r"[0-9a-f]{64}", case[field])
+            for field in ("receipt_sha256", "archive_sha256", "source_tree_sha256")
+        )
+        assert re.fullmatch(r"[0-9a-f]{40}", case["git_tree_oid"])
+    for case in rejected:
+        assert set(case) == {"case_id", "status", "code", "diagnosis"}
+        assert case["code"] in {"source_git_tree_mismatch", "archive_special_file"}
+        assert 1 <= len(case["diagnosis"]) <= 500

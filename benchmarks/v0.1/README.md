@@ -15,6 +15,8 @@ The benchmark asks one narrow question: given only a public issue snapshot and t
 - `campaign.json` is the deny-by-default scored-run freeze. It currently blocks inference and
   enforces a zero paid-provider budget until the missing evaluator prerequisites and an explicit
   spend authorization (or a declared offline generator) exist.
+- `source-preparation-baseline.json` records the 2026-07-10 no-model exact-source pass: 16/20
+  accepted and independently reverified, with four fail-closed compatibility diagnoses.
 - `results.jsonl` is the append-only ledger for scored case records. It is intentionally empty at freeze time.
 - `ledger/smoke-events.jsonl` and `ledger/scored-events.jsonl` are separate canonical,
   hash-chained all-attempt event ledgers. Both are intentionally empty.
@@ -65,6 +67,13 @@ These commands never invoke a generator/model or edit the campaign/ledger. Sourc
 not repair the historical-snapshot erratum and does not flip `exact_sha_archives_ready` or any other
 campaign prerequisite. Archives stay in private user state and are intentionally not committed to
 this repository.
+
+The checked-in [source preparation baseline](source-preparation-baseline.json) is a compact local
+evidence record, not a receipt index or benchmark result. Sixteen cases reconstructed their Git root
+trees and passed a second fresh-metadata verification. Four failed closed: one gitlink/submodule,
+two tracked symlinks, and one codeload `export-subst` mutation. Because the private archives and
+receipts are not committed and all 20 did not pass, the required deterministic receipt index was not
+built and `exact_sha_archives_ready` remains false.
 
 Regenerate the deterministic projection to stdout (the validator also requires byte identity with
 the checked-in `summary.json`):
