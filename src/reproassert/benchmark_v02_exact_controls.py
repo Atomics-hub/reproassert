@@ -6,7 +6,7 @@ import hashlib
 import json
 import re
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from itertools import pairwise
 from pathlib import Path
 from typing import Literal, cast
@@ -48,18 +48,46 @@ MAX_JSON_BYTES = 2 * 1024 * 1024
 _CASE_ID = re.compile(r"rk-v0\.2-[0-9]{3}\Z")
 _GIT_SHA = re.compile(r"[0-9a-f]{40}\Z")
 _TIMESTAMP = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?Z\Z")
+_EXECUTION_ISSUER = object()
 
 Control = Literal["full_fix", "fix_minus_selected", "base_plus_selected"]
 ExecutorFactory = Callable[[InstanceRuntimeManifest, str, SandboxPolicy], InstanceRuntimeExecutor]
 
 
-@dataclass(frozen=True)
-class ExactCausalControlReceipt:
+@dataclass(frozen=True, init=False)
+class VerifiedExactCausalControlExecution:
+    """Nominal L2 execution authority issued only by the production executor path."""
+
     path: Path
     sha256: str
     case_id: str
     l2_causal_controls_passed: bool
     status: str
+    _issuer: object = field(repr=False, compare=False)
+
+    def __init__(self, *_args: object, **_kwargs: object) -> None:
+        raise TypeError("VerifiedExactCausalControlExecution is executor-issued only")
+
+    def public_record(self) -> dict[str, object]:
+        return {
+            "case_id": self.case_id,
+            "l2_causal_controls_passed": self.l2_causal_controls_passed,
+            "path": self.path,
+            "sha256": self.sha256,
+            "status": self.status,
+            "verification_scope": "execution_authority",
+        }
+
+
+@dataclass(frozen=True)
+class StructuralExactCausalControlReceipt:
+    """Non-authoritative result of path-only canonical receipt inspection."""
+
+    path: Path
+    sha256: str
+    case_id: str
+    status: str = "structural_valid_non_authoritative"
+    verification_scope: str = "structural_only_no_l2_authority"
 
 
 def run_exact_image_causal_controls(
@@ -77,8 +105,44 @@ def run_exact_image_causal_controls(
     output_path: Path,
     executed_at: str,
     tool_git_sha: str,
-    executor_factory: ExecutorFactory | None = None,
-) -> ExactCausalControlReceipt:
+) -> VerifiedExactCausalControlExecution:
+    """Execute controls with the production exact-image executor only."""
+
+    return _run_exact_image_causal_controls_with_factory(
+        evaluator_capability=evaluator_capability,
+        verified_hidden=verified_hidden,
+        manifest_path=manifest_path,
+        expected_manifest_sha256=expected_manifest_sha256,
+        gold_smoke_receipt_path=gold_smoke_receipt_path,
+        gold_specs_path=gold_specs_path,
+        mapping_consensus_path=mapping_consensus_path,
+        mapping_preparation_path=mapping_preparation_path,
+        candidate_evaluation_receipt_path=candidate_evaluation_receipt_path,
+        candidate=candidate,
+        output_path=output_path,
+        executed_at=executed_at,
+        tool_git_sha=tool_git_sha,
+        executor_factory=_executor_factory,
+    )
+
+
+def _run_exact_image_causal_controls_with_factory(
+    *,
+    evaluator_capability: VerifiedV02ExactImageEvaluatorCapability,
+    verified_hidden: VerifiedV02HiddenExtraction,
+    manifest_path: Path,
+    expected_manifest_sha256: str,
+    gold_smoke_receipt_path: Path,
+    gold_specs_path: Path,
+    mapping_consensus_path: Path,
+    mapping_preparation_path: Path,
+    candidate_evaluation_receipt_path: Path,
+    candidate: CandidateArtifact,
+    output_path: Path,
+    executed_at: str,
+    tool_git_sha: str,
+    executor_factory: ExecutorFactory,
+) -> VerifiedExactCausalControlExecution:
     """Execute all three preregistered controls in three fresh exact-image contexts each."""
 
     capability = require_v02_exact_image_evaluator_capability(evaluator_capability)
@@ -118,7 +182,6 @@ def run_exact_image_causal_controls(
     else:
         if selected_patch is None or remainder_patch is None:
             raise _reject("Separated patch controls are unexpectedly absent.")
-        factory = executor_factory or _executor_factory
         controls = [
             _run_control(
                 name=name,
@@ -130,7 +193,7 @@ def run_exact_image_causal_controls(
                 selected_patch=selected_patch,
                 remainder_patch=remainder_patch,
                 expected_failure_fingerprint=baseline_fingerprint,
-                executor_factory=factory,
+                executor_factory=executor_factory,
             )
             for name in control_names
         ]
@@ -175,12 +238,20 @@ def run_exact_image_causal_controls(
     record["receipt_sha256"] = _self_hash(record)
     encoded = _canonical(record) + b"\n"
     write_bytes_exclusive(output_path, encoded)
-    return ExactCausalControlReceipt(
-        output_path, hashlib.sha256(encoded).hexdigest(), case_id, passed, status
-    )
+    issued = object.__new__(VerifiedExactCausalControlExecution)
+    for name, value in {
+        "path": output_path,
+        "sha256": hashlib.sha256(encoded).hexdigest(),
+        "case_id": case_id,
+        "l2_causal_controls_passed": passed,
+        "status": status,
+        "_issuer": _EXECUTION_ISSUER,
+    }.items():
+        object.__setattr__(issued, name, value)
+    return issued
 
 
-def verify_exact_image_causal_control_receipt(path: Path) -> ExactCausalControlReceipt:
+def verify_exact_image_causal_control_receipt(path: Path) -> StructuralExactCausalControlReceipt:
     raw = _read(path, MAX_JSON_BYTES)
     try:
         record = json.loads(raw, object_pairs_hook=_reject_duplicates)
@@ -269,9 +340,7 @@ def verify_exact_image_causal_control_receipt(path: Path) -> ExactCausalControlR
         "provider_calls": 0,
     } or record.get("status") != ("l2_controls_passed" if passed else "inconclusive_no_l2_claim"):
         raise _reject("Causal-control claims disagree with executed evidence.")
-    return ExactCausalControlReceipt(
-        path, hashlib.sha256(raw).hexdigest(), case_id, passed, cast(str, record["status"])
-    )
+    return StructuralExactCausalControlReceipt(path, hashlib.sha256(raw).hexdigest(), case_id)
 
 
 def _run_control(
@@ -375,6 +444,8 @@ def _partition_patch(
     if not selected_ids or not set(selected_ids).issubset(all_ids):
         return None, None, "inseparable_mapping"
     selected = set(selected_ids)
+    if selected == set(all_ids) and len(all_ids) > 1:
+        return None, None, "multi_hunk_all_selected_requires_leave_one_out"
     # Splitting one file across both subsets can make offsets/order matter under git apply.
     for left, right in pairwise(inventory):
         if left["path"] == right["path"] and (

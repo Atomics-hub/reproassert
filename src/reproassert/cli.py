@@ -784,20 +784,21 @@ def benchmark_run_v02_exact_causal_controls(
         )
     except (ReproAssertError, OSError, ValueError) as exc:
         _fail(exc)
-    click.echo(json.dumps(asdict(verified), indent=2, sort_keys=True, default=str))
+    click.echo(json.dumps(verified.public_record(), indent=2, sort_keys=True, default=str))
 
 
 @benchmark_group.command("verify-v02-exact-causal-controls")
 @click.argument("receipt", type=click.Path(path_type=Path, exists=True, dir_okay=False))
 def benchmark_verify_v02_exact_causal_controls(receipt: Path) -> None:
-    """Verify one redacted exact-image causal-control receipt."""
+    """Structurally inspect one receipt; this does not reissue L2 authority."""
 
     try:
         verified = verify_exact_image_causal_control_receipt(receipt)
     except (ReproAssertError, OSError, ValueError) as exc:
         _fail(exc)
     result = asdict(verified)
-    result["verified"] = True
+    result["structurally_valid"] = True
+    result["verified"] = False
     click.echo(json.dumps(result, indent=2, sort_keys=True, default=str))
 
 

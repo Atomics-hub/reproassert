@@ -22,6 +22,8 @@
   },
   "$defs": {
     "sha": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-    "control": {"type": "object", "additionalProperties": false, "required": ["expected", "name", "reason", "runs", "status"], "properties": {"expected": {"enum": ["pass", "fail_same_fingerprint"]}, "name": {"enum": ["full_fix", "fix_minus_selected", "base_plus_selected"]}, "reason": {"type": "string", "minLength": 3}, "runs": {"type": "array", "minItems": 0, "maxItems": 3, "items": {"type": "object"}}, "status": {"enum": ["conclusive_pass", "inconclusive"]}}}
+    "control": {"type": "object", "additionalProperties": false, "required": ["expected", "name", "reason", "runs", "status"], "properties": {"expected": {"enum": ["pass", "fail_same_fingerprint"]}, "name": {"enum": ["full_fix", "fix_minus_selected", "base_plus_selected"]}, "reason": {"type": "string", "minLength": 3}, "runs": {"type": "array", "minItems": 0, "maxItems": 3, "items": {"$ref": "#/$defs/run"}}, "status": {"enum": ["conclusive_pass", "inconclusive"]}}},
+    "run": {"type": "object", "additionalProperties": false, "required": ["collection", "failure_fingerprint_sha256", "result"], "properties": {"collection": {"oneOf": [{"$ref": "#/$defs/evidence"}, {"type": "null"}]}, "failure_fingerprint_sha256": {"oneOf": [{"$ref": "#/$defs/sha"}, {"type": "null"}]}, "result": {"oneOf": [{"$ref": "#/$defs/evidence"}, {"type": "null"}]}}},
+    "evidence": {"type": "object", "additionalProperties": false, "required": ["exit_code", "junit_sha256", "oom_killed", "output_bytes", "output_sha256", "output_stored", "output_truncated", "timed_out"], "properties": {"exit_code": {"type": "integer"}, "junit_sha256": {"oneOf": [{"$ref": "#/$defs/sha"}, {"type": "null"}]}, "oom_killed": {"type": "boolean"}, "output_bytes": {"type": "integer", "minimum": 0}, "output_sha256": {"$ref": "#/$defs/sha"}, "output_stored": {"const": false}, "output_truncated": {"type": "boolean"}, "timed_out": {"type": "boolean"}}}
   }
 }
