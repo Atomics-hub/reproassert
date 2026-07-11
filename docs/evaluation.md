@@ -40,6 +40,42 @@ Submission files live at `<submissions-root>/<case-id>/*.json`. Each binds the e
 declares mapping-only/no-generator/no-semantic-review roles, and must be timestamped strictly after
 packet preparation and no later than sealing. Missing reviews fail closed.
 
+### Human reviewer handoff
+
+Export separate private bundles for the two genuine mapping reviewers only after their identities
+and the future semantic-review roster are known:
+
+```bash
+reproassert benchmark prepare-v02-mapping-review-handoff \
+  --mapping-preparation "$PRIVATE_ROOT/v02-mapping-packets/benchmark-v02-mapping-packet-set.json" \
+  --primary-reviewer-id REAL_MAPPING_REVIEWER_A \
+  --primary-reviewer-id REAL_MAPPING_REVIEWER_B \
+  --semantic-reviewer-id REAL_SEMANTIC_REVIEWER_A \
+  --semantic-reviewer-id REAL_SEMANTIC_REVIEWER_B \
+  --prepared-at 2026-07-11T10:00:00Z \
+  --tool-git-sha "$REPROASSERT_GIT_SHA" \
+  --output-root "$PRIVATE_ROOT"
+```
+
+Each reviewer receives a readable README and 20 case directories containing only the hunk
+inventory, the production patch needed for mapping, and an incomplete bound submission template.
+Developer tests, hidden-extraction identity, verdicts, selected hunks, and submission times are not
+exported or generated. Reviewers work independently and must fill those fields themselves.
+
+An optional `--tiebreak-reviewer-id` predeclares a third separate mapping reviewer. That reviewer
+must submit only if the first two completed decisions disagree; the consensus sealer rejects an
+unnecessary third review. Mapping and semantic reviewer IDs must be disjoint, and placeholders fail
+closed. Collect completed primary submissions as `01.json` and `02.json`; when genuinely required,
+collect the tie break as `03.json` so consensus ordering is explicit.
+
+Verify unchanged handoff bytes before distribution or collection:
+
+```bash
+reproassert benchmark verify-v02-mapping-review-handoff \
+  "$PRIVATE_ROOT/v02-mapping-review-handoff/benchmark-v02-mapping-review-handoff.json" \
+  --mapping-preparation "$PRIVATE_ROOT/v02-mapping-packets/benchmark-v02-mapping-packet-set.json"
+```
+
 ## Exact-image successor preregistration
 
 After all 20 mapping decisions are genuinely approved, freeze the successor with
@@ -59,6 +95,25 @@ reproassert benchmark verify-v02-exact-preregistration \
 ```
 
 The output is a successor contract, not a benchmark result or spend authorization.
+
+## Executed exact-image causal controls
+
+After one candidate has an accepted exact-image evaluation receipt, execute the preregistered
+necessity and sufficiency controls with:
+
+```bash
+reproassert benchmark execute-v02-exact-causal-controls --help
+reproassert benchmark verify-v02-exact-causal-controls \
+  "$PRIVATE_ROOT/rk-v0.2-001/exact-causal-controls.json"
+```
+
+The execution command reissues evaluator authority from the runtime manifest, hidden extraction,
+gold-smoke receipt, and gold specs; binds the approved mapping consensus and candidate receipt; and
+runs `full_fix`, `fix_minus_selected`, and `base_plus_selected` three times each in fresh
+network-disabled contexts. When every production hunk is selected, `fix_minus_selected` executes
+the true buggy base rather than making a one-hunk fix ineligible by construction. Unsafe,
+inseparable, or noncommutative partitions remain explicitly inconclusive and can never assert L2.
+The command does not invoke a model or provider.
 
 Version 0.1 evaluates whether ReproAssert can turn a historical GitHub issue into a verified failing pytest reproduction before applying the known human fix. The protocol is frozen before scored runs and separates generation from hidden-fix evaluation. Its historical issue-snapshot limitation is recorded in the [v0.1 provenance erratum](../benchmarks/v0.1/ERRATA.md).
 

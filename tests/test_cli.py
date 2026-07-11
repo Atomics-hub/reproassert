@@ -263,6 +263,10 @@ def test_schema_command_prints_preparation_receipt_schemas() -> None:
         ("benchmark-source-index", "benchmark-source-index.schema.json"),
         ("benchmark-v02-fix-mapping", "benchmark-v02-fix-mapping.schema.json"),
         (
+            "benchmark-v02-mapping-review-handoff",
+            "benchmark-v02-mapping-review-handoff.schema.json",
+        ),
+        (
             "benchmark-v02-chronology-evidence",
             "benchmark-v02-chronology-evidence.schema.json",
         ),

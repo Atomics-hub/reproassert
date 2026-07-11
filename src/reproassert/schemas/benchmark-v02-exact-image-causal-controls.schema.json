@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Atomics-hub/reproassert/blob/main/schemas/benchmark-v02-exact-image-causal-controls.schema.json",
+  "title": "ReproAssert v0.2 executed exact-image causal controls",
+  "type": "object", "additionalProperties": false,
+  "required": ["algorithm", "benchmark_version", "candidate", "case_id", "claims", "controls", "evaluator_public_commitment_sha256", "executed_at", "mapping", "policy", "receipt_sha256", "schema_version", "status", "tool_git_sha"],
+  "properties": {
+    "algorithm": {"const": "reproassert-v02-exact-image-causal-controls-v1"},
+    "benchmark_version": {"const": "0.2"},
+    "schema_version": {"const": "1.0.0"},
+    "case_id": {"type": "string", "pattern": "^rk-v0\\.2-[0-9]{3}$"},
+    "candidate": {"type": "object", "additionalProperties": false, "required": ["evaluation_receipt_sha256", "failure_fingerprint_sha256", "profile_sha256", "sha256"], "properties": {"evaluation_receipt_sha256": {"$ref": "#/$defs/sha"}, "failure_fingerprint_sha256": {"$ref": "#/$defs/sha"}, "profile_sha256": {"$ref": "#/$defs/sha"}, "sha256": {"$ref": "#/$defs/sha"}}},
+    "claims": {"type": "object", "additionalProperties": false, "required": ["hidden_bytes_emitted", "l2_causal_controls_passed", "network_during_sandbox_execution", "provider_calls"], "properties": {"hidden_bytes_emitted": {"const": false}, "l2_causal_controls_passed": {"type": "boolean"}, "network_during_sandbox_execution": {"const": false}, "provider_calls": {"const": 0}}},
+    "controls": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"$ref": "#/$defs/control"}},
+    "evaluator_public_commitment_sha256": {"$ref": "#/$defs/sha"},
+    "executed_at": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?Z$"},
+    "mapping": {"type": "object", "additionalProperties": false, "required": ["consensus_sha256", "selected_hunk_count", "selected_hunks_sha256"], "properties": {"consensus_sha256": {"$ref": "#/$defs/sha"}, "selected_hunk_count": {"type": "integer", "minimum": 1}, "selected_hunks_sha256": {"$ref": "#/$defs/sha"}}},
+    "policy": {"const": {"fresh_contexts_per_control": 3, "network_mode": "none", "profile": "reproassert-v02-exact-image-causal-controls-v1"}},
+    "receipt_sha256": {"$ref": "#/$defs/sha"},
+    "status": {"enum": ["l2_controls_passed", "inconclusive_no_l2_claim"]},
+    "tool_git_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"}
+  },
+  "$defs": {
+    "sha": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "control": {"type": "object", "additionalProperties": false, "required": ["expected", "name", "reason", "runs", "status"], "properties": {"expected": {"enum": ["pass", "fail_same_fingerprint"]}, "name": {"enum": ["full_fix", "fix_minus_selected", "base_plus_selected"]}, "reason": {"type": "string", "minLength": 3}, "runs": {"type": "array", "minItems": 0, "maxItems": 3, "items": {"$ref": "#/$defs/run"}}, "status": {"enum": ["conclusive_pass", "inconclusive"]}}},
+    "run": {"type": "object", "additionalProperties": false, "required": ["collection", "failure_fingerprint_sha256", "result"], "properties": {"collection": {"oneOf": [{"$ref": "#/$defs/evidence"}, {"type": "null"}]}, "failure_fingerprint_sha256": {"oneOf": [{"$ref": "#/$defs/sha"}, {"type": "null"}]}, "result": {"oneOf": [{"$ref": "#/$defs/evidence"}, {"type": "null"}]}}},
+    "evidence": {"type": "object", "additionalProperties": false, "required": ["exit_code", "junit_sha256", "oom_killed", "output_bytes", "output_sha256", "output_stored", "output_truncated", "timed_out"], "properties": {"exit_code": {"type": "integer"}, "junit_sha256": {"oneOf": [{"$ref": "#/$defs/sha"}, {"type": "null"}]}, "oom_killed": {"type": "boolean"}, "output_bytes": {"type": "integer", "minimum": 0}, "output_sha256": {"$ref": "#/$defs/sha"}, "output_stored": {"const": false}, "output_truncated": {"type": "boolean"}, "timed_out": {"type": "boolean"}}}
+  }
+}

@@ -14,6 +14,7 @@ SCHEMA_FILENAMES = {
     "benchmark-v02-mapping-review-submission": (
         "benchmark-v02-mapping-review-submission.schema.json"
     ),
+    "benchmark-v02-mapping-review-handoff": ("benchmark-v02-mapping-review-handoff.schema.json"),
     "benchmark-v02-mapping-consensus-set": ("benchmark-v02-mapping-consensus-set.schema.json"),
     "benchmark-v02-case-package": "benchmark-v02-case-package.schema.json",
     "benchmark-v02-preregistration": "benchmark-v02-preregistration.schema.json",
@@ -34,6 +35,9 @@ SCHEMA_FILENAMES = {
     ),
     "benchmark-v02-exact-image-capability-index": (
         "benchmark-v02-exact-image-capability-index.schema.json"
+    ),
+    "benchmark-v02-exact-image-causal-controls": (
+        "benchmark-v02-exact-image-causal-controls.schema.json"
     ),
     "benchmark-v02-execution-request-bindings": (
         "benchmark-v02-execution-request-bindings.schema.json"
