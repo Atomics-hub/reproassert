@@ -154,10 +154,24 @@ reproassert benchmark prepare-v02-cases \
   --output-root <fresh-private-0700-directory>
 ```
 
+For the amended exact-image dependency evidence path, replace the legacy wheel-plan input with the
+complete verifier-bound set:
+
+```console
+reproassert benchmark prepare-v02-cases \
+  ...the inputs above... \
+  --instance-runtime-manifest <private-runtime-manifest> \
+  --expected-runtime-manifest-sha256 <sha256> \
+  --gold-smoke-receipt <private-all-case-gold-smoke-receipt> \
+  --exact-capability-index <private-exact-capability-index>
+```
+
 This reruns the dataset and hidden Docker boundaries, freshly rederives every Git source, freezes
 the exact provider request envelopes, and writes dependency, review, pricing, and unsigned spend
 preflight records. It cannot call a provider and does not read an API key. Its current honest output
-is 20/20 pre-review packets, 0/20 dependency-ready, 0/20 campaign-ready, and 0 provider calls.
+is 20/20 pre-review packets, 0/20 campaign-ready, and 0 provider calls. The legacy no-plan mode
+remains 0/20 dependency-ready. Exact-image mode derives its dependency-ready count only from fresh
+gold-smoke verifier authority; an installed image, tag, digest, or wheel plan alone never counts.
 `verify-v02-cases` performs the same fresh checks and can fail closed when GitHub's unauthenticated
 public rate limit is exhausted.
 

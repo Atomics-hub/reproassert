@@ -5,9 +5,19 @@
   "type": "object",
   "additionalProperties": false,
   "required": ["algorithm", "benchmark_version", "case_count", "cases", "claims", "index_sha256", "prepared_at", "schema_version", "status", "tool_git_sha"],
+  "allOf": [
+    {
+      "if": {"properties": {"algorithm": {"const": "reproassert-v02-exact-image-capability-index-v1"}}},
+      "then": {"properties": {"benchmark_version": {"const": "0.2"}, "schema_version": {"const": "1.0.0"}, "status": {"const": "runtime_attested_20_evaluator_preflight_19"}, "claims": {"properties": {"evaluator_preflight_ready_count": {"const": 19}, "infrastructure_failure_count": {"const": 1}}}}}
+    },
+    {
+      "if": {"properties": {"algorithm": {"const": "reproassert-v02-exact-image-capability-index-v2"}}},
+      "then": {"properties": {"benchmark_version": {"const": "0.2.1"}, "schema_version": {"const": "2.0.0"}, "status": {"const": "runtime_attested_20_evaluator_preflight_20"}, "claims": {"properties": {"evaluator_preflight_ready_count": {"const": 20}, "infrastructure_failure_count": {"const": 0}}}}}
+    }
+  ],
   "properties": {
-    "algorithm": {"const": "reproassert-v02-exact-image-capability-index-v1"},
-    "benchmark_version": {"const": "0.2"},
+    "algorithm": {"enum": ["reproassert-v02-exact-image-capability-index-v1", "reproassert-v02-exact-image-capability-index-v2"]},
+    "benchmark_version": {"enum": ["0.2", "0.2.1"]},
     "case_count": {"const": 20},
     "cases": {
       "type": "array", "minItems": 20, "maxItems": 20,
@@ -21,7 +31,7 @@
             "type": "object", "additionalProperties": false,
             "required": ["algorithm", "case_id", "gold_smoke", "hidden_inputs", "runtime", "runtime_manifest_sha256"],
             "properties": {
-              "algorithm": {"const": "reproassert-v02-exact-image-evaluator-capability-v1"},
+              "algorithm": {"enum": ["reproassert-v02-exact-image-evaluator-capability-v1", "reproassert-v02-exact-image-evaluator-capability-v2"]},
               "case_id": {"$ref": "#/$defs/case_id"},
               "gold_smoke": {
                 "type": "object", "additionalProperties": false,
@@ -67,18 +77,20 @@
       }
     },
     "claims": {
-      "const": {
-        "evaluator_preflight_ready_count": 19,
-        "infrastructure_failure_count": 1,
-        "nominal_authority_serialized": false,
-        "provider_calls": 0,
-        "runtime_attested_count": 20
+      "type": "object", "additionalProperties": false,
+      "required": ["evaluator_preflight_ready_count", "infrastructure_failure_count", "nominal_authority_serialized", "provider_calls", "runtime_attested_count"],
+      "properties": {
+        "evaluator_preflight_ready_count": {"enum": [19, 20]},
+        "infrastructure_failure_count": {"enum": [0, 1]},
+        "nominal_authority_serialized": {"const": false},
+        "provider_calls": {"const": 0},
+        "runtime_attested_count": {"const": 20}
       }
     },
     "index_sha256": {"$ref": "#/$defs/sha256"},
     "prepared_at": {"$ref": "#/$defs/timestamp"},
-    "schema_version": {"const": "1.0.0"},
-    "status": {"const": "runtime_attested_20_evaluator_preflight_19"},
+    "schema_version": {"enum": ["1.0.0", "2.0.0"]},
+    "status": {"enum": ["runtime_attested_20_evaluator_preflight_19", "runtime_attested_20_evaluator_preflight_20"]},
     "tool_git_sha": {"$ref": "#/$defs/git_sha"}
   },
   "$defs": {

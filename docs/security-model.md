@@ -227,11 +227,16 @@ allowlist. See [ADR 0007](decisions/0007-dependency-preparation-remains-a-gated-
 The exact-image evaluator has a separate, nominal
 `VerifiedV02ExactImageEvaluatorCapability`; the older tree-based evaluator capability is not
 accepted as a substitute. Its issuer verifies the complete 20-case runtime manifest, the complete
-gold-smoke receipt (including case 014's recorded `network_dependency` infrastructure failure), and
+gold-smoke receipt (either the legacy case 014 `network_dependency` infrastructure failure or an
+amended all-20 semantic-valid receipt), and
 fresh hidden-extraction commitments before granting process-local authority for one case. Candidate
 receipts publish only SHA-256 and byte-count commitments for private patches. They bind the exact
 case spec, base tree, image tag/digest/ID, gold-smoke classification, and an evaluator-public
 commitment; private patch bytes and paths remain absent.
+
+All-20 authority is serialized only as a provider-disabled v0.2.1 preparation commitment. The v0.2
+preregistration and scored executor still require the legacy 19/1 denominator, so a new image,
+edited count, or v0.2.1 preparation artifact cannot silently make case 014 executable.
 
 The internal differential primitive accepts only a nominal evaluator capability whose digest binds
 the exact case, base/fixed trees, production/developer patch identities, evaluator commitment, and

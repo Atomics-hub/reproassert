@@ -366,3 +366,26 @@ def test_preregistration_rejects_cross_bound_evidence(
         values["tool_git_sha"] = "e" * 40
     with pytest.raises(PolicyRejection):
         exact.prepare_v02_exact_preregistration(**values)
+
+
+def test_v02_preregistration_rejects_v021_all_twenty_authority(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    values = _fixtures(tmp_path, monkeypatch)
+    capability_index = values["capability_index_path"]
+    monkeypatch.setattr(
+        exact,
+        "verify_v02_exact_image_capability_index",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            path=capability_index,
+            sha256=_sha(capability_index),
+            case_count=20,
+            runtime_attested_count=20,
+            evaluator_preflight_ready_count=20,
+            infrastructure_failure_count=0,
+            provider_calls=0,
+        ),
+    )
+
+    with pytest.raises(PolicyRejection, match="exact 20-case denominator"):
+        exact.prepare_v02_exact_preregistration(**values)

@@ -22,7 +22,7 @@ from reproassert.cli import main
 from reproassert.errors import PolicyRejection
 
 
-def _inputs(tmp_path: Path) -> tuple[Path, str, Path, object]:
+def _inputs(tmp_path: Path, *, all_ready: bool = False) -> tuple[Path, str, Path, object]:
     entries = tuple(_runtime(number) for number in range(1, 21))
     manifest_path = tmp_path / "manifest.json"
     manifest_path.write_bytes(
@@ -35,7 +35,7 @@ def _inputs(tmp_path: Path) -> tuple[Path, str, Path, object]:
     manifest_sha = load_instance_runtime_manifest(manifest_path).sha256
     rows = []
     for entry in entries:
-        is_network_case = entry.case_id == "rk-v0.2-014"
+        is_network_case = entry.case_id == "rk-v0.2-014" and not all_ready
         rows.append(
             {
                 "case_id": entry.case_id,
@@ -57,13 +57,18 @@ def _inputs(tmp_path: Path) -> tuple[Path, str, Path, object]:
         )
     gold = {
         "counts": {
-            "infrastructure_failure": 1,
+            "infrastructure_failure": 0 if all_ready else 1,
             "not_run": 0,
             "selected": 20,
             "semantic_failure": 0,
-            "semantic_valid": 19,
+            "semantic_valid": 20 if all_ready else 19,
         },
         "inputs": {
+            "gold_specs_sha256": (
+                capability.AMENDED_GOLD_SPECS_SHA256
+                if all_ready
+                else capability.LEGACY_GOLD_SPECS_SHA256
+            ),
             "hidden_extraction_receipt_sha256": "7" * 64,
             "instance_runtime_manifest_sha256": manifest_sha,
         },
@@ -227,6 +232,66 @@ def test_capability_index_persists_20_redacted_commitments_not_authority(
             expected_manifest_sha256=manifest_sha,
             gold_smoke_receipt_path=gold,
             hidden_extraction_receipt=hidden_receipt,
+        )
+
+
+def test_capability_index_accepts_fresh_all_twenty_semantic_valid_as_v021(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest, manifest_sha, gold, hidden = _inputs(tmp_path, all_ready=True)
+    _install_verifiers(monkeypatch, gold)
+    hidden_receipt = tmp_path / "hidden.json"
+    hidden_receipt.write_text("{}")
+    monkeypatch.setattr(capability, "verify_v02_hidden_gold", lambda _path: hidden)
+    output = tmp_path / "capability-index.json"
+
+    verified = capability.prepare_v02_exact_image_capability_index(
+        manifest_path=manifest,
+        expected_manifest_sha256=manifest_sha,
+        gold_smoke_receipt_path=gold,
+        hidden_extraction_receipt=hidden_receipt,
+        prepared_at="2026-07-11T09:00:00Z",
+        tool_git_sha="a" * 40,
+        output_path=output,
+    )
+
+    assert verified.evaluator_preflight_ready_count == 20
+    assert verified.infrastructure_failure_count == 0
+    record = json.loads(output.read_text())
+    assert record["algorithm"] == capability.INDEX_ALGORITHM_V2
+    assert record["benchmark_version"] == "0.2.1"
+    assert record["schema_version"] == "2.0.0"
+    assert {row["evidence"]["algorithm"] for row in record["cases"]} == {
+        capability.CAPABILITY_ALGORITHM_V2
+    }
+    assert {row["status"] for row in record["cases"]} == {
+        "runtime_attested_evaluator_preflight_ready"
+    }
+    jsonschema.validate(
+        record,
+        json.loads(
+            Path("schemas/benchmark-v02-exact-image-capability-index.schema.json").read_text()
+        ),
+    )
+    assert "/private" not in output.read_text()
+
+
+def test_all_twenty_authority_rejects_unreviewed_gold_specs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest, manifest_sha, gold, hidden = _inputs(tmp_path, all_ready=True)
+    record = json.loads(gold.read_bytes())
+    record["inputs"]["gold_specs_sha256"] = "0" * 64
+    gold.write_bytes(capability._canonical(record) + b"\n")
+    _install_verifiers(monkeypatch, gold)
+
+    with pytest.raises(PolicyRejection, match="versioned benchmark amendment"):
+        capability.issue_verified_v02_exact_image_evaluator_capability(
+            manifest_path=manifest,
+            expected_manifest_sha256=manifest_sha,
+            gold_smoke_receipt_path=gold,
+            verified_hidden=hidden,  # type: ignore[arg-type]
+            case_id="rk-v0.2-014",
         )
 
 

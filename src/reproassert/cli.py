@@ -1509,6 +1509,19 @@ def benchmark_verify_v02_mapping_consensus(seal: Path, preparation_receipt: Path
     "--dependency-plans-root",
     type=click.Path(path_type=Path, exists=True, file_okay=False),
 )
+@click.option(
+    "--instance-runtime-manifest",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+)
+@click.option("--expected-runtime-manifest-sha256")
+@click.option(
+    "--gold-smoke-receipt",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+)
+@click.option(
+    "--exact-capability-index",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+)
 @click.option("--tool-git-sha", required=True, help="Exact 40-hex controller revision.")
 @click.option("--prepared-at", required=True, help="UTC preparation timestamp.")
 @click.option(
@@ -1524,6 +1537,10 @@ def benchmark_prepare_v02_cases(
     object_sources_root: Path,
     pricing_snapshot: Path,
     dependency_plans_root: Path | None,
+    instance_runtime_manifest: Path | None,
+    expected_runtime_manifest_sha256: str | None,
+    gold_smoke_receipt: Path | None,
+    exact_capability_index: Path | None,
     tool_git_sha: str,
     prepared_at: str,
     output_root: Path,
@@ -1538,6 +1555,10 @@ def benchmark_prepare_v02_cases(
             hidden_extraction_receipt=hidden_extraction_receipt,
             object_sources_root=object_sources_root,
             dependency_plans_root=dependency_plans_root,
+            instance_runtime_manifest=instance_runtime_manifest,
+            expected_runtime_manifest_sha256=expected_runtime_manifest_sha256,
+            gold_smoke_receipt=gold_smoke_receipt,
+            exact_capability_index=exact_capability_index,
             output_root=output_root,
             pricing_snapshot_path=pricing_snapshot,
             tool_git_sha=tool_git_sha,
