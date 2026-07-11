@@ -38,6 +38,7 @@ from reproassert.differential import (
 from reproassert.errors import PolicyRejection, ReproAssertError
 from reproassert.generator import (
     OPENAI_MAX_OUTPUT_TOKENS,
+    SYMPY_NATIVE_CANDIDATE_PROFILE,
     GenerationRequest,
 )
 from reproassert.intake import parse_issue_url
@@ -3399,7 +3400,11 @@ def _run_transactional_openai_generation(run: _RunContext) -> tuple[ValidatedCan
             raise ReproAssertError(
                 "openai_output_json", "Provider output was not one strict JSON object."
             )
-        candidate = validate_candidate_payload(payload, issue_number=run.request.issue_number)
+        candidate = validate_candidate_payload(
+            payload,
+            issue_number=run.request.issue_number,
+            required_test_function=run.request.required_test_function,
+        )
     except BaseException as exc:
         status, code = generator_module._classify_model_call_failure(
             exc, response_received=response_received
@@ -5038,6 +5043,8 @@ def _generation_request(
     context: VerifiedV02GeneratorSourceContext,
 ) -> GenerationRequest:
     issue = parse_issue_url(case.issue_url)
+    suffix = case.id.rsplit("-", 1)[1]
+    sympy_native = case.id in {"rk-v0.2-016", "rk-v0.2-017"}
     return GenerationRequest(
         issue_url=case.issue_url,
         issue_number=issue.number,
@@ -5045,6 +5052,8 @@ def _generation_request(
         issue_body=projection.body,
         source_sha=case.base_sha,
         source_context=context.source_context,
+        candidate_profile=(SYMPY_NATIVE_CANDIDATE_PROFILE if sympy_native else "pytest-v1"),
+        required_test_function=(f"test_reproassert_issue_{suffix}" if sympy_native else None),
         attempt=1,
         feedback="",
     )
@@ -5137,7 +5146,7 @@ def _openai_request_payload(request: GenerationRequest, model: str) -> dict[str,
     return {
         "model": model,
         "store": False,
-        "instructions": generator_module._OPENAI_INSTRUCTIONS,
+        "instructions": generator_module.openai_instructions(request),
         "input": _rendered_input_text(request),
         "max_output_tokens": OPENAI_MAX_OUTPUT_TOKENS,
         "text": {
@@ -5153,19 +5162,27 @@ def _openai_request_payload(request: GenerationRequest, model: str) -> dict[str,
 
 def _openai_adapter_config_sha256(model: object) -> str:
     bounded = _bounded_model(model)
-    payload = _openai_request_payload(
-        GenerationRequest(
-            issue_url="https://github.com/placeholder/repository/issues/1",
-            issue_number=1,
-            issue_title="placeholder",
-            issue_body="placeholder",
-            source_sha="0" * 40,
-            source_context=SourceContext((), (), 0),
-        ),
-        bounded,
-    )
-    del payload["input"]
-    return _sha256_json(payload)
+    profiles: list[dict[str, object]] = []
+    for profile, required_function in (
+        ("pytest-v1", None),
+        (SYMPY_NATIVE_CANDIDATE_PROFILE, "test_reproassert_issue_016"),
+    ):
+        payload = _openai_request_payload(
+            GenerationRequest(
+                issue_url="https://github.com/placeholder/repository/issues/1",
+                issue_number=1,
+                issue_title="placeholder",
+                issue_body="placeholder",
+                source_sha="0" * 40,
+                source_context=SourceContext((), (), 0),
+                candidate_profile=profile,
+                required_test_function=required_function,
+            ),
+            bounded,
+        )
+        del payload["input"]
+        profiles.append(payload)
+    return _sha256_json({"profiles": profiles})
 
 
 def _rendered_input_text(request: GenerationRequest) -> str:

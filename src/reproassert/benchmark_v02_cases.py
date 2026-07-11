@@ -32,7 +32,7 @@ from reproassert.benchmark_v02_runner import (
 from reproassert.context import build_source_context
 from reproassert.dependency_prep import load_dependency_plan
 from reproassert.errors import PolicyRejection
-from reproassert.generator import GenerationRequest
+from reproassert.generator import SYMPY_NATIVE_CANDIDATE_PROFILE, GenerationRequest
 from reproassert.git_objects import VerifiedGitObjectPlan, materialize_git_workspace
 from reproassert.github_blobs import fetch_raw_git_blob
 from reproassert.intake import parse_issue_url
@@ -665,6 +665,9 @@ def _render_provider_request(
     issue_url = cast(str, projection["issue_url"])
     issue_text = cast(str, projection["issue_text"])
     issue_number = parse_issue_url(issue_url).number
+    case_id = cast(str, projection["case_id"])
+    suffix = case_id.rsplit("-", 1)[1]
+    sympy_native = case_id in {"rk-v0.2-016", "rk-v0.2-017"}
     with tempfile.TemporaryDirectory(prefix="reproassert-v02-request-") as temporary:
         root = Path(temporary).resolve(strict=True)
         os.chmod(root, 0o700)
@@ -681,6 +684,8 @@ def _render_provider_request(
             issue_body=issue_text,
             source_sha=cast(str, projection["base_sha"]),
             source_context=context,
+            candidate_profile=(SYMPY_NATIVE_CANDIDATE_PROFILE if sympy_native else "pytest-v1"),
+            required_test_function=(f"test_reproassert_issue_{suffix}" if sympy_native else None),
         )
         payload = _openai_request_payload(request, pricing.requested_model)
         rendered_sha256 = _rendered_input_sha256(request)
