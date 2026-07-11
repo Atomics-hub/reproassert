@@ -31,6 +31,8 @@ _LABEL_OWNER = "io.reproassert.instance-owner=controller-v1"
 _SAFE_TARGET = re.compile(r"[A-Za-z0-9_./-]{1,300}\Z")
 _MAX_PYTEST_TARGETS = 64
 _MAX_PYTEST_TARGET_BYTES = 500
+_SYMPY_TEST_FILE = re.compile(r"sympy(?:/[A-Za-z0-9_]+)+/tests/test_[A-Za-z0-9_]+\.py\Z")
+_SYMPY_TEST_IDENTIFIER = re.compile(r"test_[A-Za-z_][A-Za-z0-9_]{0,199}\Z")
 _CONTAINER_ID = re.compile(r"[0-9a-f]{12,64}\Z")
 _CONTAINER_TMP = "/tmp"  # noqa: S108 - isolated container path, never a host path
 
@@ -240,26 +242,36 @@ class InstanceRuntimeExecutor:
         self,
         *,
         workspace: Literal["base", "fixed"],
-        targets: tuple[str, ...],
+        targets: tuple[str, ...] = (),
         collect_only: bool = False,
+        sympy_test_file: str | None = None,
+        sympy_test_identifier: str | None = None,
     ) -> InstancePytestResult:
         """Run exactly one manifest-bound harness command profile."""
 
         if not self._prepared or workspace not in self._volumes:
             raise self._reject("Requested instance workspace is unavailable.")
-        if (
-            not isinstance(targets, tuple)
-            or not 1 <= len(targets) <= _MAX_PYTEST_TARGETS
-            or len(set(targets)) != len(targets)
-        ):
-            raise self._reject("Pytest targets must be a bounded unique tuple.")
-        checked_targets = tuple(_pytest_target(target) for target in targets)
         if self.runtime.test_command_profile == "pytest-v1":
+            if sympy_test_file is not None or sympy_test_identifier is not None:
+                raise self._reject("Pytest profile rejects SymPy target fields.")
+            if (
+                not isinstance(targets, tuple)
+                or not 1 <= len(targets) <= _MAX_PYTEST_TARGETS
+                or len(set(targets)) != len(targets)
+            ):
+                raise self._reject("Pytest targets must be a bounded unique tuple.")
+            checked_targets = tuple(_pytest_target(target) for target in targets)
             script = _PYTEST_SCRIPT
             profile_args = ["--collect-only"] if collect_only else []
         elif self.runtime.test_command_profile == "sympy-bin-test-v1":
-            if collect_only:
-                raise self._reject("The frozen SymPy command profile has no collection-only mode.")
+            if targets or collect_only:
+                raise self._reject(
+                    "The frozen SymPy command profile rejects pytest targets and collection mode."
+                )
+            checked_file, checked_identifier = _sympy_test_target(
+                sympy_test_file, sympy_test_identifier
+            )
+            checked_targets = (checked_file, "-k", checked_identifier)
             script = _SYMPY_TEST_SCRIPT
             profile_args = []
         else:  # pragma: no cover - manifest loader excludes this state
@@ -612,6 +624,22 @@ def _pytest_target(value: str) -> str:
     if any(not node for node in nodes):
         raise PolicyRejection("benchmark_v02_instance_executor", "Pytest node selector is invalid.")
     return value
+
+
+def _sympy_test_target(test_file: object, test_identifier: object) -> tuple[str, str]:
+    if (
+        not isinstance(test_file, str)
+        or not test_file.isascii()
+        or _SYMPY_TEST_FILE.fullmatch(test_file) is None
+        or not isinstance(test_identifier, str)
+        or not test_identifier.isascii()
+        or _SYMPY_TEST_IDENTIFIER.fullmatch(test_identifier) is None
+    ):
+        raise PolicyRejection(
+            "benchmark_v02_instance_executor", "Structured SymPy test target is invalid."
+        )
+    _relative_target(test_file, "SymPy test file")
+    return test_file, test_identifier
 
 
 def _bounded_bytes(value: bytes, label: str) -> None:

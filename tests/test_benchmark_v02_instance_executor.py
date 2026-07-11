@@ -370,7 +370,9 @@ def test_sympy_profile_runs_only_frozen_bin_test_as_nonroot() -> None:
     executor.prepare_workspaces(fixed_patch=b"diff --git a/a b/a\n")
 
     result = executor.run_test_command(
-        workspace="base", targets=("sympy/core/tests/test_basic.py",)
+        workspace="base",
+        sympy_test_file="sympy/core/tests/test_basic.py",
+        sympy_test_identifier="test_Function",
     )
 
     assert result.exit_code == 1
@@ -384,8 +386,44 @@ def test_sympy_profile_runs_only_frozen_bin_test_as_nonroot() -> None:
     assert "PYTHONWARNINGS=" in rendered
     assert test_create[test_create.index("--user") + 1] == "65532:65532"
     assert "PYTHONPATH=/workspace:/workspace/src" in test_create
+    assert "sympy/core/tests/test_basic.py" in test_create
+    path_index = test_create.index("sympy/core/tests/test_basic.py")
+    assert test_create[path_index : path_index + 3] == [
+        "sympy/core/tests/test_basic.py",
+        "-k",
+        "test_Function",
+    ]
     with pytest.raises(ReproAssertError, match="does not use the pytest"):
         executor.run_pytest(workspace="base", targets=("sympy/core/tests/test_basic.py",))
+
+
+@pytest.mark.parametrize(
+    ("test_file", "identifier"),
+    [
+        ("../sympy/core/tests/test_arit.py", "test_Add_is_zero"),
+        ("sympy/core/test_arit.py", "test_Add_is_zero"),
+        ("sympy/core/tests/test_arit.py", "-k"),
+        ("sympy/core/tests/test_arit.py", "test_x; id"),
+    ],
+)
+def test_sympy_profile_rejects_unstructured_targets(test_file: str, identifier: str) -> None:
+    runtime = replace(
+        _runtime(),
+        case_id="rk-v0.2-017",
+        instance_id="sympy__sympy-15875",
+        test_command_profile="sympy-bin-test-v1",
+    )
+    fake = FakeDocker(runtime)
+    executor = _executor(fake, runtime)
+    executor.acquire()
+    executor.prepare_workspaces(fixed_patch=b"diff --git a/a b/a\n")
+
+    with pytest.raises(PolicyRejection, match="Structured SymPy"):
+        executor.run_test_command(
+            workspace="base",
+            sympy_test_file=test_file,
+            sympy_test_identifier=identifier,
+        )
 
 
 def test_custom_resource_policy_is_enforced_by_container_inspection() -> None:
