@@ -29,6 +29,17 @@ PREPARED_AT = "2026-07-11T00:00:01Z"
 EXECUTED_AT = "2026-07-11T00:00:02Z"
 
 
+@pytest.mark.parametrize(
+    ("value", "microsecond"),
+    [
+        ("2026-07-11T00:00:01.5Z", 500_000),
+        ("2026-07-11T00:00:01.1234567Z", 123_456),
+    ],
+)
+def test_timestamp_fraction_is_interpreter_independent(value: str, microsecond: int) -> None:
+    assert config_builder._timestamp_value(value).microsecond == microsecond
+
+
 def _write_json(path: Path, value: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     path.write_text(json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n")

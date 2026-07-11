@@ -717,10 +717,15 @@ def _timestamp(value: object, label: str) -> str:
 
 
 def _timestamp_value(value: str) -> datetime:
-    parsed = datetime.fromisoformat(value[:-1] + "+00:00")
-    if parsed.tzinfo != timezone.utc:
-        raise ValueError("timestamp must use UTC")
-    return parsed
+    # Python 3.10 accepts only 3- or 6-digit fractional seconds here, while
+    # newer interpreters accept arbitrary precision and truncate to
+    # microseconds. Normalize explicitly so every supported version orders
+    # the same valid RFC 3339 timestamp identically.
+    body = value[:-1]
+    if "." in body:
+        whole, fraction = body.rsplit(".", 1)
+        body = f"{whole}.{fraction[:6].ljust(6, '0')}"
+    return datetime.fromisoformat(body + "+00:00").replace(tzinfo=timezone.utc)
 
 
 def _canonical(value: Mapping[str, object]) -> bytes:
