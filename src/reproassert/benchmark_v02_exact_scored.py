@@ -278,11 +278,22 @@ def _evaluate_v02_exact_frozen_case_with_factory(
                 tool_git_sha=tool_git_sha,
                 executor_factory=executor_factory,
             )
-        verified = _verify_reusable_receipt(receipt_path, run, artifact)
+        verified = _verify_reusable_receipt(
+            receipt_path,
+            run,
+            artifact,
+            capability=capability,
+            manifest_path=Path(manifest_path),
+            expected_manifest_sha256=expected_manifest_sha256,
+            gold_smoke_receipt_path=Path(gold_smoke_receipt_path),
+            gold_specs_path=Path(gold_specs_path),
+            executed_at=executed_at,
+            tool_git_sha=tool_git_sha,
+        )
         if receipt is not None and verified != receipt:
             raise _reject("Exact candidate receipt changed after evaluation.")
         receipt_recoverable = True
-        duration_ms = max(0, round((time.monotonic() - phase_started) * 1_000))
+        duration_ms = verified.evaluator_wall_ms
         if not _differential_finished(snapshot, run):
             runner._finish_phase(
                 run,
@@ -310,6 +321,20 @@ def _evaluate_v02_exact_frozen_case_with_factory(
                 evidence={"duration_ms": duration_ms, "exact_receipt_sha256": verified.sha256},
             )
         runner._assert_total_within_reservation(run)
+        sealed = _verify_reusable_receipt(
+            receipt_path,
+            run,
+            artifact,
+            capability=capability,
+            manifest_path=Path(manifest_path),
+            expected_manifest_sha256=expected_manifest_sha256,
+            gold_smoke_receipt_path=Path(gold_smoke_receipt_path),
+            gold_specs_path=Path(gold_specs_path),
+            executed_at=executed_at,
+            tool_git_sha=tool_git_sha,
+        )
+        if sealed.sha256 != verified.sha256:
+            raise _reject("Exact receipt changed immediately before result sealing.")
         return _write_result(
             run,
             candidate=candidate,
@@ -594,17 +619,42 @@ def _has_sandbox_cost(snapshot: runner.V02LedgerSnapshot, run: runner._RunContex
 
 
 def _verify_reusable_receipt(
-    path: Path, run: runner._RunContext, artifact: CandidateArtifact
+    path: Path,
+    run: runner._RunContext,
+    artifact: CandidateArtifact,
+    *,
+    capability: VerifiedV02ExactImageEvaluatorCapability,
+    manifest_path: Path,
+    expected_manifest_sha256: str,
+    gold_smoke_receipt_path: Path,
+    gold_specs_path: Path,
+    executed_at: str,
+    tool_git_sha: str,
 ) -> CandidateEvaluationReceipt:
-    verified = verify_instance_candidate_receipt(path)
     with open_regular_file(path) as stream:
         raw = stream.read(MAX_BYTES + 1)
+    verified = verify_instance_candidate_receipt(path, raw=raw)
     try:
         value = json.loads(raw, object_pairs_hook=_reject_duplicates)
     except (UnicodeDecodeError, json.JSONDecodeError, ValueError, RecursionError) as exc:
         raise _reject("Reusable exact receipt is invalid JSON.") from exc
     candidate = value.get("candidate") if isinstance(value, dict) else None
+    inputs = value.get("inputs") if isinstance(value, dict) else None
     expected_target = f"{artifact.relative_path}::{artifact.test_function}"
+    expected_inputs = {
+        **capability.public_record(),
+        "evaluator_public_commitment_sha256": capability.evaluator_public_commitment_sha256,
+    }
+    manifest_sha256 = _regular_file_sha256(manifest_path, "runtime manifest")
+    gold_raw = _regular_file_bytes(gold_smoke_receipt_path, "gold-smoke receipt")
+    try:
+        gold = json.loads(gold_raw, object_pairs_hook=_reject_duplicates)
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError, RecursionError) as exc:
+        raise _reject("Fresh gold-smoke receipt is invalid JSON.") from exc
+    gold_inputs = gold.get("inputs") if isinstance(gold, dict) else None
+    expected_specs_sha256 = (
+        gold_inputs.get("gold_specs_sha256") if isinstance(gold_inputs, Mapping) else None
+    )
     if (
         verified.case_id != run.case.id
         or not isinstance(candidate, Mapping)
@@ -612,9 +662,29 @@ def _verify_reusable_receipt(
         or candidate.get("bytes") != len(artifact.content)
         or candidate.get("relative_path") != artifact.relative_path
         or candidate.get("target") != expected_target
+        or inputs != expected_inputs
+        or value.get("executed_at") != executed_at
+        or value.get("tool_git_sha") != tool_git_sha
+        or manifest_sha256 != expected_manifest_sha256
+        or manifest_sha256 != capability.runtime_manifest_sha256
+        or hashlib.sha256(gold_raw).hexdigest() != capability.gold_smoke_receipt_sha256
+        or not isinstance(expected_specs_sha256, str)
+        or _regular_file_sha256(gold_specs_path, "gold specs") != expected_specs_sha256
     ):
         raise _reject("Reusable exact receipt differs from the durable candidate.")
     return verified
+
+
+def _regular_file_bytes(path: Path, label: str) -> bytes:
+    with open_regular_file(path) as stream:
+        raw = stream.read(MAX_BYTES + 1)
+    if len(raw) > MAX_BYTES:
+        raise _reject(f"Fresh {label} exceeds its byte limit.")
+    return raw
+
+
+def _regular_file_sha256(path: Path, label: str) -> str:
+    return hashlib.sha256(_regular_file_bytes(path, label)).hexdigest()
 
 
 def _write_result(

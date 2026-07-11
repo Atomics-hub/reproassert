@@ -35,6 +35,13 @@ from reproassert.generator import GenerationRequest
 from reproassert.sandbox import DockerSandbox
 
 
+@pytest.fixture(autouse=True)
+def _isolated_authorization_claim_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    root = tmp_path / "authorization-claim-state"
+    root.mkdir(mode=0o700)
+    monkeypatch.setattr(runner, "_authorization_claim_state_root", lambda: root)
+
+
 def _pricing(**changes: object) -> runner.V02PricingSnapshot:
     values: dict[str, object] = {
         "provider": "openai",
@@ -490,6 +497,7 @@ def _campaign_run(
     cohort_sha256: str,
     ledger_path: Path,
     request_set_sha256: str | None = None,
+    run_policy: runner.V02ScoredRunPolicy | None = None,
 ) -> runner._RunContext:
     index = int(case.id[-3:])
     attempt_directory = tmp_path / f"campaign-attempt-{index:03d}"
@@ -522,7 +530,7 @@ def _campaign_run(
     run = runner._RunContext(
         ledger_path=ledger_path,
         attempt_directory=attempt_directory,
-        policy=_policy(),
+        policy=run_policy or _policy(),
         attempt_id=f"attempt_{index:03d}_{index:032x}",
         case=case,
         preregistration_sha256=preregistration_sha256,
@@ -600,6 +608,7 @@ def _exact_scored_barrier_fixture(
     selected_index: int,
     selected_candidate: bool = True,
     authentic_selected_recovery: bool = False,
+    run_policy: runner.V02ScoredRunPolicy | None = None,
 ) -> tuple[
     runner._RunContext,
     Path,
@@ -607,6 +616,7 @@ def _exact_scored_barrier_fixture(
     exact_preregistration_module.VerifiedV02ExactPreregistration,
 ]:
     rows: list[dict[str, object]] = []
+    scored_policy = run_policy or _policy()
     selected_context: issuer.VerifiedV02GeneratorSourceContext | None = None
     selected_request: GenerationRequest | None = None
     selected_projection_sha256: str | None = None
@@ -739,7 +749,7 @@ def _exact_scored_barrier_fixture(
             run = runner._RunContext(
                 ledger_path=ledger_path,
                 attempt_directory=attempt_directory,
-                policy=_policy(),
+                policy=scored_policy,
                 attempt_id=f"attempt_{index:03d}_{index:032x}",
                 case=case,
                 preregistration_sha256=loaded.raw_sha256,
@@ -755,7 +765,7 @@ def _exact_scored_barrier_fixture(
                     generator_projection_sha256=selected_projection_sha256,
                     context_record=context_record,
                     rendered_input_sha256=rendered_input_sha256,
-                    configuration_sha256=_policy().configuration_sha256,
+                    configuration_sha256=scored_policy.configuration_sha256,
                 ),
                 preregistration_request_set_sha256=loaded.request_set_sha256,
             )
@@ -768,6 +778,7 @@ def _exact_scored_barrier_fixture(
                 cohort_sha256=loaded.cohort_sha256,
                 ledger_path=ledger_path,
                 request_set_sha256=loaded.request_set_sha256,
+                run_policy=scored_policy,
             )
         _freeze_campaign_disposition(
             run,
@@ -779,7 +790,7 @@ def _exact_scored_barrier_fixture(
     barrier = runner.freeze_v02_campaign_generation_barrier(
         preregistration_path=preregistration_path,
         ledger_path=ledger_path,
-        policy=_policy(),
+        policy=scored_policy,
     )
     authority = object.__new__(exact_preregistration_module.VerifiedV02ExactPreregistration)
     for name, value in {
@@ -842,6 +853,7 @@ def test_exact_scored_entry_evaluates_pytest_and_sympy_after_exact_barrier(
         case_id=run.case.id,
         classification="verified_reproduction",
         accepted=True,
+        evaluator_wall_ms=25,
     )
     capability = SimpleNamespace(
         case_id=run.case.id,
@@ -866,8 +878,11 @@ def test_exact_scored_entry_evaluates_pytest_and_sympy_after_exact_barrier(
     monkeypatch.setattr(exact_scored, "hidden_case_artifacts", lambda _authority, _case: {})
     monkeypatch.setattr(exact_scored, "evaluate_instance_candidate", evaluate)
     monkeypatch.setattr(
-        exact_scored, "_verify_reusable_receipt", lambda _path, _run, _artifact: receipt
+        exact_scored,
+        "_verify_reusable_receipt",
+        lambda _path, _run, _artifact, **_kwargs: receipt,
     )
+    monkeypatch.setattr(exact_scored, "verify_instance_candidate_receipt", lambda _path: receipt)
 
     kwargs = {
         "preregistration_path": preregistration_path,
@@ -996,10 +1011,19 @@ def test_exact_scored_recovery_reconstructs_exact_authorized_input_without_provi
 def test_exact_scored_reuses_durable_receipt_after_pre_result_crash(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    recovery_policy = _policy(
+        pricing=_pricing(sandbox_microusd_per_second=1_000),
+        reserved_worst_case_microusd=60_000,
+        max_case_attributable_microusd=60_000,
+        max_campaign_attributable_microusd=2_000_000,
+        max_case_wall_ms=60_000,
+        provider_timeout_seconds=10.0,
+    )
     run, preregistration_path, barrier, authority = _exact_scored_barrier_fixture(
         tmp_path,
         selected_index=1,
         authentic_selected_recovery=True,
+        run_policy=recovery_policy,
     )
     receipt = SimpleNamespace(
         path=run.attempt_directory / exact_scored.RECEIPT_FILENAME,
@@ -1007,6 +1031,7 @@ def test_exact_scored_reuses_durable_receipt_after_pre_result_crash(
         case_id=run.case.id,
         classification="verified_reproduction",
         accepted=True,
+        evaluator_wall_ms=25,
     )
     capability = SimpleNamespace(
         case_id=run.case.id,
@@ -1028,15 +1053,16 @@ def test_exact_scored_reuses_durable_receipt_after_pre_result_crash(
         provider_calls += 1
         raise AssertionError("receipt recovery must not call the provider")
 
-    original_write_result = exact_scored._write_result
-    write_attempts = 0
+    original_finish_phase = runner._finish_phase
+    differential_finish_attempts = 0
 
-    def crash_once(*args: object, **kwargs: object) -> Any:
-        nonlocal write_attempts
-        write_attempts += 1
-        if write_attempts == 1:
-            raise RuntimeError("simulated crash after durable receipt")
-        return original_write_result(*args, **kwargs)  # type: ignore[arg-type]
+    def crash_before_phase_finish(*args: object, **kwargs: object) -> Any:
+        nonlocal differential_finish_attempts
+        if kwargs.get("phase") == "differential":
+            differential_finish_attempts += 1
+            if differential_finish_attempts == 1:
+                raise RuntimeError("simulated crash before phase finish")
+        return original_finish_phase(*args, **kwargs)  # type: ignore[arg-type]
 
     monkeypatch.setattr(generator_module, "_post_openai_response", forbidden_provider)
     monkeypatch.setattr(
@@ -1045,9 +1071,17 @@ def test_exact_scored_reuses_durable_receipt_after_pre_result_crash(
     monkeypatch.setattr(exact_scored, "hidden_case_artifacts", lambda _authority, _case: {})
     monkeypatch.setattr(exact_scored, "evaluate_instance_candidate", evaluate)
     monkeypatch.setattr(
-        exact_scored, "_verify_reusable_receipt", lambda _path, _run, _artifact: receipt
+        exact_scored,
+        "_verify_reusable_receipt",
+        lambda _path, _run, _artifact, **_kwargs: receipt,
     )
-    monkeypatch.setattr(exact_scored, "_write_result", crash_once)
+    monkeypatch.setattr(exact_scored, "verify_instance_candidate_receipt", lambda _path: receipt)
+    monkeypatch.setattr(
+        exact_scored,
+        "verify_v02_exact_scored_result",
+        lambda path: SimpleNamespace(path=path),
+    )
+    monkeypatch.setattr(runner, "_finish_phase", crash_before_phase_finish)
     kwargs = {
         "preregistration_path": preregistration_path,
         "exact_preregistration": authority,
@@ -1068,12 +1102,23 @@ def test_exact_scored_reuses_durable_receipt_after_pre_result_crash(
         "tool_git_sha": "1" * 40,
         "policy": run.policy,
     }
-    with pytest.raises(RuntimeError, match="simulated crash"):
+    with pytest.raises(RuntimeError, match="before phase finish"):
         exact_scored.evaluate_v02_exact_frozen_case(**kwargs)
     result = exact_scored.evaluate_v02_exact_frozen_case(**kwargs)
     assert result.evaluation_kind == "exact_image_receipt"
     assert evaluator_calls == 1
     assert provider_calls == 0
+    snapshot = runner.read_v02_scored_ledger(run.ledger_path)
+    events = [event for event in snapshot.events if event["attempt_id"] == run.attempt_id]
+    sandbox = next(
+        event
+        for event in events
+        if event["event_type"] == "cost_recorded"
+        and event["payload"]["category"] == "sandbox_compute"
+    )
+    assert sandbox["payload"]["amount_microusd"] == runner._sandbox_cost(
+        cast(runner.V02PricingSnapshot, recovery_policy.pricing), receipt.evaluator_wall_ms
+    )
 
 
 def test_exact_scored_case014_preserves_offline_network_failure(
@@ -1723,8 +1768,10 @@ def test_real_attempt_start_binds_preregistration_projection_and_nominal_context
     assert run.source_context is context
     assert run.request.attempt == 1
     assert run.request.feedback == ""
-    claim_path = execution_authorization_path.with_name(
-        f"{execution_authorization_path.name}.claim.json"
+    campaign_identity = hashlib.sha256(verified_authorization.campaign_id.encode()).hexdigest()[:16]
+    claim_path = (
+        runner._authorization_claim_state_root()
+        / f"{verified_authorization.raw_sha256}.{campaign_identity}.claim.json"
     )
     assert claim_path.exists()
     assert claim_path.stat().st_mode & 0o777 == 0o600
@@ -1734,6 +1781,20 @@ def test_real_attempt_start_binds_preregistration_projection_and_nominal_context
     assert runner._claim_execution_authorization(verified_authorization, run.ledger_path) == (
         claim_path
     )
+    copied_directory = tmp_path / "copied-authorization"
+    copied_directory.mkdir(mode=0o700)
+    copied_authorization_path = copied_directory / execution_authorization_path.name
+    copied_authorization_path.write_bytes(execution_authorization_path.read_bytes())
+    copied_authorization = runner.verify_v02_execution_authorization(
+        copied_authorization_path,
+        campaign_freeze_path=campaign_freeze_path,
+        preregistration_path=preregistration_path,
+    )
+    assert copied_authorization.raw_sha256 == verified_authorization.raw_sha256
+    with pytest.raises(PolicyRejection, match="already claimed"):
+        runner._claim_execution_authorization(
+            copied_authorization, tmp_path / "copied-authorization-events.jsonl"
+        )
     replay_attempt = tmp_path / "authorization-replay-attempt"
     with pytest.raises(PolicyRejection, match="already claimed"):
         runner.generate_v02_scored_case(

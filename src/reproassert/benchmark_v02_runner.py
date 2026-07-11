@@ -5,6 +5,7 @@ import hashlib
 import json
 import math
 import os
+import pwd
 import re
 import stat
 import time
@@ -926,8 +927,9 @@ def _claim_execution_authorization(
     verified = require_v02_execution_authorization(authorization)
     absolute_ledger = Path(os.path.abspath(os.fspath(ledger_path)))
     ledger_identity_sha256 = hashlib.sha256(os.fsencode(os.fspath(absolute_ledger))).hexdigest()
-    claim_path = verified.path.with_name(f"{verified.path.name}.claim.json")
-    require_private_directory(claim_path.parent)
+    claim_root = _authorization_claim_state_root()
+    campaign_identity = hashlib.sha256(verified.campaign_id.encode("utf-8")).hexdigest()[:16]
+    claim_path = claim_root / f"{verified.raw_sha256}.{campaign_identity}.claim.json"
     record = {
         "schema_version": SCHEMA_VERSION,
         "benchmark_version": BENCHMARK_VERSION,
@@ -964,6 +966,29 @@ def _claim_execution_authorization(
             "Execution authorization claim chronology is invalid.",
         )
     return claim_path
+
+
+def _authorization_claim_state_root() -> Path:
+    """Return a process-user state root independent of caller-controlled artifact paths."""
+
+    try:
+        home = Path(pwd.getpwuid(os.getuid()).pw_dir).resolve(strict=True)
+    except (KeyError, OSError, RuntimeError) as exc:
+        raise _reject(
+            "v02_execution_authorization_replay",
+            "Cannot resolve the trusted authorization-claim state root.",
+        ) from exc
+    root = home / ".local" / "state" / "reproassert" / "v02-authorization-claims"
+    try:
+        root.mkdir(mode=0o700, parents=True, exist_ok=True)
+        os.chmod(root, 0o700)
+    except OSError as exc:
+        raise _reject(
+            "v02_execution_authorization_replay",
+            "Cannot prepare the trusted authorization-claim state root.",
+        ) from exc
+    require_private_directory(root)
+    return root
 
 
 def _load_execution_authorization(path: Path) -> tuple[bytes, dict[str, object]]:
