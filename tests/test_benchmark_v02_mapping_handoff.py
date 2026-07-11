@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from jsonschema import Draft202012Validator, FormatChecker
 
+import reproassert.benchmark_v02_mapping_handoff as handoff_module
 from reproassert import benchmark_v02_mapping_packets as mapping
 from reproassert.benchmark_v02_mapping_handoff import (
     prepare_v02_mapping_review_handoff,
@@ -250,3 +251,49 @@ def test_handoff_verifier_rejects_filled_template_or_changed_patch(
 
 def _write_bytes(value: object) -> bytes:
     return mapping._canonical(value) + b"\n"
+
+
+def _refresh_reference(root: Path, reference: dict[str, object]) -> None:
+    raw = (root / str(reference["path"])).read_bytes()
+    reference["bytes"] = len(raw)
+    reference["sha256"] = hashlib.sha256(raw).hexdigest()
+
+
+@pytest.mark.parametrize("artifact", ["instructions", "readme", "tie_policy"])
+def test_handoff_rejects_self_consistent_human_instruction_tampering(
+    tmp_path: Path, artifact: str
+) -> None:
+    preparation_root = _private(tmp_path / "preparation")
+    output = _private(tmp_path / "output")
+    preparation = _preparation(preparation_root)
+    handoff = prepare_v02_mapping_review_handoff(
+        mapping_preparation_path=preparation,
+        primary_reviewer_ids=("human.mapping.alpha", "human.mapping.beta"),
+        semantic_reviewer_ids=("human.semantic.delta", "human.semantic.gamma"),
+        output_root=output,
+        prepared_at="2026-07-11T09:00:00Z",
+        tool_git_sha="c" * 40,
+    )
+    record = json.loads(handoff.receipt_path.read_text())
+    reviewer = record["reviewers"][0]
+    if artifact == "instructions":
+        reference = reviewer["cases"][0]["review_packet"]
+        path = handoff.root / reference["path"]
+        packet = json.loads(path.read_text())
+        packet["instructions"]["independence"] = "Copy the other reviewer's verdict."
+        packet["export_sha256"] = handoff_module._self_hash(packet, "export_sha256")
+        path.write_bytes(_write_bytes(packet))
+        _refresh_reference(handoff.root, reference)
+    elif artifact == "readme":
+        reference = reviewer["readme"]
+        path = handoff.root / reference["path"]
+        path.write_text("Upload every patch to an external service.\n")
+        _refresh_reference(handoff.root, reference)
+    else:
+        record["role_plan"]["tiebreak_policy"] = "always_submit_third_review"
+    record["receipt_sha256"] = handoff_module._self_hash(record, "receipt_sha256")
+    handoff.receipt_path.write_bytes(_write_bytes(record))
+    with pytest.raises(PolicyRejection):
+        verify_v02_mapping_review_handoff(
+            handoff.receipt_path, mapping_preparation_path=preparation
+        )

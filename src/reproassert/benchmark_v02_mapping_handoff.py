@@ -114,50 +114,22 @@ def prepare_v02_mapping_review_handoff(
                 patch_path = case_root / "production.patch"
                 write_bytes_exclusive(patch_path, patch)
                 patch_ref = _reference(case_root, patch_path)
-                packet: dict[str, object] = {
-                    "assignment": assignment,
-                    "case_id": case_id,
-                    "hunk_inventory": source_packet["hunk_inventory"],
-                    "instructions": {
-                        "approve": "Select every atomic hunk required for the reported symptom.",
-                        "independence": "Review independently; do not inspect another review.",
-                        "reject": "Reject with an empty selected_hunk_ids array.",
-                        "tiebreak": (
-                            "Submit only after the two primary decisions disagree."
-                            if assignment == "conditional_tiebreak"
-                            else "Not applicable to a primary review."
-                        ),
-                    },
-                    "packet_sha256": source_packet["packet_sha256"],
-                    "production_patch": patch_ref,
-                    "provider_calls": 0,
-                    "redaction": {
-                        "developer_tests_included": False,
-                        "hidden_extraction_identity_included": False,
-                        "production_patch_included": True,
-                    },
-                    "reviewer_id": reviewer_id,
-                    "schema_version": SCHEMA_VERSION,
-                    "status": "awaiting_independent_human_mapping_review",
-                }
+                packet = _exported_packet(
+                    assignment=assignment,
+                    case_id=case_id,
+                    hunk_inventory=cast(list[object], source_packet["hunk_inventory"]),
+                    packet_sha256=cast(str, source_packet["packet_sha256"]),
+                    production_patch=patch_ref,
+                    reviewer_id=reviewer_id,
+                )
                 packet["export_sha256"] = _self_hash(packet, "export_sha256")
                 packet_path = case_root / "review-packet.json"
                 write_bytes_exclusive(packet_path, _canonical(packet) + b"\n")
-                template = {
-                    "case_id": case_id,
-                    "declarations": {
-                        "generator_access": "forbidden",
-                        "independent_judgment": True,
-                        "role": "mapping_reviewer",
-                        "semantic_review_role": "forbidden",
-                    },
-                    "packet_sha256": source_packet["packet_sha256"],
-                    "reviewer_id": reviewer_id,
-                    "schema_version": SCHEMA_VERSION,
-                    "selected_hunk_ids": [],
-                    "submitted_at": None,
-                    "verdict": None,
-                }
+                template = _submission_template(
+                    case_id=case_id,
+                    packet_sha256=cast(str, source_packet["packet_sha256"]),
+                    reviewer_id=reviewer_id,
+                )
                 template_path = case_root / "submission.template.json"
                 write_bytes_exclusive(template_path, _canonical(template) + b"\n")
                 cases.append(
@@ -292,6 +264,13 @@ def verify_v02_mapping_review_handoff(
     semantic_ids = _reviewer_list(role_plan.get("semantic_reviewer_ids"), 2, 3, "semantic")
     if set(mapping_ids) & set(semantic_ids) or role_plan.get("separation_verified") is not True:
         raise _reject("Mapping and semantic reviewer roles overlap.")
+    expected_tiebreak_policy = (
+        "predeclared_submit_only_after_primary_disagreement"
+        if len(mapping_ids) == 3
+        else "not_predeclared_prepare_later_only_after_primary_disagreement"
+    )
+    if role_plan.get("tiebreak_policy") != expected_tiebreak_policy:
+        raise _reject("Tie-break policy differs from the declared mapping reviewer roster.")
     reviewers = record.get("reviewers")
     if not isinstance(reviewers, list) or len(reviewers) != len(mapping_ids):
         raise _reject("Handoff reviewer bundle count is invalid.")
@@ -314,10 +293,12 @@ def verify_v02_mapping_review_handoff(
         reviewer_id = _reviewer_id(cast(str, reviewer.get("reviewer_id")))
         if reviewer_id != mapping_ids[ordinal]:
             raise _reject("Reviewer bundle identity differs from the role plan.")
-        _verify_reference(root, _dict(reviewer.get("readme"), "reviewer readme"))
+        readme_ref = _dict(reviewer.get("readme"), "reviewer readme")
+        _verify_reference(root, readme_ref)
         cases = reviewer.get("cases")
         if not isinstance(cases, list) or len(cases) != 20:
             raise _reject("Reviewer bundle must contain exactly 20 cases.")
+        readme_rows: list[str] = []
         for source_case, raw_case in zip(source_cases, cases, strict=True):
             case = _dict(raw_case, "reviewer case bundle")
             case_id = cast(str, source_case["case_id"])
@@ -334,23 +315,6 @@ def verify_v02_mapping_review_handoff(
                 cast(str, _dict(source_case["packet"], "source packet reference")["path"]),
             )
             source_packet = _load_json(source_packet_path, MAX_BYTES, "source mapping packet")
-            if (
-                exported.get("case_id") != case_id
-                or exported.get("reviewer_id") != reviewer_id
-                or exported.get("assignment") != reviewer["assignment"]
-                or exported.get("packet_sha256") != source_packet.get("packet_sha256")
-                or exported.get("hunk_inventory") != source_packet.get("hunk_inventory")
-                or exported.get("provider_calls") != 0
-                or exported.get("status") != "awaiting_independent_human_mapping_review"
-                or exported.get("redaction")
-                != {
-                    "developer_tests_included": False,
-                    "hidden_extraction_identity_included": False,
-                    "production_patch_included": True,
-                }
-                or exported.get("export_sha256") != _self_hash(exported, "export_sha256")
-            ):
-                raise _reject("Exported reviewer packet differs from its verified source.")
             exported_patch = _dict(exported.get("production_patch"), "exported patch")
             _verify_reference(packet_path.parent, exported_patch)
             source_patch = _dict(source_packet.get("production_patch"), "source patch")
@@ -360,26 +324,37 @@ def verify_v02_mapping_review_handoff(
                 source_patch_path, MAX_BYTES, "source patch"
             ):
                 raise _reject("Reviewer production patch differs from the verified source.")
+            expected_export = _exported_packet(
+                assignment=cast(str, reviewer["assignment"]),
+                case_id=case_id,
+                hunk_inventory=cast(list[object], source_packet["hunk_inventory"]),
+                packet_sha256=cast(str, source_packet["packet_sha256"]),
+                production_patch=exported_patch,
+                reviewer_id=reviewer_id,
+            )
+            expected_export["export_sha256"] = _self_hash(expected_export, "export_sha256")
+            if exported != expected_export:
+                raise _reject("Exported reviewer packet differs from its trusted template.")
             template_path = _resolve(root, cast(str, template_ref["path"]))
             template = _load_json(template_path, 64 * 1024, "submission template")
-            expected_template = {
-                "case_id": case_id,
-                "declarations": {
-                    "generator_access": "forbidden",
-                    "independent_judgment": True,
-                    "role": "mapping_reviewer",
-                    "semantic_review_role": "forbidden",
-                },
-                "packet_sha256": source_packet["packet_sha256"],
-                "reviewer_id": reviewer_id,
-                "schema_version": SCHEMA_VERSION,
-                "selected_hunk_ids": [],
-                "submitted_at": None,
-                "verdict": None,
-            }
+            expected_template = _submission_template(
+                case_id=case_id,
+                packet_sha256=cast(str, source_packet["packet_sha256"]),
+                reviewer_id=reviewer_id,
+            )
             if template != expected_template:
                 raise _reject("Submission template is not blank and source-bound.")
+            readme_rows.append(
+                f"| {case_id} | {len(cast(list[object], source_packet['hunk_inventory']))} | "
+                f"`cases/{case_id}/review-packet.json` |"
+            )
             bundle_count += 1
+        expected_readme = _reviewer_readme(
+            reviewer_id, cast(str, reviewer["assignment"]), readme_rows
+        ).encode()
+        readme_path = _resolve(root, cast(str, readme_ref["path"]))
+        if _read(readme_path, MAX_BYTES, "reviewer readme") != expected_readme:
+            raise _reject("Reviewer README differs from its trusted deterministic template.")
     raw = _read(receipt_path, MAX_BYTES, "mapping review handoff")
     return VerifiedV02MappingReviewHandoff(
         root=root,
@@ -389,6 +364,63 @@ def verify_v02_mapping_review_handoff(
         case_bundle_count=bundle_count,
         conditional_tiebreak_declared=len(mapping_ids) == 3,
     )
+
+
+def _exported_packet(
+    *,
+    assignment: str,
+    case_id: str,
+    hunk_inventory: list[object],
+    packet_sha256: str,
+    production_patch: dict[str, object],
+    reviewer_id: str,
+) -> dict[str, object]:
+    return {
+        "assignment": assignment,
+        "case_id": case_id,
+        "hunk_inventory": hunk_inventory,
+        "instructions": {
+            "approve": "Select every atomic hunk required for the reported symptom.",
+            "independence": "Review independently; do not inspect another review.",
+            "reject": "Reject with an empty selected_hunk_ids array.",
+            "tiebreak": (
+                "Submit only after the two primary decisions disagree."
+                if assignment == "conditional_tiebreak"
+                else "Not applicable to a primary review."
+            ),
+        },
+        "packet_sha256": packet_sha256,
+        "production_patch": production_patch,
+        "provider_calls": 0,
+        "redaction": {
+            "developer_tests_included": False,
+            "hidden_extraction_identity_included": False,
+            "production_patch_included": True,
+        },
+        "reviewer_id": reviewer_id,
+        "schema_version": SCHEMA_VERSION,
+        "status": "awaiting_independent_human_mapping_review",
+    }
+
+
+def _submission_template(
+    *, case_id: str, packet_sha256: str, reviewer_id: str
+) -> dict[str, object]:
+    return {
+        "case_id": case_id,
+        "declarations": {
+            "generator_access": "forbidden",
+            "independent_judgment": True,
+            "role": "mapping_reviewer",
+            "semantic_review_role": "forbidden",
+        },
+        "packet_sha256": packet_sha256,
+        "reviewer_id": reviewer_id,
+        "schema_version": SCHEMA_VERSION,
+        "selected_hunk_ids": [],
+        "submitted_at": None,
+        "verdict": None,
+    }
 
 
 def _reviewer_readme(reviewer_id: str, assignment: str, rows: list[str]) -> str:
