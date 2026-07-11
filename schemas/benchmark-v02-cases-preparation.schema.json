@@ -117,12 +117,16 @@
     "exact_dependency_evidence": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["capability_index", "expected_runtime_manifest_sha256", "gold_smoke_receipt", "mode", "runtime_manifest"],
+      "required": ["amended_gold_specs", "amendment_receipt", "capability_index", "expected_runtime_manifest_sha256", "gold_smoke_receipt", "mode", "original_gold_smoke_receipt", "original_gold_specs", "runtime_manifest"],
       "properties": {
+        "amended_gold_specs": {"$ref": "#/$defs/external_reference"},
+        "amendment_receipt": {"$ref": "#/$defs/external_reference"},
         "capability_index": {"$ref": "#/$defs/external_reference"},
         "expected_runtime_manifest_sha256": {"$ref": "#/$defs/sha256"},
         "gold_smoke_receipt": {"$ref": "#/$defs/external_reference"},
         "mode": {"const": "exact_instance_image"},
+        "original_gold_smoke_receipt": {"$ref": "#/$defs/external_reference"},
+        "original_gold_specs": {"$ref": "#/$defs/external_reference"},
         "runtime_manifest": {"$ref": "#/$defs/external_reference"}
       }
     }

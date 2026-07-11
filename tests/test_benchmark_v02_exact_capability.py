@@ -9,6 +9,7 @@ import jsonschema
 import pytest
 from click.testing import CliRunner
 
+import reproassert.benchmark_v02_amendment as amendment
 import reproassert.benchmark_v02_exact_capability as capability
 import reproassert.cli as cli
 from reproassert.benchmark_v02_instance_controller import GoldSmokeReceipt
@@ -122,6 +123,27 @@ def _install_verifiers(monkeypatch: pytest.MonkeyPatch, gold_path: Path) -> None
             },
         },
     )
+
+
+def _amendment_authority(
+    manifest_sha: str, gold_path: Path, hidden: object
+) -> amendment.VerifiedV02BenchmarkAmendment:
+    value = object.__new__(amendment.VerifiedV02BenchmarkAmendment)
+    fields = {
+        "receipt_path": Path("amendment.json"),
+        "receipt_sha256": "8" * 64,
+        "runtime_manifest_sha256": manifest_sha,
+        "hidden_extraction_receipt_sha256": hidden.prepared.receipt_sha256,  # type: ignore[attr-defined]
+        "original_gold_smoke_receipt_sha256": "6" * 64,
+        "amended_gold_smoke_receipt_sha256": hashlib.sha256(gold_path.read_bytes()).hexdigest(),
+        "review_status": "pending",
+        "reviewer_ids": (),
+        "provider_calls": 0,
+        "_issuer": amendment._ISSUER,
+    }
+    for name, field_value in fields.items():
+        object.__setattr__(value, name, field_value)
+    return value
 
 
 def test_issuer_binds_exact_runtime_gold_and_hidden_commitments(
@@ -253,6 +275,7 @@ def test_capability_index_accepts_fresh_all_twenty_semantic_valid_as_v021(
         prepared_at="2026-07-11T09:00:00Z",
         tool_git_sha="a" * 40,
         output_path=output,
+        amendment_authority=_amendment_authority(manifest_sha, gold, hidden),
     )
 
     assert verified.evaluator_preflight_ready_count == 20
@@ -263,6 +286,12 @@ def test_capability_index_accepts_fresh_all_twenty_semantic_valid_as_v021(
     assert record["schema_version"] == "2.0.0"
     assert {row["evidence"]["algorithm"] for row in record["cases"]} == {
         capability.CAPABILITY_ALGORITHM_V2
+    }
+    assert {row["evidence"]["benchmark_amendment_receipt_sha256"] for row in record["cases"]} == {
+        "8" * 64
+    }
+    assert {row["evidence"]["benchmark_amendment_review_status"] for row in record["cases"]} == {
+        "pending"
     }
     assert {row["status"] for row in record["cases"]} == {
         "runtime_attested_evaluator_preflight_ready"

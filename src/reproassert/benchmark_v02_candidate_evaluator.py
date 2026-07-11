@@ -730,6 +730,8 @@ def verify_instance_candidate_receipt(
 def _verify_capability_inputs(value: object, *, case_id: str) -> None:
     if not isinstance(value, dict) or set(value) != {
         "algorithm",
+        "benchmark_amendment_receipt_sha256",
+        "benchmark_amendment_review_status",
         "case_id",
         "evaluator_public_commitment_sha256",
         "gold_smoke",
@@ -738,11 +740,25 @@ def _verify_capability_inputs(value: object, *, case_id: str) -> None:
         "runtime_manifest_sha256",
     }:
         raise _reject("Exact-image evaluator input binding is invalid.")
+    algorithm = value.get("algorithm")
     if (
-        value.get("algorithm") != "reproassert-v02-exact-image-evaluator-capability-v1"
+        algorithm
+        not in {
+            "reproassert-v02-exact-image-evaluator-capability-v1",
+            "reproassert-v02-exact-image-evaluator-capability-v2",
+        }
         or value.get("case_id") != case_id
     ):
         raise _reject("Exact-image evaluator input identity is invalid.")
+    amendment_sha = value.get("benchmark_amendment_receipt_sha256")
+    amendment_status = value.get("benchmark_amendment_review_status")
+    if algorithm.endswith("-v1"):
+        if amendment_sha is not None or amendment_status is not None:
+            raise _reject("Legacy exact-image authority cannot bind a benchmark amendment.")
+    elif amendment_status != "approved":
+        raise _reject("v0.2.1 benchmark amendment review is not approved for execution.")
+    else:
+        _digest(amendment_sha, "benchmark amendment receipt")
     commitment = _digest(
         value.get("evaluator_public_commitment_sha256"), "evaluator public commitment"
     )
@@ -789,7 +805,7 @@ def _verify_capability_inputs(value: object, *, case_id: str) -> None:
         raise _reject("Gold-smoke binding is invalid.")
     _digest(gold.get("receipt_commitment_sha256"), "gold-smoke receipt commitment")
     _digest(gold.get("receipt_sha256"), "gold-smoke receipt")
-    if case_id == "rk-v0.2-014":
+    if case_id == "rk-v0.2-014" and algorithm.endswith("-v1"):
         expected_gold = ("infrastructure_failure", "network_dependency")
     else:
         expected_gold = ("semantic_valid", "fails_on_base_passes_on_fixed")

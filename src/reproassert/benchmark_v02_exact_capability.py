@@ -10,6 +10,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import cast
 
+from reproassert.benchmark_v02_amendment import (
+    VerifiedV02BenchmarkAmendment,
+    require_v02_benchmark_amendment,
+)
 from reproassert.benchmark_v02_hidden import (
     VerifiedV02HiddenExtraction,
     hidden_case_artifacts,
@@ -56,6 +60,8 @@ class VerifiedV02ExactImageEvaluatorCapability:
     developer_tests_bytes: int
     evaluator_public_commitment_sha256: str
     capability_algorithm: str
+    benchmark_amendment_receipt_sha256: str | None
+    benchmark_amendment_review_status: str | None
     _issuer: object = field(repr=False, compare=False)
 
     def __init__(self, *_args: object, **_kwargs: object) -> None:
@@ -65,7 +71,13 @@ class VerifiedV02ExactImageEvaluatorCapability:
         """Return the complete redacted binding carried into evaluation receipts."""
 
         return {
-            "algorithm": self.capability_algorithm,
+            "algorithm": getattr(self, "capability_algorithm", CAPABILITY_ALGORITHM),
+            "benchmark_amendment_receipt_sha256": getattr(
+                self, "benchmark_amendment_receipt_sha256", None
+            ),
+            "benchmark_amendment_review_status": getattr(
+                self, "benchmark_amendment_review_status", None
+            ),
             "case_id": self.case_id,
             "gold_smoke": {
                 "case_classification": self.gold_smoke_classification,
@@ -105,6 +117,7 @@ def prepare_v02_exact_image_capability_index(
     prepared_at: str,
     tool_git_sha: str,
     output_path: Path,
+    amendment_authority: VerifiedV02BenchmarkAmendment | None = None,
 ) -> VerifiedV02ExactImageCapabilityIndex:
     """Persist 20 redacted commitments while keeping nominal authority process-local."""
 
@@ -119,6 +132,7 @@ def prepare_v02_exact_image_capability_index(
         hidden_extraction_receipt=Path(hidden_extraction_receipt),
         prepared_at=prepared_at,
         tool_git_sha=tool_git_sha,
+        amendment_authority=amendment_authority,
     )
     record["index_sha256"] = _index_hash(record)
     write_bytes_exclusive(destination, _canonical(record) + b"\n")
@@ -128,6 +142,7 @@ def prepare_v02_exact_image_capability_index(
         expected_manifest_sha256=expected_manifest_sha256,
         gold_smoke_receipt_path=gold_smoke_receipt_path,
         hidden_extraction_receipt=hidden_extraction_receipt,
+        amendment_authority=amendment_authority,
     )
 
 
@@ -138,6 +153,7 @@ def verify_v02_exact_image_capability_index(
     expected_manifest_sha256: str,
     gold_smoke_receipt_path: Path,
     hidden_extraction_receipt: Path,
+    amendment_authority: VerifiedV02BenchmarkAmendment | None = None,
 ) -> VerifiedV02ExactImageCapabilityIndex:
     raw = _read_bounded(Path(path), 1024 * 1024, "capability index")
     try:
@@ -185,6 +201,7 @@ def verify_v02_exact_image_capability_index(
         hidden_extraction_receipt=Path(hidden_extraction_receipt),
         prepared_at=_timestamp(record.get("prepared_at")),
         tool_git_sha=_git_sha(record.get("tool_git_sha")),
+        amendment_authority=amendment_authority,
     )
     unsigned = dict(record)
     unsigned.pop("index_sha256")
@@ -208,6 +225,7 @@ def _derive_index(
     hidden_extraction_receipt: Path,
     prepared_at: str,
     tool_git_sha: str,
+    amendment_authority: VerifiedV02BenchmarkAmendment | None = None,
 ) -> dict[str, object]:
     timestamp = _timestamp(prepared_at)
     if _timestamp_value(timestamp) > datetime.now(timezone.utc):
@@ -222,6 +240,7 @@ def _derive_index(
             gold_smoke_receipt_path=gold_smoke_receipt_path,
             verified_hidden=hidden,
             case_id=f"rk-v0.2-{number:03d}",
+            amendment_authority=amendment_authority,
         )
         require_v02_exact_image_evaluator_capability(capability)
         rows.append(
@@ -266,6 +285,7 @@ def issue_verified_v02_exact_image_evaluator_capability(
     gold_smoke_receipt_path: Path,
     verified_hidden: VerifiedV02HiddenExtraction,
     case_id: str,
+    amendment_authority: VerifiedV02BenchmarkAmendment | None = None,
 ) -> VerifiedV02ExactImageEvaluatorCapability:
     """Verify the complete frozen evidence chain and issue authority for one exact case."""
 
@@ -314,6 +334,20 @@ def issue_verified_v02_exact_image_evaluator_capability(
     inputs = cast(dict[str, object], record["inputs"])
     if inputs.get("gold_specs_sha256") != expected_specs_sha:
         raise _reject("Gold-smoke specs do not match the versioned benchmark amendment.")
+    amendment_sha: str | None = None
+    amendment_review_status: str | None = None
+    if semantic_valid == 20:
+        amendment = require_v02_benchmark_amendment(amendment_authority)
+        amendment_sha = amendment.receipt_sha256
+        amendment_review_status = amendment.review_status
+        if (
+            amendment.runtime_manifest_sha256 != manifest.sha256
+            or amendment.hidden_extraction_receipt_sha256 != verified_hidden.prepared.receipt_sha256
+            or amendment.amended_gold_smoke_receipt_sha256 != verified_gold.sha256
+        ):
+            raise _reject("Benchmark amendment authority does not bind exact evaluator evidence.")
+    elif amendment_authority is not None:
+        raise _reject("Legacy exact-image capability cannot bind a v0.2.1 amendment.")
     if inputs["instance_runtime_manifest_sha256"] != manifest.sha256:
         raise _reject("Gold-smoke receipt does not bind the exact runtime manifest.")
     prepared = verified_hidden.prepared
@@ -384,6 +418,8 @@ def issue_verified_v02_exact_image_evaluator_capability(
         "capability_algorithm": (
             CAPABILITY_ALGORITHM_V2 if semantic_valid == 20 else CAPABILITY_ALGORITHM
         ),
+        "benchmark_amendment_receipt_sha256": amendment_sha,
+        "benchmark_amendment_review_status": amendment_review_status,
     }
     for name, value in values.items():
         object.__setattr__(capability, name, value)

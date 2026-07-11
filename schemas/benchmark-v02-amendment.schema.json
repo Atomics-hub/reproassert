@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Atomics-hub/reproassert/schemas/benchmark-v02-amendment.schema.json",
+  "title": "ReproAssert v0.2.1 benchmark amendment receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["algorithm", "benchmark_version", "change", "claims", "evidence", "prepared_at", "receipt_sha256", "review", "schema_version", "status", "tool_git_sha"],
+  "properties": {
+    "algorithm": {"const": "reproassert-v02-gold-spec-amendment-v1"},
+    "benchmark_version": {"const": "0.2.1"},
+    "schema_version": {"const": "1.0.0"},
+    "prepared_at": {"type": "string"},
+    "receipt_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "tool_git_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "status": {"enum": ["provider_free_packaging_ready_review_pending", "provider_free_packaging_ready_review_approved"]},
+    "change": {
+      "type": "object", "additionalProperties": false,
+      "required": ["added_fail_to_pass_targets", "amended_case_id", "amended_instance_id", "fail_to_pass_after", "fail_to_pass_before", "removed_fail_to_pass_targets", "scope"],
+      "properties": {
+        "added_fail_to_pass_targets": {"const": 0}, "amended_case_id": {"const": "rk-v0.2-014"},
+        "amended_instance_id": {"const": "psf__requests-1921"}, "fail_to_pass_after": {"const": 1},
+        "fail_to_pass_before": {"const": 6}, "removed_fail_to_pass_targets": {"const": 5},
+        "scope": {"const": "strict_subset_only"}
+      }
+    },
+    "claims": {
+      "type": "object", "additionalProperties": false,
+      "required": ["hidden_paths_emitted", "hidden_test_names_emitted", "logs_emitted", "nominal_authority_serialized", "provider_calls"],
+      "properties": {
+        "hidden_paths_emitted": {"const": false}, "hidden_test_names_emitted": {"const": false},
+        "logs_emitted": {"const": false}, "nominal_authority_serialized": {"const": false}, "provider_calls": {"const": 0}
+      }
+    },
+    "evidence": {
+      "type": "object", "additionalProperties": false,
+      "required": ["amended_executed_at", "amended_gold_smoke_commitment_sha256", "amended_gold_smoke_receipt_sha256", "amended_gold_specs_sha256", "hidden_extraction_commitment_sha256", "hidden_extraction_receipt_sha256", "original_executed_at", "original_gold_smoke_commitment_sha256", "original_gold_smoke_receipt_sha256", "original_gold_specs_sha256", "runtime_manifest_raw_sha256", "runtime_manifest_sha256", "smoke_tool_git_sha"],
+      "properties": {
+        "amended_executed_at": {"type": "string"}, "original_executed_at": {"type": "string"},
+        "amended_gold_specs_sha256": {"const": "8fa460abb6d72fcaa19f3588277216aa8b483eb28e27ea78985cb7e6f6ceb1db"},
+        "original_gold_specs_sha256": {"const": "f9cdfa3b0fa7aa8d26a7c4720af36095fe429f098daa5dcea41a436895f63544"},
+        "amended_gold_smoke_receipt_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "amended_gold_smoke_commitment_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "original_gold_smoke_receipt_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "original_gold_smoke_commitment_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "hidden_extraction_commitment_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "hidden_extraction_receipt_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "runtime_manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "runtime_manifest_raw_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "smoke_tool_git_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"}
+      }
+    },
+    "review": {
+      "type": "object", "additionalProperties": false, "required": ["reviewer_ids", "status"],
+      "properties": {"reviewer_ids": {"type": "array", "items": {"type": "string"}, "maxItems": 3, "uniqueItems": true}, "status": {"enum": ["pending", "approved"]}}
+    }
+  }
+}

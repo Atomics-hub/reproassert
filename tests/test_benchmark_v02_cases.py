@@ -352,6 +352,15 @@ def test_prepare_controller_uses_fresh_exact_image_authority_for_all_twenty(
     manifest = parent / "runtime-manifest.json"
     gold_smoke = parent / "gold-smoke.json"
     capability_index = parent / "capability-index.json"
+    amendment_inputs = tuple(
+        parent / name
+        for name in (
+            "amendment.json",
+            "original-gold-specs.json",
+            "amended-gold-specs.json",
+            "original-gold-smoke.json",
+        )
+    )
     manifest.write_text("{}\n")
     gold_smoke.write_text("{}\n")
     rows = {
@@ -370,6 +379,8 @@ def test_prepare_controller_uses_fresh_exact_image_authority_for_all_twenty(
         for number in range(1, 21)
     }
     capability_index.write_bytes(cases._canonical({"cases": list(rows.values())}) + b"\n")
+    for path in amendment_inputs:
+        path.write_text("{}\n")
     verified = SimpleNamespace(
         sha256=hashlib.sha256(capability_index.read_bytes()).hexdigest(),
         evaluator_preflight_ready_count=20,
@@ -394,6 +405,10 @@ def test_prepare_controller_uses_fresh_exact_image_authority_for_all_twenty(
         expected_runtime_manifest_sha256="8" * 64,
         gold_smoke_receipt=gold_smoke,
         exact_capability_index=capability_index,
+        amendment_receipt=amendment_inputs[0],
+        original_gold_specs=amendment_inputs[1],
+        amended_gold_specs=amendment_inputs[2],
+        original_gold_smoke_receipt=amendment_inputs[3],
     )
 
     receipt = json.loads((root / cases.CASES_PREPARATION_FILENAME).read_text())
@@ -426,6 +441,24 @@ def test_exact_image_inputs_are_all_or_none_and_conflict_with_legacy_plans(
             gold_smoke_receipt=tmp_path / "gold",
             exact_capability_index=tmp_path / "index",
         )
+
+
+def test_pending_amendment_permits_packaging_but_not_dependency_readiness() -> None:
+    state, blockers = cases._exact_image_dependency_state(
+        {
+            "status": "runtime_attested_evaluator_preflight_ready",
+            "evaluator_public_commitment_sha256": "a" * 64,
+            "evidence": {
+                "benchmark_amendment_review_status": "pending",
+                "runtime": {"image_digest": "sha256:" + "b" * 64, "image_id": "sha256:" + "c" * 64},
+                "runtime_manifest_sha256": "d" * 64,
+            },
+        },
+        SimpleNamespace(sha256="e" * 64),  # type: ignore[arg-type]
+    )
+
+    assert state["status"] == "amendment_review_pending"
+    assert blockers == ["exact_image_amendment_review_pending"]
 
 
 def test_verifier_rejects_ready_package_index(prepared_tree: dict[str, Any]) -> None:

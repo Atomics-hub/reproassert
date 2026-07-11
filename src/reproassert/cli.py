@@ -5,7 +5,7 @@ import os
 from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
 import click
 from rich.console import Console
@@ -30,6 +30,11 @@ from reproassert.benchmark_source import (
     load_frozen_manifest,
     prepare_source_case,
     verify_source_receipt,
+)
+from reproassert.benchmark_v02_amendment import (
+    VerifiedV02BenchmarkAmendment,
+    prepare_v02_benchmark_amendment,
+    verify_v02_benchmark_amendment,
 )
 from reproassert.benchmark_v02_campaign import (
     finalize_v02_campaign,
@@ -768,6 +773,176 @@ def benchmark_verify_v02_hidden_gold(preparation_receipt: Path) -> None:
     )
 
 
+def _amendment_common_options(function: Callable[..., Any]) -> Callable[..., Any]:
+    options = (
+        click.option(
+            "--original-gold-specs",
+            type=click.Path(path_type=Path, exists=True, dir_okay=False),
+            required=True,
+        ),
+        click.option(
+            "--amended-gold-specs",
+            type=click.Path(path_type=Path, exists=True, dir_okay=False),
+            required=True,
+        ),
+        click.option(
+            "--original-gold-smoke-receipt",
+            type=click.Path(path_type=Path, exists=True, dir_okay=False),
+            required=True,
+        ),
+        click.option(
+            "--amended-gold-smoke-receipt",
+            type=click.Path(path_type=Path, exists=True, dir_okay=False),
+            required=True,
+        ),
+        click.option(
+            "--instance-runtime-manifest",
+            type=click.Path(path_type=Path, exists=True, dir_okay=False),
+            required=True,
+        ),
+        click.option("--expected-manifest-sha256", required=True),
+        click.option(
+            "--hidden-extraction-receipt",
+            type=click.Path(path_type=Path, exists=True, dir_okay=False),
+            required=True,
+        ),
+    )
+    for option in reversed(options):
+        function = option(function)
+    return function
+
+
+@benchmark_group.command("prepare-v02-amendment")
+@_amendment_common_options
+@click.option("--prepared-at", required=True)
+@click.option("--tool-git-sha", required=True)
+@click.option("--review-status", type=click.Choice(("pending", "approved")), required=True)
+@click.option("--reviewer-id", "reviewer_ids", multiple=True)
+@click.option("--output", type=click.Path(path_type=Path, dir_okay=False), required=True)
+def benchmark_prepare_v02_amendment(
+    original_gold_specs: Path,
+    amended_gold_specs: Path,
+    original_gold_smoke_receipt: Path,
+    amended_gold_smoke_receipt: Path,
+    instance_runtime_manifest: Path,
+    expected_manifest_sha256: str,
+    hidden_extraction_receipt: Path,
+    prepared_at: str,
+    tool_git_sha: str,
+    review_status: str,
+    reviewer_ids: tuple[str, ...],
+    output: Path,
+) -> None:
+    """Prepare the redacted provider-free v0.2.1 amendment receipt."""
+    try:
+        _ensure_private_output_root(output.parent)
+        verified = prepare_v02_benchmark_amendment(
+            original_gold_specs=original_gold_specs,
+            amended_gold_specs=amended_gold_specs,
+            original_gold_smoke_receipt=original_gold_smoke_receipt,
+            amended_gold_smoke_receipt=amended_gold_smoke_receipt,
+            instance_runtime_manifest=instance_runtime_manifest,
+            expected_runtime_manifest_sha256=expected_manifest_sha256,
+            hidden_extraction_receipt=hidden_extraction_receipt,
+            prepared_at=prepared_at,
+            tool_git_sha=tool_git_sha,
+            review_status=review_status,
+            reviewer_ids=reviewer_ids,
+            output_path=output,
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(
+        json.dumps(
+            {
+                "provider_calls": 0,
+                "receipt_sha256": verified.receipt_sha256,
+                "review_status": verified.review_status,
+                "reviewer_ids": list(verified.reviewer_ids),
+                "verified": True,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+@benchmark_group.command("verify-v02-amendment")
+@click.argument("receipt", type=click.Path(path_type=Path, exists=True, dir_okay=False))
+@_amendment_common_options
+def benchmark_verify_v02_amendment(
+    receipt: Path,
+    original_gold_specs: Path,
+    amended_gold_specs: Path,
+    original_gold_smoke_receipt: Path,
+    amended_gold_smoke_receipt: Path,
+    instance_runtime_manifest: Path,
+    expected_manifest_sha256: str,
+    hidden_extraction_receipt: Path,
+) -> None:
+    """Rederive the v0.2.1 amendment authority from all six private inputs."""
+    try:
+        verified = verify_v02_benchmark_amendment(
+            receipt,
+            original_gold_specs=original_gold_specs,
+            amended_gold_specs=amended_gold_specs,
+            original_gold_smoke_receipt=original_gold_smoke_receipt,
+            amended_gold_smoke_receipt=amended_gold_smoke_receipt,
+            instance_runtime_manifest=instance_runtime_manifest,
+            expected_runtime_manifest_sha256=expected_manifest_sha256,
+            hidden_extraction_receipt=hidden_extraction_receipt,
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(
+        json.dumps(
+            {
+                "receipt_sha256": verified.receipt_sha256,
+                "review_status": verified.review_status,
+                "verified": True,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+def _capability_amendment(
+    *,
+    amendment_receipt: Path | None,
+    original_gold_specs: Path | None,
+    amended_gold_specs: Path | None,
+    original_gold_smoke_receipt: Path | None,
+    amended_gold_smoke_receipt: Path,
+    instance_runtime_manifest: Path,
+    expected_manifest_sha256: str,
+    hidden_extraction_receipt: Path,
+) -> VerifiedV02BenchmarkAmendment | None:
+    values = (
+        amendment_receipt,
+        original_gold_specs,
+        amended_gold_specs,
+        original_gold_smoke_receipt,
+    )
+    if all(value is None for value in values):
+        return None
+    if any(value is None for value in values):
+        raise click.UsageError(
+            "v0.2.1 capability requires the amendment receipt, both gold-spec files, "
+            "and original gold-smoke receipt"
+        )
+    return verify_v02_benchmark_amendment(
+        cast(Path, amendment_receipt),
+        original_gold_specs=cast(Path, original_gold_specs),
+        amended_gold_specs=cast(Path, amended_gold_specs),
+        original_gold_smoke_receipt=cast(Path, original_gold_smoke_receipt),
+        amended_gold_smoke_receipt=amended_gold_smoke_receipt,
+        instance_runtime_manifest=instance_runtime_manifest,
+        expected_runtime_manifest_sha256=expected_manifest_sha256,
+        hidden_extraction_receipt=hidden_extraction_receipt,
+    )
+
+
 @benchmark_group.command("prepare-v02-exact-capabilities")
 @click.option(
     "--instance-runtime-manifest",
@@ -788,6 +963,12 @@ def benchmark_verify_v02_hidden_gold(preparation_receipt: Path) -> None:
 @click.option("--prepared-at", required=True)
 @click.option("--tool-git-sha", required=True)
 @click.option("--output", type=click.Path(path_type=Path, dir_okay=False), required=True)
+@click.option("--amendment-receipt", type=click.Path(path_type=Path, exists=True, dir_okay=False))
+@click.option("--original-gold-specs", type=click.Path(path_type=Path, exists=True, dir_okay=False))
+@click.option("--amended-gold-specs", type=click.Path(path_type=Path, exists=True, dir_okay=False))
+@click.option(
+    "--original-gold-smoke-receipt", type=click.Path(path_type=Path, exists=True, dir_okay=False)
+)
 def benchmark_prepare_v02_exact_capabilities(
     instance_runtime_manifest: Path,
     expected_manifest_sha256: str,
@@ -796,11 +977,25 @@ def benchmark_prepare_v02_exact_capabilities(
     prepared_at: str,
     tool_git_sha: str,
     output: Path,
+    amendment_receipt: Path | None,
+    original_gold_specs: Path | None,
+    amended_gold_specs: Path | None,
+    original_gold_smoke_receipt: Path | None,
 ) -> None:
     """Persist 20 exact-image commitments while keeping authority process-local."""
 
     try:
         _ensure_private_output_root(output.parent)
+        amendment = _capability_amendment(
+            amendment_receipt=amendment_receipt,
+            original_gold_specs=original_gold_specs,
+            amended_gold_specs=amended_gold_specs,
+            original_gold_smoke_receipt=original_gold_smoke_receipt,
+            amended_gold_smoke_receipt=gold_smoke_receipt,
+            instance_runtime_manifest=instance_runtime_manifest,
+            expected_manifest_sha256=expected_manifest_sha256,
+            hidden_extraction_receipt=hidden_extraction_receipt,
+        )
         verified = prepare_v02_exact_image_capability_index(
             manifest_path=instance_runtime_manifest,
             expected_manifest_sha256=expected_manifest_sha256,
@@ -809,6 +1004,7 @@ def benchmark_prepare_v02_exact_capabilities(
             prepared_at=prepared_at,
             tool_git_sha=tool_git_sha,
             output_path=output,
+            amendment_authority=amendment,
         )
     except (ReproAssertError, OSError, ValueError) as exc:
         _fail(exc)
@@ -833,22 +1029,43 @@ def benchmark_prepare_v02_exact_capabilities(
     type=click.Path(path_type=Path, exists=True, dir_okay=False),
     required=True,
 )
+@click.option("--amendment-receipt", type=click.Path(path_type=Path, exists=True, dir_okay=False))
+@click.option("--original-gold-specs", type=click.Path(path_type=Path, exists=True, dir_okay=False))
+@click.option("--amended-gold-specs", type=click.Path(path_type=Path, exists=True, dir_okay=False))
+@click.option(
+    "--original-gold-smoke-receipt", type=click.Path(path_type=Path, exists=True, dir_okay=False)
+)
 def benchmark_verify_v02_exact_capabilities(
     index: Path,
     instance_runtime_manifest: Path,
     expected_manifest_sha256: str,
     gold_smoke_receipt: Path,
     hidden_extraction_receipt: Path,
+    amendment_receipt: Path | None,
+    original_gold_specs: Path | None,
+    amended_gold_specs: Path | None,
+    original_gold_smoke_receipt: Path | None,
 ) -> None:
     """Rederive a redacted exact-image capability commitment index."""
 
     try:
+        amendment = _capability_amendment(
+            amendment_receipt=amendment_receipt,
+            original_gold_specs=original_gold_specs,
+            amended_gold_specs=amended_gold_specs,
+            original_gold_smoke_receipt=original_gold_smoke_receipt,
+            amended_gold_smoke_receipt=gold_smoke_receipt,
+            instance_runtime_manifest=instance_runtime_manifest,
+            expected_manifest_sha256=expected_manifest_sha256,
+            hidden_extraction_receipt=hidden_extraction_receipt,
+        )
         verified = verify_v02_exact_image_capability_index(
             index,
             manifest_path=instance_runtime_manifest,
             expected_manifest_sha256=expected_manifest_sha256,
             gold_smoke_receipt_path=gold_smoke_receipt,
             hidden_extraction_receipt=hidden_extraction_receipt,
+            amendment_authority=amendment,
         )
     except (ReproAssertError, OSError, ValueError) as exc:
         _fail(exc)
@@ -1522,6 +1739,12 @@ def benchmark_verify_v02_mapping_consensus(seal: Path, preparation_receipt: Path
     "--exact-capability-index",
     type=click.Path(path_type=Path, exists=True, dir_okay=False),
 )
+@click.option("--amendment-receipt", type=click.Path(path_type=Path, exists=True, dir_okay=False))
+@click.option("--original-gold-specs", type=click.Path(path_type=Path, exists=True, dir_okay=False))
+@click.option("--amended-gold-specs", type=click.Path(path_type=Path, exists=True, dir_okay=False))
+@click.option(
+    "--original-gold-smoke-receipt", type=click.Path(path_type=Path, exists=True, dir_okay=False)
+)
 @click.option("--tool-git-sha", required=True, help="Exact 40-hex controller revision.")
 @click.option("--prepared-at", required=True, help="UTC preparation timestamp.")
 @click.option(
@@ -1541,6 +1764,10 @@ def benchmark_prepare_v02_cases(
     expected_runtime_manifest_sha256: str | None,
     gold_smoke_receipt: Path | None,
     exact_capability_index: Path | None,
+    amendment_receipt: Path | None,
+    original_gold_specs: Path | None,
+    amended_gold_specs: Path | None,
+    original_gold_smoke_receipt: Path | None,
     tool_git_sha: str,
     prepared_at: str,
     output_root: Path,
@@ -1559,6 +1786,10 @@ def benchmark_prepare_v02_cases(
             expected_runtime_manifest_sha256=expected_runtime_manifest_sha256,
             gold_smoke_receipt=gold_smoke_receipt,
             exact_capability_index=exact_capability_index,
+            amendment_receipt=amendment_receipt,
+            original_gold_specs=original_gold_specs,
+            amended_gold_specs=amended_gold_specs,
+            original_gold_smoke_receipt=original_gold_smoke_receipt,
             output_root=output_root,
             pricing_snapshot_path=pricing_snapshot,
             tool_git_sha=tool_git_sha,

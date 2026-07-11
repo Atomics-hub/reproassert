@@ -60,9 +60,11 @@
     "evaluator_wall_ms": { "type": "integer", "minimum": 0 },
     "inputs": {
       "type": "object", "additionalProperties": false,
-      "required": ["algorithm", "case_id", "evaluator_public_commitment_sha256", "gold_smoke", "hidden_inputs", "runtime", "runtime_manifest_sha256"],
+      "required": ["algorithm", "benchmark_amendment_receipt_sha256", "benchmark_amendment_review_status", "case_id", "evaluator_public_commitment_sha256", "gold_smoke", "hidden_inputs", "runtime", "runtime_manifest_sha256"],
       "properties": {
-        "algorithm": { "const": "reproassert-v02-exact-image-evaluator-capability-v1" },
+        "algorithm": { "enum": ["reproassert-v02-exact-image-evaluator-capability-v1", "reproassert-v02-exact-image-evaluator-capability-v2"] },
+        "benchmark_amendment_receipt_sha256": { "oneOf": [{"type": "null"}, {"$ref": "#/$defs/sha256"}] },
+        "benchmark_amendment_review_status": { "enum": [null, "approved"] },
         "case_id": { "$ref": "#/$defs/case_id" },
         "evaluator_public_commitment_sha256": { "$ref": "#/$defs/sha256" },
         "runtime_manifest_sha256": { "$ref": "#/$defs/sha256" },
