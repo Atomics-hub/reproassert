@@ -664,6 +664,35 @@ def test_verifier_rejects_tampered_exact_image_binding(tmp_path: Path) -> None:
         evaluator.verify_instance_candidate_receipt(result.path)
 
 
+@pytest.mark.parametrize(
+    "mutation",
+    ["fixed_exit", "base_exit", "timeout", "oom", "gold_pair", "collection"],
+)
+def test_verifier_recomputes_outcome_from_bounded_evidence(tmp_path: Path, mutation: str) -> None:
+    result = _run(tmp_path, FakeExecutor())
+    receipt = json.loads(result.path.read_bytes())
+    runs = receipt["phases"]["candidate_runs"]
+    base = next(run for run in runs if run["workspace"] == "base")
+    fixed = next(run for run in runs if run["workspace"] == "fixed")
+    if mutation == "fixed_exit":
+        fixed["result"]["exit_code"] = 1
+    elif mutation == "base_exit":
+        base["result"]["exit_code"] = 0
+    elif mutation == "timeout":
+        base["result"]["timed_out"] = True
+    elif mutation == "oom":
+        base["result"]["oom_killed"] = True
+    elif mutation == "gold_pair":
+        receipt["phases"]["gold_base"]["exit_code"] = 0
+    else:
+        base["collection"]["exit_code"] = 1
+    receipt["receipt_sha256"] = evaluator._self_hash(receipt)
+    result.path.write_bytes(evaluator._canonical(receipt) + b"\n")
+
+    with pytest.raises(PolicyRejection, match=r"outcome|gold|collection"):
+        evaluator.verify_instance_candidate_receipt(result.path)
+
+
 def test_evaluator_rejects_hidden_bytes_not_bound_by_capability(tmp_path: Path) -> None:
     manifest, digest = _manifest(tmp_path)
     authority = _capability(

@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import time
+import uuid
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -262,8 +264,40 @@ def _evaluate_v02_exact_frozen_case_with_factory(
             content=candidate.test_content.encode("utf-8"),
             test_function=candidate.test_function,
         )
-        receipt = None
-        if not receipt_recovery:
+        prior = (
+            _verify_reusable_receipt(
+                receipt_path,
+                run,
+                artifact,
+                capability=capability,
+                manifest_path=Path(manifest_path),
+                expected_manifest_sha256=expected_manifest_sha256,
+                gold_smoke_receipt_path=Path(gold_smoke_receipt_path),
+                gold_specs_path=Path(gold_specs_path),
+                executed_at=executed_at,
+                tool_git_sha=tool_git_sha,
+            )
+            if receipt_recovery
+            else None
+        )
+        pricing = runner._require_pricing(run.policy)
+        trusted_completed_receipt = (
+            _trusted_completed_receipt_cost(snapshot, run, prior, pricing)
+            if prior is not None
+            else False
+        )
+        evaluation_output_path = (
+            receipt_path.with_name(f".{RECEIPT_FILENAME}.{uuid.uuid4().hex}.recovery")
+            if receipt_recovery
+            else receipt_path
+        )
+        if not trusted_completed_receipt and (
+            evaluation_output_path.exists() or evaluation_output_path.is_symlink()
+        ):
+            raise _reject("Exact evaluator recovery output already exists.")
+        if trusted_completed_receipt:
+            verified = cast(CandidateEvaluationReceipt, prior)
+        else:
             receipt = evaluate_instance_candidate(
                 evaluator_capability=capability,
                 verified_hidden=verified_hidden,
@@ -273,27 +307,32 @@ def _evaluate_v02_exact_frozen_case_with_factory(
                 expected_manifest_sha256=expected_manifest_sha256,
                 case_id=run.case.id,
                 candidate=artifact,
-                output_path=receipt_path,
+                output_path=evaluation_output_path,
                 executed_at=executed_at,
                 tool_git_sha=tool_git_sha,
                 executor_factory=executor_factory,
             )
-        verified = _verify_reusable_receipt(
-            receipt_path,
-            run,
-            artifact,
-            capability=capability,
-            manifest_path=Path(manifest_path),
-            expected_manifest_sha256=expected_manifest_sha256,
-            gold_smoke_receipt_path=Path(gold_smoke_receipt_path),
-            gold_specs_path=Path(gold_specs_path),
-            executed_at=executed_at,
-            tool_git_sha=tool_git_sha,
-        )
-        if receipt is not None and verified != receipt:
-            raise _reject("Exact candidate receipt changed after evaluation.")
+            verified = _verify_reusable_receipt(
+                evaluation_output_path,
+                run,
+                artifact,
+                capability=capability,
+                manifest_path=Path(manifest_path),
+                expected_manifest_sha256=expected_manifest_sha256,
+                gold_smoke_receipt_path=Path(gold_smoke_receipt_path),
+                gold_specs_path=Path(gold_specs_path),
+                executed_at=executed_at,
+                tool_git_sha=tool_git_sha,
+            )
+            if verified != receipt:
+                raise _reject("Exact candidate receipt changed after evaluation.")
+            if receipt_recovery:
+                os.replace(evaluation_output_path, receipt_path)
+                runner._fsync_directory(run.attempt_directory)
         receipt_recoverable = True
-        duration_ms = verified.evaluator_wall_ms
+        duration_ms = verified.evaluator_wall_ms + (
+            prior.evaluator_wall_ms if prior is not None and not trusted_completed_receipt else 0
+        )
         if not _differential_finished(snapshot, run):
             runner._finish_phase(
                 run,
@@ -306,10 +345,11 @@ def _evaluate_v02_exact_frozen_case_with_factory(
                     "accepted": verified.accepted,
                     "classification": verified.classification,
                     "exact_receipt_sha256": verified.sha256,
+                    "evaluator_wall_ms": duration_ms,
                     "network_mode": "none",
+                    "sandbox_cost_microusd": runner._sandbox_cost(pricing, duration_ms),
                 },
             )
-        pricing = runner._require_pricing(run.policy)
         if not _has_sandbox_cost(snapshot, run):
             runner._record_cost(
                 run,
@@ -616,6 +656,54 @@ def _has_sandbox_cost(snapshot: runner.V02LedgerSnapshot, run: runner._RunContex
         and cast(Mapping[str, object], event["payload"])["category"] == "sandbox_compute"
         for event in snapshot.events
     )
+
+
+def _trusted_completed_receipt_cost(
+    snapshot: runner.V02LedgerSnapshot,
+    run: runner._RunContext,
+    receipt: CandidateEvaluationReceipt,
+    pricing: runner.V02PricingSnapshot,
+) -> bool:
+    events = [event for event in snapshot.events if event["attempt_id"] == run.attempt_id]
+    phases = [
+        cast(Mapping[str, object], event["payload"])
+        for event in events
+        if event["event_type"] == "phase_finished"
+        and cast(Mapping[str, object], event["payload"])["phase"] == "differential"
+    ]
+    costs = [
+        cast(Mapping[str, object], event["payload"])
+        for event in events
+        if event["event_type"] == "cost_recorded"
+        and cast(Mapping[str, object], event["payload"])["category"] == "sandbox_compute"
+    ]
+    if not phases and not costs:
+        return False
+    if len(phases) != 1 or len(costs) != 1:
+        raise _reject("Completed evaluator recovery cost state is ambiguous.")
+    phase = phases[0]
+    cost = costs[0]
+    evidence = phase.get("evidence")
+    duration_ms = receipt.evaluator_wall_ms
+    amount = runner._sandbox_cost(pricing, duration_ms)
+    expected_cost_evidence = {
+        "duration_ms": duration_ms,
+        "exact_receipt_sha256": receipt.sha256,
+    }
+    if (
+        phase.get("status") != "succeeded"
+        or phase.get("classification_code") is not None
+        or not isinstance(evidence, Mapping)
+        or evidence.get("exact_receipt_sha256") != receipt.sha256
+        or evidence.get("evaluator_wall_ms") != duration_ms
+        or evidence.get("sandbox_cost_microusd") != amount
+        or cost.get("amount_microusd") != amount
+        or cost.get("status")
+        != ("measured" if pricing.sandbox_microusd_per_second else "zero_verified")
+        or cost.get("evidence_sha256") != runner._sha256_json(expected_cost_evidence)
+    ):
+        raise _reject("Completed evaluator receipt and sandbox cost bindings disagree.")
+    return True
 
 
 def _verify_reusable_receipt(

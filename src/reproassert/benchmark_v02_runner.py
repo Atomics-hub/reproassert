@@ -991,6 +991,89 @@ def _authorization_claim_state_root() -> Path:
     return root
 
 
+def _authorization_consumption_path(run: _RunContext) -> Path:
+    authorization_sha256 = cast(str, run.policy.execution_authorization_sha256)
+    campaign_id = cast(str, run.policy.campaign_id)
+    campaign_identity = hashlib.sha256(campaign_id.encode("utf-8")).hexdigest()[:16]
+    return _authorization_claim_state_root() / (
+        f"{authorization_sha256}.{campaign_identity}.{run.case.id}.model-call.json"
+    )
+
+
+def _consume_authorized_model_call(run: _RunContext, call_id: str) -> Path:
+    """Irreversibly consume the authorization's sole provider call for one case."""
+
+    path = _authorization_consumption_path(run)
+    record: dict[str, object] = {
+        "algorithm": "reproassert-v02-authorization-model-call-consumption-v1",
+        "benchmark_version": BENCHMARK_VERSION,
+        "call_id": call_id,
+        "campaign_id": run.policy.campaign_id,
+        "case_id": run.case.id,
+        "consumed_at": _now(),
+        "execution_authorization_sha256": run.policy.execution_authorization_sha256,
+        "runner_input_sha256": run.runner_input_sha256,
+        "schema_version": SCHEMA_VERSION,
+    }
+    record["consumption_sha256"] = _sha256_json(record)
+    try:
+        _write_exclusive_fsync(path, _canonical_json(record))
+    except PolicyRejection as exc:
+        if exc.code == "v02_artifact_path" and path.exists():
+            raise _reject(
+                "v02_execution_authorization_replay",
+                "Execution authorization model call is already irreversibly consumed.",
+            ) from exc
+        raise
+    _validate_authorized_model_call_consumption(run, call_id)
+    return path
+
+
+def _validate_authorized_model_call_consumption(run: _RunContext, call_id: str) -> None:
+    _raw, record = _load_canonical_object(
+        _authorization_consumption_path(run),
+        limit=16 * 1024,
+        label="authorization model-call consumption",
+        code="v02_execution_authorization_replay",
+    )
+    expected_keys = {
+        "algorithm",
+        "benchmark_version",
+        "call_id",
+        "campaign_id",
+        "case_id",
+        "consumed_at",
+        "consumption_sha256",
+        "execution_authorization_sha256",
+        "runner_input_sha256",
+        "schema_version",
+    }
+    unsigned = dict(record)
+    observed_hash = unsigned.pop("consumption_sha256", None)
+    if (
+        set(record) != expected_keys
+        or record.get("algorithm") != "reproassert-v02-authorization-model-call-consumption-v1"
+        or record.get("benchmark_version") != BENCHMARK_VERSION
+        or record.get("schema_version") != SCHEMA_VERSION
+        or record.get("call_id") != call_id
+        or record.get("campaign_id") != run.policy.campaign_id
+        or record.get("case_id") != run.case.id
+        or record.get("execution_authorization_sha256") != run.policy.execution_authorization_sha256
+        or record.get("runner_input_sha256") != run.runner_input_sha256
+        or observed_hash != _sha256_json(unsigned)
+    ):
+        raise _reject(
+            "v02_execution_authorization_replay",
+            "Authorization model-call consumption differs from the frozen attempt.",
+        )
+    consumed_at = _timestamp(record.get("consumed_at"), "model-call consumption time")
+    if datetime.fromisoformat(consumed_at[:-1] + "+00:00") > datetime.now(timezone.utc):
+        raise _reject(
+            "v02_execution_authorization_replay",
+            "Authorization model-call consumption chronology is invalid.",
+        )
+
+
 def _load_execution_authorization(path: Path) -> tuple[bytes, dict[str, object]]:
     return _load_canonical_object(
         path,
@@ -3257,6 +3340,7 @@ def _recover_generation_without_provider(
     """Reconcile generation ledger commits from private bytes; never invoke a provider."""
 
     transaction = _load_generation_transaction(run)
+    _validate_authorized_model_call_consumption(run, transaction.call_id)
     snapshot = read_v02_scored_ledger(run.ledger_path)
     recovery_payload = _recovery_started_payload(run, transaction)
     _preflight_recovery_state(snapshot, run, transaction, recovery_payload)
@@ -3717,6 +3801,7 @@ def _run_transactional_openai_generation(run: _RunContext) -> tuple[ValidatedCan
 
     api_key = generator_module._read_openai_api_key()
     call_id = f"call_{uuid.uuid4().hex}"
+    _consume_authorized_model_call(run, call_id)
     started_at = _now()
     _append_event(
         run,
@@ -3737,6 +3822,7 @@ def _run_transactional_openai_generation(run: _RunContext) -> tuple[ValidatedCan
         },
         preflight=lambda snapshot: _preflight_model_call(snapshot, run),
     )
+    _validate_authorized_model_call_consumption(run, call_id)
     call_started = time.monotonic()
     response_received = False
     observation = generator_module._OpenAIResponseObservation.unknown()

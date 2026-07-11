@@ -338,6 +338,7 @@ def _seed_recoverable_generation(
     )
     generation_started_at = runner._start_phase(run, "generation")
     call_id = f"call_{run.request.issue_number:032x}"
+    runner._consume_authorized_model_call(run, call_id)
     call_started_at = runner._now()
     runner._append_event(
         run,
@@ -837,6 +838,27 @@ def test_default_is_no_provider_and_public_api_accepts_no_generator_callback() -
     assert _policy().configuration_record()["campaign_freeze_sha256"] == "9" * 64
 
 
+def test_model_call_consumption_survives_ledger_delete_and_same_path_recreate(
+    tmp_path: Path,
+) -> None:
+    ledger_path = tmp_path / "recreated-ledger.jsonl"
+    run = _campaign_run(
+        tmp_path,
+        case=_campaign_case(1),
+        preregistration_sha256="a" * 64,
+        cohort_sha256="b" * 64,
+        ledger_path=ledger_path,
+    )
+    consumption_path = runner._consume_authorized_model_call(run, "call_" + "1" * 32)
+    assert consumption_path.exists()
+    assert consumption_path.stat().st_mode & 0o777 == 0o600
+    ledger_path.unlink()
+    ledger_path.write_bytes(b"")
+
+    with pytest.raises(PolicyRejection, match="irreversibly consumed"):
+        runner._consume_authorized_model_call(run, "call_" + "2" * 32)
+
+
 @pytest.mark.parametrize("case_index", [1, 16, 17])
 def test_exact_scored_entry_evaluates_pytest_and_sympy_after_exact_barrier(
     tmp_path: Path,
@@ -1008,8 +1030,9 @@ def test_exact_scored_recovery_reconstructs_exact_authorized_input_without_provi
     assert provider_calls == 0
 
 
+@pytest.mark.parametrize("crash_boundary", ["before_phase_finish", "after_cost_before_result"])
 def test_exact_scored_reuses_durable_receipt_after_pre_result_crash(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, crash_boundary: str
 ) -> None:
     recovery_policy = _policy(
         pricing=_pricing(sandbox_microusd_per_second=1_000),
@@ -1064,6 +1087,16 @@ def test_exact_scored_reuses_durable_receipt_after_pre_result_crash(
                 raise RuntimeError("simulated crash before phase finish")
         return original_finish_phase(*args, **kwargs)  # type: ignore[arg-type]
 
+    original_write_result = exact_scored._write_result
+    result_write_attempts = 0
+
+    def crash_after_cost(*args: object, **kwargs: object) -> Any:
+        nonlocal result_write_attempts
+        result_write_attempts += 1
+        if result_write_attempts == 1:
+            raise RuntimeError("simulated crash after cost before result")
+        return original_write_result(*args, **kwargs)  # type: ignore[arg-type]
+
     monkeypatch.setattr(generator_module, "_post_openai_response", forbidden_provider)
     monkeypatch.setattr(
         exact_scored, "require_v02_exact_image_evaluator_capability", lambda value: value
@@ -1081,7 +1114,12 @@ def test_exact_scored_reuses_durable_receipt_after_pre_result_crash(
         "verify_v02_exact_scored_result",
         lambda path: SimpleNamespace(path=path),
     )
-    monkeypatch.setattr(runner, "_finish_phase", crash_before_phase_finish)
+    if crash_boundary == "before_phase_finish":
+        monkeypatch.setattr(runner, "_finish_phase", crash_before_phase_finish)
+        expected_error = "before phase finish"
+    else:
+        monkeypatch.setattr(exact_scored, "_write_result", crash_after_cost)
+        expected_error = "after cost before result"
     kwargs = {
         "preregistration_path": preregistration_path,
         "exact_preregistration": authority,
@@ -1102,12 +1140,16 @@ def test_exact_scored_reuses_durable_receipt_after_pre_result_crash(
         "tool_git_sha": "1" * 40,
         "policy": run.policy,
     }
-    with pytest.raises(RuntimeError, match="before phase finish"):
+    with pytest.raises(RuntimeError, match=expected_error):
         exact_scored.evaluate_v02_exact_frozen_case(**kwargs)
+    stale_recovery = run.attempt_directory / f".{exact_scored.RECEIPT_FILENAME}.stale.recovery"
+    stale_recovery.write_text("stale")
     result = exact_scored.evaluate_v02_exact_frozen_case(**kwargs)
     assert result.evaluation_kind == "exact_image_receipt"
-    assert evaluator_calls == 1
+    expected_evaluator_calls = 2 if crash_boundary == "before_phase_finish" else 1
+    assert evaluator_calls == expected_evaluator_calls
     assert provider_calls == 0
+    assert stale_recovery.read_text() == "stale"
     snapshot = runner.read_v02_scored_ledger(run.ledger_path)
     events = [event for event in snapshot.events if event["attempt_id"] == run.attempt_id]
     sandbox = next(
@@ -1117,7 +1159,8 @@ def test_exact_scored_reuses_durable_receipt_after_pre_result_crash(
         and event["payload"]["category"] == "sandbox_compute"
     )
     assert sandbox["payload"]["amount_microusd"] == runner._sandbox_cost(
-        cast(runner.V02PricingSnapshot, recovery_policy.pricing), receipt.evaluator_wall_ms
+        cast(runner.V02PricingSnapshot, recovery_policy.pricing),
+        receipt.evaluator_wall_ms * expected_evaluator_calls,
     )
 
 
@@ -1172,6 +1215,71 @@ def test_exact_scored_case014_preserves_offline_network_failure(
     public = exact_scored.verify_v02_exact_scored_result(result.public_result_path).record
     assert public["evaluation"]["classification"] == "network_dependency"  # type: ignore[index]
     assert public["claims"]["network_enabled"] is False  # type: ignore[index]
+
+
+def test_preexisting_accepted_receipt_cannot_mint_result_without_executor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run, preregistration_path, barrier, authority = _exact_scored_barrier_fixture(
+        tmp_path, selected_index=1, authentic_selected_recovery=True
+    )
+    runner._start_phase(run, "differential")
+    (run.attempt_directory / exact_scored.RECEIPT_FILENAME).write_text("{}")
+    forged = SimpleNamespace(
+        sha256="f" * 64,
+        case_id=run.case.id,
+        classification="verified_reproduction",
+        accepted=True,
+        evaluator_wall_ms=0,
+    )
+    capability = SimpleNamespace(
+        case_id=run.case.id,
+        evaluator_public_commitment_sha256=run.case.evaluator_commitment_sha256,
+        gold_smoke_classification="semantic_valid",
+        gold_smoke_reason="fails_on_base_passes_on_fixed",
+    )
+    executor_calls = 0
+
+    def rejecting_executor(**_kwargs: object) -> Any:
+        nonlocal executor_calls
+        executor_calls += 1
+        raise PolicyRejection("v02_candidate_evaluation", "fresh sandbox rejected forgery")
+
+    monkeypatch.setattr(
+        exact_scored, "require_v02_exact_image_evaluator_capability", lambda value: value
+    )
+    monkeypatch.setattr(exact_scored, "hidden_case_artifacts", lambda _authority, _case: {})
+    monkeypatch.setattr(
+        exact_scored,
+        "_verify_reusable_receipt",
+        lambda _path, _run, _artifact, **_kwargs: forged,
+    )
+    monkeypatch.setattr(exact_scored, "evaluate_instance_candidate", rejecting_executor)
+
+    with pytest.raises(PolicyRejection, match="sandbox rejected forgery"):
+        exact_scored._evaluate_v02_exact_frozen_case_with_factory(
+            preregistration_path=preregistration_path,
+            exact_preregistration=authority,
+            case_id=run.case.id,
+            generator_projection_path=tmp_path / "exact-selected-projection.json",
+            generator_source_context=run.source_context,
+            campaign_barrier=barrier,
+            evaluator_capability=cast(Any, capability),
+            verified_hidden=cast(Any, object()),
+            manifest_path=tmp_path / "unused-manifest.json",
+            expected_manifest_sha256="b" * 64,
+            gold_smoke_receipt_path=tmp_path / "unused-gold.json",
+            gold_specs_path=tmp_path / "unused-specs.json",
+            ledger_path=run.ledger_path,
+            attempt_directory=run.attempt_directory,
+            attempt_id=run.attempt_id,
+            executed_at="2026-07-11T00:00:00Z",
+            tool_git_sha="1" * 40,
+            policy=run.policy,
+            executor_factory=cast(Any, object()),
+        )
+    assert executor_calls == 1
+    assert not (run.attempt_directory / exact_scored.PRIVATE_FILENAME).exists()
 
 
 def test_exact_preregistration_authority_is_not_directly_constructible() -> None:
@@ -2383,7 +2491,7 @@ def test_recovery_rejects_tampered_artifact_and_mismatched_frozen_identities(
             if event["event_type"] == "candidate_submitted":
                 cast(dict[str, object], event["payload"])["candidate_sha256"] = "f" * 64
         _rewrite_event_chain(run.ledger_path, changed)
-    with pytest.raises(PolicyRejection, match=r"transaction|identity|artifact|freeze"):
+    with pytest.raises(PolicyRejection, match=r"transaction|identity|artifact|freeze|consumption"):
         runner._recover_generation_without_provider(run)
     assert provider_calls == 0
 
