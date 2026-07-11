@@ -425,3 +425,135 @@ def test_candidate_specific_failure_classification(
         ("a" * 64, "a" * 64, "a" * 64),
     )
     assert outcome[0] == classification
+
+
+def test_candidate_evaluator_helpers_reject_malformed_execution_evidence() -> None:
+    def result(**changes: object) -> InstancePytestResult:
+        values: dict[str, object] = {
+            "workspace": "base",
+            "exit_code": 0,
+            "output": "1 passed",
+            "timed_out": False,
+            "output_truncated": False,
+            "junit_xml": b'<testsuite><testcase name="test_one"/></testsuite>',
+            "oom_killed": False,
+        }
+        values.update(changes)
+        return InstancePytestResult(**values)  # type: ignore[arg-type]
+
+    failed = result(exit_code=1, output="assertion failed")
+    passed = result()
+    for base, fixed, fingerprints, classification in (
+        (
+            (result(output_truncated=True), failed, failed),
+            (passed,) * 3,
+            ("x",) * 3,
+            "output_limit",
+        ),
+        ((passed,) * 3, (passed,) * 3, (None,) * 3, "does_not_fail_on_base"),
+        ((failed,) * 3, (failed,) * 3, ("x",) * 3, "does_not_pass_on_fixed"),
+        ((failed,) * 3, (passed,) * 3, ("x", "y", "x"), "wrong_or_flaky_failure"),
+    ):
+        assert evaluator._classify_candidate(base, fixed, fingerprints)[0] == classification
+
+    with pytest.raises(PolicyRejection, match="collection did not complete"):
+        evaluator._require_clean_collection(result(exit_code=1), passed, "candidate")
+    with pytest.raises(PolicyRejection, match="infrastructure failure"):
+        evaluator._require_clean_collection(
+            result(output="ModuleNotFoundError: dependency"), passed, "candidate"
+        )
+    with pytest.raises(PolicyRejection, match="runtime bound"):
+        evaluator._require_gold_pair(result(timed_out=True), passed)
+    with pytest.raises(PolicyRejection, match="infrastructure failure"):
+        evaluator._require_gold_pair(result(exit_code=1, output="network is unreachable"), passed)
+    with pytest.raises(PolicyRejection, match="buggy/fixed pair"):
+        evaluator._require_gold_pair(passed, passed)
+
+    for candidate, message in (
+        (CandidateArtifact("tests/reproassert/test_x.py", b"", "test_x"), "byte limit"),
+        (CandidateArtifact("outside/test_x.py", b"def test_x(): pass\n", "test_x"), "path"),
+        (
+            CandidateArtifact("tests/reproassert/test_x.py", b"def test_x(): pass\n", None),
+            "test function",
+        ),
+    ):
+        with pytest.raises(PolicyRejection, match=message):
+            evaluator._pytest_candidate_contract(candidate)
+
+    sympy_path = "sympy/reproassert/tests/test_issue_016.py"
+    sympy_function = "test_reproassert_issue_016"
+
+    def sympy(content: bytes, *, path: str = sympy_path) -> None:
+        evaluator._sympy_candidate_contract(
+            CandidateArtifact(path, content, sympy_function),
+            required_path=sympy_path,
+            required_function=sympy_function,
+        )
+
+    for content, message in (
+        (b"", "byte limit"),
+        (b"def broken(:\n", "UTF-8 Python syntax"),
+        (b"def wrong():\n    assert True\n", "required test function"),
+        (
+            b"value = 1\ndef test_reproassert_issue_016():\n    assert value\n",
+            "module-level execution",
+        ),
+        (
+            b"def test_reproassert_issue_016():\n"
+            b"    def helper(): return True\n"
+            b"    assert helper()\n",
+            "nested functions",
+        ),
+        (b"def test_reproassert_issue_016():\n    pytest\n    assert True\n", "pytest APIs"),
+        (b"def test_reproassert_issue_016():\n    eval('1')\n    assert True\n", "unsafe"),
+        (b"def test_reproassert_issue_016():\n    value = 1\n", "plain assert"),
+    ):
+        with pytest.raises(PolicyRejection, match=message):
+            sympy(content)
+    with pytest.raises(PolicyRejection, match="path and function"):
+        sympy(b"def test_reproassert_issue_016():\n    assert True\n", path="wrong.py")
+
+    for patch, targets, message in (
+        (b"+++ b/sympy/core/tests/test_x.py\n", ("unsafe target",), "safe bare"),
+        (b"\xff", ("test_gold",), "valid UTF-8"),
+        (b"+++ b/not/a/sympy/test.py\n", ("test_gold",), "native test file"),
+    ):
+        with pytest.raises(PolicyRejection, match=message):
+            evaluator._derive_sympy_gold_contract(patch, targets)
+    with pytest.raises(PolicyRejection, match="Hidden production patch"):
+        evaluator._hidden_bytes(b"", "production patch")
+
+    for junit, expected_failure, message in (
+        (None, True, "required JUnit"),
+        (b"<broken", True, "invalid XML"),
+        (b"<testsuite></testsuite>", True, "exactly one test case"),
+        (
+            b"<testsuite><testcase><error/></testcase></testsuite>",
+            True,
+            "clean assertion",
+        ),
+        (
+            b'<testsuite><testcase><failure type="" message=""/></testcase></testsuite>',
+            True,
+            "no attributable assertion",
+        ),
+    ):
+        with pytest.raises(PolicyRejection, match=message):
+            evaluator._junit_fingerprint(result(junit_xml=junit), expected_failure=expected_failure)
+
+    with pytest.raises(PolicyRejection, match="phase evidence is invalid"):
+        evaluator._verify_evidence({})
+    invalid_evidence = evaluator._evidence(result())
+    invalid_evidence["exit_code"] = 999
+    with pytest.raises(PolicyRejection, match="evidence values"):
+        evaluator._verify_evidence(invalid_evidence)
+    for function, value, message in (
+        (evaluator._case_id, "bad", "Case ID"),
+        (lambda item: evaluator._digest(item, "receipt"), "bad", "SHA-256"),
+        (evaluator._timestamp, "bad", "timestamp"),
+        (evaluator._git_sha, "bad", "Git SHA"),
+    ):
+        with pytest.raises(PolicyRejection, match=message):
+            function(value)
+    with pytest.raises(ValueError, match="duplicate"):
+        evaluator._reject_duplicates([("key", 1), ("key", 2)])
