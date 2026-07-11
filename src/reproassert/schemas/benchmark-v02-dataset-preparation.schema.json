@@ -20,7 +20,7 @@
         "source_dataset": {"$ref": "#/$defs/artifact"},
         "upstream_object_witness": {"$ref": "#/$defs/artifact"},
         "cohort_plan": {"$ref": "#/$defs/artifact"},
-        "dataset_parser_image_id": {"const": "sha256:0bf07669fd085b608e6859b90a486b3ede52d8cc409309410181ab32fbe1118f"}
+        "dataset_parser_image_id": {"enum": ["sha256:0bf07669fd085b608e6859b90a486b3ede52d8cc409309410181ab32fbe1118f", "sha256:fea2f964d148f59c18662a802a0ffa27aff9be5475d8111291ef4c94f9b48cdf"]}
       }
     },
     "outputs": {

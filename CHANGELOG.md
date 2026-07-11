@@ -4,6 +4,20 @@ All notable changes to ReproAssert will be documented here. The format follows [
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-07-11
+
+### Added
+
+- An append-only, freshly rederived v0.2.1 dataset-parser preparation freeze for Linux arm64 that
+  preserves the original 20-case selection and semantic parser receipt.
+- A fail-closed parser-image archive installer with exact archive, image-ID, and platform checks.
+- A manual-only, path-independent parser archive publication and attestation workflow.
+
+### Fixed
+
+- Frozen benchmark preparation can now recover after local Docker state is lost without weakening
+  the exact-image sandbox boundary or rewriting the historical v0.2 freeze.
+
 ## [0.2.0] - 2026-07-10
 
 ### Added
@@ -80,6 +94,7 @@ All notable changes to ReproAssert will be documented here. The format follows [
 - Updated the public site's runtime and build dependencies to patched versions; both the full and
   production-only npm audits report zero known vulnerabilities for the release candidate.
 
-[Unreleased]: https://github.com/Atomics-hub/reproassert/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Atomics-hub/reproassert/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/Atomics-hub/reproassert/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Atomics-hub/reproassert/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Atomics-hub/reproassert/releases/tag/v0.1.0

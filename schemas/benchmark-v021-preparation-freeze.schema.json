@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Atomics-hub/reproassert/blob/main/schemas/benchmark-v021-preparation-freeze.schema.json",
+  "title": "ReproAssert v0.2.1 append-only preparation freeze",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "algorithm", "benchmark_protocol", "freeze_revision", "frozen_at", "status", "supersedes", "cohort", "parser", "claims", "freeze_sha256"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "algorithm": {"const": "reproassert-v021-preparation-freeze-v1"},
+    "benchmark_protocol": {"const": "0.2"},
+    "freeze_revision": {"const": "0.2.1"},
+    "frozen_at": {"type": "string", "format": "date-time"},
+    "status": {"const": "successor_image_frozen_preparation_unrun"},
+    "supersedes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["selection_freeze", "dataset_parser_boundary_attestation"],
+      "properties": {
+        "selection_freeze": {"$ref": "#/$defs/reference"},
+        "dataset_parser_boundary_attestation": {"$ref": "#/$defs/reference"}
+      }
+    },
+    "cohort": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["case_count", "cohort_plan_path", "cohort_plan_sha256", "selection_changed"],
+      "properties": {
+        "case_count": {"const": 20},
+        "cohort_plan_path": {"const": "benchmarks/v0.2-draft/leak-audited-cohort-plan.json"},
+        "cohort_plan_sha256": {"const": "bc948ca82d260da9fb2678032f2172d6f2d1b43fe6df438b1d8d380a1a45818f"},
+        "selection_changed": {"const": false}
+      }
+    },
+    "parser": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["archive_bytes", "archive_name", "archive_sha256", "boundary_attestation", "boundary_attestation_status", "image_id", "parser_receipt_sha256", "platform", "replaces_unrecoverable_image_id"],
+      "properties": {
+        "archive_bytes": {"const": 92300454},
+        "archive_name": {"const": "reproassert-dataset-parser-0.2.1-linux-arm64.tar.gz"},
+        "archive_sha256": {"const": "7dc1c4e4d6bae1c57ba3dba65f29600437eac37e1f5a26f75e08c7867ede44fd"},
+        "boundary_attestation": {
+          "const": {"path": "benchmarks/v0.2-draft/dataset-parser-boundary-attestation-v0.2.1.json", "sha256": "19bdf12320fff2a7f40835afa75384558c97b263b66df87e684d915a6c0adf05"}
+        },
+        "boundary_attestation_status": {"const": "fresh_private_rederivation_verified"},
+        "image_id": {"const": "sha256:fea2f964d148f59c18662a802a0ffa27aff9be5475d8111291ef4c94f9b48cdf"},
+        "parser_receipt_sha256": {"const": "67f337d762536333e06821e91cc1a85dc37ae2b86c14af26057cd090685f96ae"},
+        "platform": {"const": "linux/arm64"},
+        "replaces_unrecoverable_image_id": {"const": "sha256:0bf07669fd085b608e6859b90a486b3ede52d8cc409309410181ab32fbe1118f"}
+      }
+    },
+    "claims": {
+      "const": {
+        "campaign_readiness_changed": false,
+        "historical_artifacts_rewritten": false,
+        "model_or_provider_invoked": false,
+        "provider_calls": 0,
+        "results_changed": false
+      }
+    },
+    "freeze_sha256": {"$ref": "#/$defs/sha256"}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "pattern": "^benchmarks/v0\\.2-draft/[A-Za-z0-9._-]+\\.json$"},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    }
+  }
+}

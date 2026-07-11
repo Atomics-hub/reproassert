@@ -21,7 +21,12 @@ from reproassert.benchmark_v02_dataset_sandbox import (
 )
 from reproassert.benchmark_v02_object_source import FROZEN_V02_COHORT_PLAN_SHA256
 from reproassert.benchmark_v02_package import _require_outside_source_checkout
-from reproassert.benchmark_v02_preparation import FROZEN_V02_DATASET_PARSER_IMAGE_ID
+from reproassert.benchmark_v02_preparation import (
+    FROZEN_V02_DATASET_PARSER_IMAGE_ID as FROZEN_V02_DATASET_PARSER_IMAGE_ID,
+)
+from reproassert.benchmark_v02_preparation import (
+    TRUSTED_V02_DATASET_PARSER_IMAGE_IDS,
+)
 from reproassert.errors import PolicyRejection
 from reproassert.safeio import open_regular_file, require_private_directory, write_bytes_exclusive
 
@@ -82,8 +87,8 @@ def prepare_v02_hidden_gold(
     parent = Path(output_root)
     require_private_directory(parent)
     _require_outside_source_checkout(parent)
-    if image_digest != FROZEN_V02_DATASET_PARSER_IMAGE_ID:
-        raise _reject("Hidden extraction requires the exact frozen parser image.")
+    if image_digest not in TRUSTED_V02_DATASET_PARSER_IMAGE_IDS:
+        raise _reject("Hidden extraction requires an exact append-only trusted parser image.")
     _timestamp(prepared_at)
     destination = parent / HIDDEN_DIRECTORY
     if destination.exists() or destination.is_symlink():
@@ -213,11 +218,12 @@ def verify_v02_hidden_gold(receipt_path: Path) -> VerifiedV02HiddenExtraction:
     attestation = _load_json(prepared.root / cast(str, attestation_ref["path"]), 64 * 1024)
     _validate_attestation(attestation, record)
     _verify_artifacts(prepared.root, stored_rows)
+    image_digest = cast(str, attestation["image_digest"])
     fresh, inspection_sha256 = _run_hidden_container(
         dataset_path=dataset_path,
         request_path=request_path,
         worker_path=worker_path,
-        image_digest=FROZEN_V02_DATASET_PARSER_IMAGE_ID,
+        image_digest=image_digest,
     )
     try:
         del inspection_sha256
@@ -605,7 +611,7 @@ def _validate_attestation(attestation: dict[str, object], receipt: dict[str, obj
         }
         or attestation.get("algorithm") != HIDDEN_ATTESTATION_ALGORITHM
         or attestation.get("artifacts_sha256") != receipt.get("artifacts_sha256")
-        or attestation.get("image_digest") != FROZEN_V02_DATASET_PARSER_IMAGE_ID
+        or attestation.get("image_digest") not in TRUSTED_V02_DATASET_PARSER_IMAGE_IDS
         or attestation.get("inputs")
         != {
             "cohort_plan_sha256": inputs["cohort_plan"]["sha256"],
