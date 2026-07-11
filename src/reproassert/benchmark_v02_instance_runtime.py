@@ -43,7 +43,7 @@ _TEST_COMMAND_PROFILES = frozenset({"pytest-v1", "sympy-bin-test-v1"})
 _POLICY = {
     "capabilities": "tests_drop_all_controller_copy_chown_only",
     "commands": "reproassert-controller-allowlist-v1",
-    "controller_user": "0:0",
+    "copy_user": "0:0",
     "credentials": "none",
     "docker_socket": False,
     "environment": "controller_HOME_only_tests_HOME_plus_workspace_and_src_PYTHONPATH",
@@ -53,6 +53,7 @@ _POLICY = {
     "platform": "linux/amd64",
     "profile": INSTANCE_RUNTIME_PROFILE,
     "resource_limits": "reproassert-sandbox-policy-v1",
+    "staging_user": "65532:65532",
     "test_user": "65532:65532",
 }
 

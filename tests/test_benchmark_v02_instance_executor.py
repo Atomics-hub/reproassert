@@ -95,6 +95,7 @@ class FakeDocker:
                 args[index + 1] for index, value in enumerate(args) if value == "--env"
             ]
             self.containers[name] = {
+                "Name": name,
                 "Config": {
                     "Cmd": args[image_index + 1 :],
                     "Entrypoint": [args[args.index("--entrypoint") + 1]],
@@ -220,8 +221,11 @@ def test_prepares_two_fresh_workspaces_and_runs_bounded_pytest() -> None:
     assert "HOME=/tmp/home" in pytest_create
     assert "PYTHONPATH=/workspace:/workspace/src" in pytest_create
     assert pytest_create[pytest_create.index("--user") + 1] == "65532:65532"
-    controller_creates = [command for command in creates if command is not pytest_create]
-    assert all(command[command.index("--user") + 1] == "0:0" for command in controller_creates)
+    copy_creates = [command for command in creates if "copy-" in " ".join(command)]
+    staging_creates = [command for command in creates if "stage-" in " ".join(command)]
+    assert all(command[command.index("--user") + 1] == "0:0" for command in copy_creates)
+    assert all(command[command.index("--user") + 1] == "65532:65532" for command in staging_creates)
+    controller_creates = [*copy_creates, *staging_creates]
     assert all("PYTHONPATH=" not in " ".join(command) for command in controller_creates)
     assert all(
         "=" in command[index + 1]
@@ -309,6 +313,29 @@ def test_effective_policy_accepts_only_docker_normalized_cap_chown() -> None:
     rejected.acquire()
     with pytest.raises(ReproAssertError, match="Effective instance container policy"):
         rejected.prepare_workspaces(fixed_patch=b"diff --git a/a b/a\n")
+
+
+def test_patch_and_candidate_staging_use_workspace_owner_without_capabilities() -> None:
+    fake = FakeDocker()
+    executor = _executor(fake)
+    executor.acquire()
+    executor.prepare_workspaces(
+        fixed_patch=(
+            b"diff --git a/src/module.py b/src/module.py\n"
+            b"--- a/src/module.py\n+++ b/src/module.py\n"
+            b"@@ -1 +1 @@\n-old\n+new\n"
+        )
+    )
+    executor.stage_candidate(
+        relative_path="tests/test_owner.py",
+        content=b"def test_owner():\n    assert True\n",
+    )
+
+    staging = [policy for policy in fake.created_policies if "stage-" in policy["Name"]]
+    assert len(staging) == 3
+    assert all(policy["Config"]["User"] == "65532:65532" for policy in staging)
+    assert all(policy["HostConfig"]["CapDrop"] == ["ALL"] for policy in staging)
+    assert all(policy["HostConfig"]["CapAdd"] == [] for policy in staging)
 
 
 def test_public_patch_api_can_stage_developer_tests_on_both_workspaces() -> None:

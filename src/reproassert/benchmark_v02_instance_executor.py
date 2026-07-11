@@ -375,6 +375,7 @@ class InstanceRuntimeExecutor:
                 idle_command,
                 role=f"stage-{purpose}-{workspace}",
                 input_volume=input_volume,
+                user="65532:65532",
             )
             self._run(["start", name], timeout=30)
             with tempfile.TemporaryDirectory(prefix="reproassert-instance-") as temporary:
