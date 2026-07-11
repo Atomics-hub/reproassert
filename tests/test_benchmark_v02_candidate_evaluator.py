@@ -1,18 +1,18 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import jsonschema
 import pytest
 
 import reproassert.benchmark_v02_candidate_evaluator as evaluator
 import reproassert.benchmark_v02_exact_capability as capability_module
-from reproassert.benchmark_v02_candidate_evaluator import (
-    CandidateArtifact,
-    HiddenEvaluatorInputs,
-)
+from reproassert.benchmark_v02_candidate_evaluator import CandidateArtifact
+from reproassert.benchmark_v02_instance_controller import GoldSmokeReceipt
 from reproassert.benchmark_v02_instance_executor import InstancePytestResult
 from reproassert.benchmark_v02_instance_runtime import (
     InstanceRuntime,
@@ -110,6 +110,100 @@ def _capability(
     return value
 
 
+def _resolution_evidence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    authority: capability_module.VerifiedV02ExactImageEvaluatorCapability,
+    *,
+    production_patch: bytes,
+    developer_tests: bytes,
+    gold_target: str,
+) -> tuple[object, Path, Path, Path]:
+    production_path = tmp_path / "production.patch"
+    developer_path = tmp_path / "developer-tests.patch"
+    production_path.write_bytes(production_patch)
+    developer_path.write_bytes(developer_tests)
+    verified_hidden = SimpleNamespace(
+        prepared=SimpleNamespace(receipt_sha256=authority.hidden_extraction_receipt_sha256)
+    )
+    refs = {
+        "production_patch": {
+            "bytes": len(production_patch),
+            "path": production_path,
+            "sha256": hashlib.sha256(production_patch).hexdigest(),
+        },
+        "developer_tests": {
+            "bytes": len(developer_tests),
+            "path": developer_path,
+            "sha256": hashlib.sha256(developer_tests).hexdigest(),
+        },
+    }
+
+    def resolve_hidden(supplied: object, case_id: str) -> dict[str, dict[str, object]]:
+        if supplied is not verified_hidden or case_id != authority.case_id:
+            raise evaluator._reject("Freshly verified hidden extraction authority is required.")
+        return refs
+
+    monkeypatch.setattr(evaluator, "hidden_case_artifacts", resolve_hidden)
+    specs = [
+        {
+            "FAIL_TO_PASS": [gold_target if number == 1 else f"tests/test_{number}.py"],
+            "PASS_TO_PASS": [],
+            "instance_id": (
+                authority.runtime.instance_id if number == 1 else f"dummy__repo-{number}"
+            ),
+            "version": "1.0",
+        }
+        for number in range(1, 21)
+    ]
+    specs_path = tmp_path / "gold-specs.json"
+    specs_path.write_bytes(evaluator._canonical(specs) + b"\n")
+    receipt = {
+        "inputs": {
+            "gold_specs_sha256": hashlib.sha256(specs_path.read_bytes()).hexdigest(),
+            "hidden_extraction_receipt_sha256": authority.hidden_extraction_receipt_sha256,
+        },
+        "receipt_sha256": authority.gold_smoke_receipt_commitment_sha256,
+    }
+    receipt_path = tmp_path / "gold-smoke.json"
+    receipt_path.write_bytes(evaluator._canonical(receipt) + b"\n")
+    object.__setattr__(
+        authority,
+        "gold_smoke_receipt_sha256",
+        hashlib.sha256(receipt_path.read_bytes()).hexdigest(),
+    )
+    object.__setattr__(authority, "evaluator_public_commitment_sha256", "")
+    object.__setattr__(
+        authority,
+        "evaluator_public_commitment_sha256",
+        hashlib.sha256(capability_module._canonical(authority.public_record())).hexdigest(),
+    )
+
+    def verify_receipt(path: Path) -> GoldSmokeReceipt:
+        raw = path.read_bytes()
+        return GoldSmokeReceipt(path, hashlib.sha256(raw).hexdigest(), 20, 19, 1)
+
+    monkeypatch.setattr(evaluator, "verify_instance_gold_smoke_receipt", verify_receipt)
+    return verified_hidden, receipt_path, specs_path, production_path
+
+
+def _rebind_gold_receipt_file(
+    authority: capability_module.VerifiedV02ExactImageEvaluatorCapability,
+    receipt_path: Path,
+) -> None:
+    object.__setattr__(
+        authority,
+        "gold_smoke_receipt_sha256",
+        hashlib.sha256(receipt_path.read_bytes()).hexdigest(),
+    )
+    object.__setattr__(authority, "evaluator_public_commitment_sha256", "")
+    object.__setattr__(
+        authority,
+        "evaluator_public_commitment_sha256",
+        hashlib.sha256(capability_module._canonical(authority.public_record())).hexdigest(),
+    )
+
+
 class FakeExecutor:
     def __init__(self, *, candidate_base_codes: tuple[int, ...] = (1, 1, 1)) -> None:
         self.candidate_base_codes = list(candidate_base_codes)
@@ -187,7 +281,7 @@ def _run(tmp_path: Path, fake: FakeExecutor) -> evaluator.CandidateEvaluationRec
         production_patch=b"PRIVATE PRODUCTION FIX",
         developer_tests=b"PRIVATE GOLD TESTS",
     )
-    return evaluator.evaluate_instance_candidate(
+    return evaluator._evaluate_instance_candidate_with_resolved_hidden(
         evaluator_capability=capability,
         manifest_path=manifest,
         expected_manifest_sha256=digest,
@@ -197,7 +291,7 @@ def _run(tmp_path: Path, fake: FakeExecutor) -> evaluator.CandidateEvaluationRec
             content=b"def test_bug():\n    assert True\n",
             test_function="test_bug",
         ),
-        hidden=HiddenEvaluatorInputs(
+        hidden=evaluator._ResolvedHiddenEvaluatorInputs(
             production_patch=b"PRIVATE PRODUCTION FIX",
             gold_test_patch=b"PRIVATE GOLD TESTS",
             gold_targets=("tests/test_gold.py::test_gold",),
@@ -251,6 +345,261 @@ def test_accepts_consistent_causal_candidate_and_redacts_hidden_bytes(tmp_path: 
     assert schema_text("benchmark-v02-instance-candidate-evaluation") == public_schema
 
 
+def test_public_scored_api_derives_private_inputs_and_gold_targets(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest, digest = _manifest(tmp_path)
+    authority = _capability(
+        manifest,
+        case_id="rk-v0.2-001",
+        production_patch=b"PRIVATE PRODUCTION FIX",
+        developer_tests=b"PRIVATE GOLD TESTS",
+    )
+    verified_hidden, gold_receipt, gold_specs, _production_path = _resolution_evidence(
+        tmp_path,
+        monkeypatch,
+        authority,
+        production_patch=b"PRIVATE PRODUCTION FIX",
+        developer_tests=b"PRIVATE GOLD TESTS",
+        gold_target="tests/test_gold.py::test_gold",
+    )
+    fake = FakeExecutor()
+
+    result = evaluator.evaluate_instance_candidate(
+        evaluator_capability=authority,
+        verified_hidden=verified_hidden,  # type: ignore[arg-type]
+        gold_smoke_receipt_path=gold_receipt,
+        gold_specs_path=gold_specs,
+        manifest_path=manifest,
+        expected_manifest_sha256=digest,
+        case_id="rk-v0.2-001",
+        candidate=CandidateArtifact(
+            "tests/reproassert/test_generated.py",
+            b"def test_bug():\n    assert True\n",
+            "test_bug",
+        ),
+        output_path=tmp_path / "public-receipt.json",
+        executed_at="2026-07-11T01:02:03Z",
+        tool_git_sha="9" * 40,
+        executor_factory=lambda _manifest, _case, policy: _factory(fake, policy),
+    )
+
+    assert result.accepted is True
+    assert fake.patch_calls == []
+    assert b"PRIVATE" not in result.path.read_bytes()
+    parameters = inspect.signature(evaluator.evaluate_instance_candidate).parameters
+    assert "hidden" not in parameters
+    assert "gold_targets" not in parameters
+    assert "verified_hidden" in parameters
+
+    with pytest.raises(TypeError, match="unexpected keyword argument 'hidden'"):
+        evaluator.evaluate_instance_candidate(  # type: ignore[call-arg]
+            evaluator_capability=authority,
+            verified_hidden=verified_hidden,  # type: ignore[arg-type]
+            gold_smoke_receipt_path=gold_receipt,
+            gold_specs_path=gold_specs,
+            manifest_path=manifest,
+            expected_manifest_sha256=digest,
+            case_id="rk-v0.2-001",
+            candidate=CandidateArtifact(
+                "tests/reproassert/test_generated.py",
+                b"def test_bug():\n    assert True\n",
+                "test_bug",
+            ),
+            hidden=evaluator._ResolvedHiddenEvaluatorInputs(  # type: ignore[call-arg]
+                b"CALLER FIX", b"CALLER TEST", ("caller::target",)
+            ),
+            output_path=tmp_path / "caller-controlled.json",
+            executed_at="2026-07-11T01:02:03Z",
+            tool_git_sha="9" * 40,
+        )
+
+
+def test_hidden_resolution_rejects_forged_authority_and_post_verification_mutation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest, _digest = _manifest(tmp_path)
+    authority = _capability(
+        manifest,
+        case_id="rk-v0.2-001",
+        production_patch=b"PRIVATE PRODUCTION FIX",
+        developer_tests=b"PRIVATE GOLD TESTS",
+    )
+    verified_hidden, gold_receipt, gold_specs, production_path = _resolution_evidence(
+        tmp_path,
+        monkeypatch,
+        authority,
+        production_patch=b"PRIVATE PRODUCTION FIX",
+        developer_tests=b"PRIVATE GOLD TESTS",
+        gold_target="tests/test_gold.py::test_gold",
+    )
+
+    with pytest.raises(PolicyRejection, match="Freshly verified hidden extraction"):
+        evaluator._resolve_hidden_evaluator_inputs(
+            evaluator_capability=authority,
+            verified_hidden=SimpleNamespace(  # type: ignore[arg-type]
+                prepared=SimpleNamespace(receipt_sha256=authority.hidden_extraction_receipt_sha256)
+            ),
+            gold_smoke_receipt_path=gold_receipt,
+            gold_specs_path=gold_specs,
+        )
+
+    verified_hidden.prepared.receipt_sha256 = "0" * 64  # type: ignore[attr-defined]
+    with pytest.raises(PolicyRejection, match="Fresh hidden extraction differs"):
+        evaluator._resolve_hidden_evaluator_inputs(
+            evaluator_capability=authority,
+            verified_hidden=verified_hidden,  # type: ignore[arg-type]
+            gold_smoke_receipt_path=gold_receipt,
+            gold_specs_path=gold_specs,
+        )
+    verified_hidden.prepared.receipt_sha256 = (  # type: ignore[attr-defined]
+        authority.hidden_extraction_receipt_sha256
+    )
+
+    production_path.write_bytes(b"MUTATED AFTER VERIFICATION")
+    with pytest.raises(PolicyRejection, match="changed after authority verification"):
+        evaluator._resolve_hidden_evaluator_inputs(
+            evaluator_capability=authority,
+            verified_hidden=verified_hidden,  # type: ignore[arg-type]
+            gold_smoke_receipt_path=gold_receipt,
+            gold_specs_path=gold_specs,
+        )
+
+
+def test_hidden_resolution_rejects_substituted_gold_specs_and_receipt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest, _digest = _manifest(tmp_path)
+    authority = _capability(
+        manifest,
+        case_id="rk-v0.2-001",
+        production_patch=b"PRIVATE PRODUCTION FIX",
+        developer_tests=b"PRIVATE GOLD TESTS",
+    )
+    verified_hidden, gold_receipt, gold_specs, _production_path = _resolution_evidence(
+        tmp_path,
+        monkeypatch,
+        authority,
+        production_patch=b"PRIVATE PRODUCTION FIX",
+        developer_tests=b"PRIVATE GOLD TESTS",
+        gold_target="tests/test_gold.py::test_gold",
+    )
+
+    original_specs = gold_specs.read_bytes()
+    gold_specs.write_bytes(original_specs + b" ")
+    with pytest.raises(PolicyRejection, match="Gold specs differ"):
+        evaluator._resolve_hidden_evaluator_inputs(
+            evaluator_capability=authority,
+            verified_hidden=verified_hidden,  # type: ignore[arg-type]
+            gold_smoke_receipt_path=gold_receipt,
+            gold_specs_path=gold_specs,
+        )
+    gold_specs.write_bytes(original_specs)
+
+    gold_receipt.write_bytes(gold_receipt.read_bytes() + b" ")
+    with pytest.raises(PolicyRejection, match="Gold-smoke receipt differs"):
+        evaluator._resolve_hidden_evaluator_inputs(
+            evaluator_capability=authority,
+            verified_hidden=verified_hidden,  # type: ignore[arg-type]
+            gold_smoke_receipt_path=gold_receipt,
+            gold_specs_path=gold_specs,
+        )
+
+
+def test_hidden_resolution_rejects_rebound_receipt_claims_and_unmatched_specs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest, _digest = _manifest(tmp_path)
+    authority = _capability(
+        manifest,
+        case_id="rk-v0.2-001",
+        production_patch=b"PRIVATE PRODUCTION FIX",
+        developer_tests=b"PRIVATE GOLD TESTS",
+    )
+    verified_hidden, gold_receipt, gold_specs, _production_path = _resolution_evidence(
+        tmp_path,
+        monkeypatch,
+        authority,
+        production_patch=b"PRIVATE PRODUCTION FIX",
+        developer_tests=b"PRIVATE GOLD TESTS",
+        gold_target="tests/test_gold.py::test_gold",
+    )
+    receipt = json.loads(gold_receipt.read_bytes())
+    receipt["receipt_sha256"] = "0" * 64
+    gold_receipt.write_bytes(evaluator._canonical(receipt) + b"\n")
+    _rebind_gold_receipt_file(authority, gold_receipt)
+    with pytest.raises(PolicyRejection, match="receipt commitment differs"):
+        evaluator._resolve_hidden_evaluator_inputs(
+            evaluator_capability=authority,
+            verified_hidden=verified_hidden,  # type: ignore[arg-type]
+            gold_smoke_receipt_path=gold_receipt,
+            gold_specs_path=gold_specs,
+        )
+
+    receipt["receipt_sha256"] = authority.gold_smoke_receipt_commitment_sha256
+    receipt["inputs"]["hidden_extraction_receipt_sha256"] = "0" * 64
+    gold_receipt.write_bytes(evaluator._canonical(receipt) + b"\n")
+    _rebind_gold_receipt_file(authority, gold_receipt)
+    with pytest.raises(PolicyRejection, match="does not bind the supplied hidden extraction"):
+        evaluator._resolve_hidden_evaluator_inputs(
+            evaluator_capability=authority,
+            verified_hidden=verified_hidden,  # type: ignore[arg-type]
+            gold_smoke_receipt_path=gold_receipt,
+            gold_specs_path=gold_specs,
+        )
+
+    receipt["inputs"]["hidden_extraction_receipt_sha256"] = (
+        authority.hidden_extraction_receipt_sha256
+    )
+    specs = json.loads(gold_specs.read_bytes())
+    specs[0]["instance_id"] = "different__repo-999"
+    gold_specs.write_bytes(evaluator._canonical(specs) + b"\n")
+    receipt["inputs"]["gold_specs_sha256"] = hashlib.sha256(gold_specs.read_bytes()).hexdigest()
+    gold_receipt.write_bytes(evaluator._canonical(receipt) + b"\n")
+    _rebind_gold_receipt_file(authority, gold_receipt)
+    with pytest.raises(PolicyRejection, match="exactly one evaluator case"):
+        evaluator._resolve_hidden_evaluator_inputs(
+            evaluator_capability=authority,
+            verified_hidden=verified_hidden,  # type: ignore[arg-type]
+            gold_smoke_receipt_path=gold_receipt,
+            gold_specs_path=gold_specs,
+        )
+
+
+def test_committed_hidden_reference_rejects_shape_identity_path_and_unsafe_file(
+    tmp_path: Path,
+) -> None:
+    content = b"private"
+    digest = hashlib.sha256(content).hexdigest()
+    path = tmp_path / "private.patch"
+    path.write_bytes(content)
+    with pytest.raises(PolicyRejection, match="reference is invalid"):
+        evaluator._read_committed_hidden_ref(
+            None, label="developer tests", expected_sha256=digest, expected_bytes=len(content)
+        )
+    with pytest.raises(PolicyRejection, match="differs from the evaluator capability"):
+        evaluator._read_committed_hidden_ref(
+            {"bytes": len(content), "path": path, "sha256": "0" * 64},
+            label="developer tests",
+            expected_sha256=digest,
+            expected_bytes=len(content),
+        )
+    with pytest.raises(PolicyRejection, match="path is invalid"):
+        evaluator._read_committed_hidden_ref(
+            {"bytes": len(content), "path": str(path), "sha256": digest},
+            label="developer tests",
+            expected_sha256=digest,
+            expected_bytes=len(content),
+        )
+    with pytest.raises(PolicyRejection, match="could not be read safely"):
+        evaluator._read_committed_hidden_ref(
+            {"bytes": len(content), "path": tmp_path / "missing.patch", "sha256": digest},
+            label="developer tests",
+            expected_sha256=digest,
+            expected_bytes=len(content),
+        )
+
+
 def test_flaky_base_is_rejected_without_claiming_l2(tmp_path: Path) -> None:
     result = _run(tmp_path, FakeExecutor(candidate_base_codes=(1, 0, 1)))
     receipt = json.loads(result.path.read_bytes())
@@ -279,19 +628,19 @@ def test_rejects_syntax_and_manifest_mismatch_before_executor(tmp_path: Path) ->
         expected_manifest_sha256=digest,
         case_id="rk-v0.2-001",
         candidate=CandidateArtifact("tests/test_bad.py", b"def nope(:\n"),
-        hidden=HiddenEvaluatorInputs(b"fix", b"gold", ("tests/test_gold.py",)),
+        hidden=evaluator._ResolvedHiddenEvaluatorInputs(b"fix", b"gold", ("tests/test_gold.py",)),
         output_path=tmp_path / "bad.json",
         executed_at="2026-07-11T01:02:03Z",
         tool_git_sha="9" * 40,
         executor_factory=factory,
     )
     with pytest.raises(PolicyRejection, match="Python syntax"):
-        evaluator.evaluate_instance_candidate(**arguments)
+        evaluator._evaluate_instance_candidate_with_resolved_hidden(**arguments)
     assert called is False
 
     arguments["expected_manifest_sha256"] = "0" * 64
     with pytest.raises(PolicyRejection, match="explicit commitment"):
-        evaluator.evaluate_instance_candidate(**arguments)
+        evaluator._evaluate_instance_candidate_with_resolved_hidden(**arguments)
     assert called is False
 
 
@@ -324,7 +673,7 @@ def test_evaluator_rejects_hidden_bytes_not_bound_by_capability(tmp_path: Path) 
         developer_tests=b"expected tests",
     )
     with pytest.raises(PolicyRejection, match="capability-bound commitments"):
-        evaluator.evaluate_instance_candidate(
+        evaluator._evaluate_instance_candidate_with_resolved_hidden(
             evaluator_capability=authority,
             manifest_path=manifest,
             expected_manifest_sha256=digest,
@@ -334,7 +683,7 @@ def test_evaluator_rejects_hidden_bytes_not_bound_by_capability(tmp_path: Path) 
                 b"def test_bug():\n    assert True\n",
                 "test_bug",
             ),
-            hidden=HiddenEvaluatorInputs(
+            hidden=evaluator._ResolvedHiddenEvaluatorInputs(
                 b"substituted fix", b"expected tests", ("tests/test_gold.py",)
             ),
             output_path=tmp_path / "must-not-exist.json",
@@ -409,7 +758,7 @@ def test_sympy_native_profile_executes_all_six_fresh_runs(tmp_path: Path) -> Non
         b"+++ b/sympy/core/tests/test_basic.py\n"
         b"@@ -1 +1 @@\n-old\n+new\n"
     )
-    result = evaluator.evaluate_instance_candidate(
+    result = evaluator._evaluate_instance_candidate_with_resolved_hidden(
         evaluator_capability=_capability(
             manifest,
             case_id="rk-v0.2-016",
@@ -420,7 +769,7 @@ def test_sympy_native_profile_executes_all_six_fresh_runs(tmp_path: Path) -> Non
         expected_manifest_sha256=digest,
         case_id="rk-v0.2-016",
         candidate=candidate,
-        hidden=HiddenEvaluatorInputs(
+        hidden=evaluator._ResolvedHiddenEvaluatorInputs(
             production_patch=production_patch,
             gold_test_patch=developer_tests,
             gold_targets=("test_gold",),
