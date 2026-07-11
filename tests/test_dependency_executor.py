@@ -43,7 +43,11 @@ from reproassert.dependency_prep import (
 )
 from reproassert.errors import ReproAssertError
 from reproassert.sandbox import SandboxPolicy
-from reproassert.source_attestation import attest_source_tree
+from reproassert.source_attestation import (
+    SOURCE_TREE_SPECIAL_ALGORITHM,
+    ExpectedGitSpecialEntry,
+    attest_source_tree,
+)
 
 IMAGE_ID = "sha256:" + "a" * 64
 
@@ -310,6 +314,7 @@ def test_fixed_in_container_attestor_matches_host_algorithm(tmp_path: Path) -> N
             str(512 * 1024 * 1024),
             "4096",
             "255",
+            "[]",
         ],
         check=True,
         capture_output=True,
@@ -341,6 +346,7 @@ def test_fixed_attestor_rejects_links_without_copying_to_host(tmp_path: Path) ->
             "1048576",
             "4096",
             "255",
+            "[]",
         ],
         check=False,
         capture_output=True,
@@ -350,6 +356,62 @@ def test_fixed_attestor_rejects_links_without_copying_to_host(tmp_path: Path) ->
 
     assert result.returncode != 0
     assert "symlink" in result.stderr
+
+
+def test_fixed_attestor_matches_plan_bound_symlink_and_gitlink_profile(tmp_path: Path) -> None:
+    root = tmp_path / "source"
+    root.mkdir()
+    target = "module.py"
+    (root / target).write_text("VALUE = 1\n")
+    (root / "alias.py").symlink_to(target)
+    (root / "vendor").mkdir()
+    target_bytes = target.encode()
+    digest = hashlib.sha1(f"blob {len(target_bytes)}\0".encode(), usedforsecurity=False)
+    digest.update(target_bytes)
+    specials = (
+        ExpectedGitSpecialEntry("alias.py", "120000", digest.hexdigest(), target),
+        ExpectedGitSpecialEntry("vendor", "160000", "1" * 40),
+    )
+    profile = json.dumps(
+        [
+            {
+                "mode": item.mode,
+                "oid": item.oid,
+                "path": item.path,
+                "symlink_target": item.symlink_target,
+            }
+            for item in specials
+        ],
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    expected = attest_source_tree(root, expected_special_entries=specials)
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            "-c",
+            DEPENDENCY_TREE_ATTESTOR_SCRIPT,
+            str(root),
+            "100",
+            "100",
+            "100",
+            "1048576",
+            "1048576",
+            "4096",
+            "255",
+            profile,
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    observed = parse_container_tree_attestation(
+        result.stdout, expected_algorithm=SOURCE_TREE_SPECIAL_ALGORITHM
+    )
+    assert observed == expected
 
 
 def test_shared_container_attestation_parser_is_bounded_duplicate_free_and_canonical(

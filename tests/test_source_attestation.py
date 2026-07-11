@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import socket
 import tempfile
@@ -11,6 +12,7 @@ import reproassert.source_attestation as source_attestation
 from reproassert.errors import PolicyRejection
 from reproassert.source_attestation import (
     SOURCE_TREE_ALGORITHM,
+    ExpectedGitSpecialEntry,
     SourceAttestationLimits,
     attest_source_tree,
 )
@@ -18,6 +20,19 @@ from reproassert.source_attestation import (
 FIXTURE_GIT_TREE_OID = "35e743fd030cbaf0f148c2916d2d2873b4bb5e13"
 FIXTURE_TREE_SHA256 = "71fcdd8224634607e3bd0db8ad143588eceff098845df608697c90575d73be94"
 EMPTY_GIT_TREE_OID = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+
+
+def _git_blob_oid(content: bytes) -> str:
+    digest = hashlib.sha1(f"blob {len(content)}\0".encode(), usedforsecurity=False)
+    digest.update(content)
+    return digest.hexdigest()
+
+
+def _git_tree_oid(entries: list[tuple[bytes, bytes, str]]) -> str:
+    body = b"".join(mode + b" " + name + b"\0" + bytes.fromhex(oid) for mode, name, oid in entries)
+    digest = hashlib.sha1(f"tree {len(body)}\0".encode(), usedforsecurity=False)
+    digest.update(body)
+    return digest.hexdigest()
 
 
 def _write_sort_fixture(root: Path, *, permissive_modes: bool = False) -> None:
@@ -65,6 +80,57 @@ def test_empty_tree_reconstructs_git_empty_tree(tmp_path: Path) -> None:
     assert result.reconstructed_git_tree_oid == EMPTY_GIT_TREE_OID
     assert result.member_count == result.file_count == result.directory_count == 0
     assert result.total_bytes == result.executable_count == 0
+
+
+def test_plan_bound_symlink_and_gitlink_reconstruct_without_following(tmp_path: Path) -> None:
+    root = tmp_path / "special"
+    root.mkdir()
+    regular = b"payload\n"
+    target = "regular.txt"
+    (root / "regular.txt").write_bytes(regular)
+    os.symlink(target, root / "link")
+    (root / "vendor").mkdir()
+    link_oid = _git_blob_oid(target.encode())
+    gitlink_oid = "1" * 40
+    expected_root = _git_tree_oid(
+        [
+            (b"120000", b"link", link_oid),
+            (b"100644", b"regular.txt", _git_blob_oid(regular)),
+            (b"160000", b"vendor", gitlink_oid),
+        ]
+    )
+    specials = (
+        ExpectedGitSpecialEntry("link", "120000", link_oid, target),
+        ExpectedGitSpecialEntry("vendor", "160000", gitlink_oid),
+    )
+
+    result = attest_source_tree(
+        root,
+        expected_git_tree_oid=expected_root,
+        expected_special_entries=specials,
+    )
+
+    assert result.reconstructed_git_tree_oid == expected_root
+    assert result.member_count == 3
+    assert result.file_count == 2
+    assert result.directory_count == 1
+    assert result.total_bytes == len(regular) + len(target.encode())
+
+    (root / "link").unlink()
+    os.symlink("vendor", root / "link")
+    _assert_rejected(root, "source_symlink_changed", expected_special_entries=specials)
+
+    (root / "link").unlink()
+    os.symlink(target, root / "link")
+    (root / "vendor" / "unexpected").write_text("no fetch")
+    _assert_rejected(root, "source_gitlink_populated", expected_special_entries=specials)
+
+
+def test_special_entries_still_fail_closed_without_plan_profile(tmp_path: Path) -> None:
+    root = tmp_path / "source"
+    root.mkdir()
+    os.symlink("target", root / "link")
+    _assert_rejected(root, "source_symlink")
 
 
 def test_digest_is_independent_of_permissions_mtime_creation_order_and_root(

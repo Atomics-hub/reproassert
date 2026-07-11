@@ -556,17 +556,22 @@ def _build_receipt(
     }
 
 
-def _validate_receipt_shape(value: object) -> dict[str, object]:
+def _validate_receipt_shape(
+    value: object,
+    *,
+    benchmark_version: str = BENCHMARK_VERSION,
+    case_id_pattern: re.Pattern[str] = _CASE_ID,
+) -> dict[str, object]:
     root = _exact_object(value, _ROOT_KEYS, "object-source receipt")
     _require_equal(
         root.get("schema_version"), OBJECT_SOURCE_RECEIPT_SCHEMA_VERSION, "schema version"
     )
     _require_equal(root.get("kind"), "benchmark_object_source_receipt", "receipt kind")
-    _require_equal(root.get("benchmark_version"), BENCHMARK_VERSION, "benchmark version")
+    _require_equal(root.get("benchmark_version"), benchmark_version, "benchmark version")
     if root.get("campaign_readiness_changed") is not False:
         raise _reject("Object-source receipt cannot change campaign readiness.")
     case = _exact_object(root.get("case"), _CASE_KEYS, "object-source case")
-    _ascii_pattern(case.get("id"), "case id", _CASE_ID)
+    _ascii_pattern(case.get("id"), "case id", case_id_pattern)
     _ascii_pattern(case.get("repository"), "repository", _REPOSITORY)
     _bounded_ascii(case.get("issue_url"), "issue URL", 512)
     _nonnegative_integer(case.get("issue_number"), "issue number", positive=True)

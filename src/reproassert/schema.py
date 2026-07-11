@@ -27,9 +27,11 @@ SCHEMA_FILENAMES = {
     "benchmark-v02-leak-audited-cohort-plan": (
         "benchmark-v02-leak-audited-cohort-plan.schema.json"
     ),
+    "benchmark-v02-object-source-receipt": ("benchmark-v02-object-source-receipt.schema.json"),
     "benchmark-v02-dataset-container-attestation": (
         "benchmark-v02-dataset-container-attestation.schema.json"
     ),
+    "benchmark-v02-dataset-preparation": "benchmark-v02-dataset-preparation.schema.json",
     "benchmark-v02-selection-freeze": "benchmark-v02-selection-freeze.schema.json",
     "benchmark-v02-replay-bundle": "benchmark-v02-replay-bundle.schema.json",
     "benchmark-v02-replay-result": "benchmark-v02-replay-result.schema.json",

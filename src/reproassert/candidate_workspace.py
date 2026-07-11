@@ -9,7 +9,11 @@ from pathlib import Path, PurePosixPath
 from reproassert.candidate import MAX_TEST_BYTES, ValidatedCandidate, validate_candidate_payload
 from reproassert.errors import PolicyRejection
 from reproassert.safeio import open_exclusive_file, open_regular_file
-from reproassert.source_attestation import SourceTreeAttestation, attest_source_tree
+from reproassert.source_attestation import (
+    ExpectedGitSpecialEntry,
+    SourceTreeAttestation,
+    attest_source_tree,
+)
 
 _CANDIDATE_NAME = re.compile(r"test_issue_([1-9][0-9]*)\.py")
 
@@ -29,6 +33,7 @@ def prepare_candidate_workspace(
     relative_path: str,
     candidate: ValidatedCandidate,
     expected_pristine: SourceTreeAttestation,
+    expected_special_entries: tuple[ExpectedGitSpecialEntry, ...] = (),
 ) -> PreparedCandidateWorkspace:
     """Build ``expected pristine tree + exactly one revalidated candidate`` privately."""
 
@@ -48,6 +53,7 @@ def prepare_candidate_workspace(
     observed = attest_source_tree(
         source,
         expected_git_tree_oid=expected_pristine.expected_git_tree_oid,
+        expected_special_entries=expected_special_entries,
     )
     if observed != expected_pristine:
         raise PolicyRejection(
@@ -64,6 +70,7 @@ def prepare_candidate_workspace(
     copied = attest_source_tree(
         destination,
         expected_git_tree_oid=expected_pristine.expected_git_tree_oid,
+        expected_special_entries=expected_special_entries,
     )
     if copied != expected_pristine:
         raise PolicyRejection(
@@ -77,7 +84,7 @@ def prepare_candidate_workspace(
         stream.write(content)
     _require_exact_candidate(target, content)
     _require_single_candidate_artifact(destination, candidate_path)
-    applied = attest_source_tree(destination)
+    applied = attest_source_tree(destination, expected_special_entries=expected_special_entries)
     _require_exact_candidate(target, content)
     return PreparedCandidateWorkspace(
         path=destination,
