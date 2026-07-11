@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reproassert.dev/schemas/benchmark-v02-exact-campaign-config.schema.json",
+  "title": "ReproAssert v0.2 exact campaign config",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["algorithm", "bindings", "cases", "claims", "config_sha256", "executed_at", "paths", "prepared_at", "schema_version", "tool_git_sha"],
+  "properties": {
+    "algorithm": {"const": "reproassert-v02-exact-campaign-config-v1"},
+    "schema_version": {"const": "1.0.0"},
+    "config_sha256": {"$ref": "#/$defs/sha256"},
+    "prepared_at": {"$ref": "#/$defs/timestamp"},
+    "executed_at": {"$ref": "#/$defs/timestamp"},
+    "tool_git_sha": {"$ref": "#/$defs/git_sha"},
+    "claims": {
+      "const": {"credentials_read": false, "provider_calls": 0, "provider_invoked_by_this_command": false}
+    },
+    "bindings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact_sha256", "authorization_at", "campaign_id", "case_binding_set_sha256", "execution_freeze_sha256", "max_campaign_microusd", "max_case_microusd", "overage_permitted", "provider", "requested_model", "request_set_sha256"],
+      "properties": {
+        "artifact_sha256": {"type": "object", "minProperties": 1, "additionalProperties": {"$ref": "#/$defs/sha256"}},
+        "authorization_at": {"$ref": "#/$defs/timestamp"},
+        "campaign_id": {"type": "string", "minLength": 3, "maxLength": 200},
+        "case_binding_set_sha256": {"$ref": "#/$defs/sha256"},
+        "execution_freeze_sha256": {"$ref": "#/$defs/sha256"},
+        "max_campaign_microusd": {"const": 5000000},
+        "max_case_microusd": {"const": 250000},
+        "overage_permitted": {"const": false},
+        "provider": {"const": "openai"},
+        "requested_model": {"type": "string", "minLength": 1, "maxLength": 128},
+        "request_set_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "paths": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["campaign_freeze", "exact_preregistration", "cases_preparation", "cohort_plan", "chronology", "hidden_extraction_receipt", "issue_responses_root", "mapping_preparation", "mapping_consensus", "capability_index", "runtime_manifest", "runtime_manifest_sha256", "gold_smoke_receipt", "gold_specs", "execution_freeze", "execution_authorization", "ledger", "attempts_root", "progress"],
+      "properties": {
+        "runtime_manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "campaign_freeze": {"$ref": "#/$defs/absolute_path"},
+        "exact_preregistration": {"$ref": "#/$defs/absolute_path"},
+        "cases_preparation": {"$ref": "#/$defs/absolute_path"},
+        "cohort_plan": {"$ref": "#/$defs/absolute_path"},
+        "chronology": {"$ref": "#/$defs/absolute_path"},
+        "hidden_extraction_receipt": {"$ref": "#/$defs/absolute_path"},
+        "issue_responses_root": {"$ref": "#/$defs/absolute_path"},
+        "mapping_preparation": {"$ref": "#/$defs/absolute_path"},
+        "mapping_consensus": {"$ref": "#/$defs/absolute_path"},
+        "capability_index": {"$ref": "#/$defs/absolute_path"},
+        "runtime_manifest": {"$ref": "#/$defs/absolute_path"},
+        "gold_smoke_receipt": {"$ref": "#/$defs/absolute_path"},
+        "gold_specs": {"$ref": "#/$defs/absolute_path"},
+        "execution_freeze": {"$ref": "#/$defs/absolute_path"},
+        "execution_authorization": {"$ref": "#/$defs/absolute_path"},
+        "ledger": {"$ref": "#/$defs/absolute_path"},
+        "attempts_root": {"$ref": "#/$defs/absolute_path"},
+        "progress": {"$ref": "#/$defs/absolute_path"}
+      }
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 20,
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["case_id", "generator_projection", "object_source_plan", "object_source_receipt", "object_source_receipt_sha256", "source_evidence_receipt"],
+        "properties": {
+          "case_id": {"type": "string", "pattern": "^rk-v0\\.2-(?:00[1-9]|01[0-9]|020)$"},
+          "generator_projection": {"$ref": "#/$defs/absolute_path"},
+          "object_source_plan": {"$ref": "#/$defs/absolute_path"},
+          "object_source_receipt": {"$ref": "#/$defs/absolute_path"},
+          "object_source_receipt_sha256": {"$ref": "#/$defs/sha256"},
+          "source_evidence_receipt": {"$ref": "#/$defs/absolute_path"}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "git_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "timestamp": {"type": "string", "pattern": "^20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?Z$"},
+    "absolute_path": {"type": "string", "pattern": "^/", "minLength": 2}
+  }
+}

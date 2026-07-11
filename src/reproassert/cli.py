@@ -48,6 +48,11 @@ from reproassert.benchmark_v02_chronology import (
     prepare_v02_chronology_evidence,
     verify_v02_chronology_evidence,
 )
+from reproassert.benchmark_v02_exact_campaign_config import (
+    ExactCampaignConfigInputs,
+    prepare_v02_exact_campaign_config,
+    verify_v02_exact_campaign_config,
+)
 from reproassert.benchmark_v02_exact_campaign_controller import run_v02_exact_campaign
 from reproassert.benchmark_v02_exact_capability import (
     issue_verified_v02_exact_image_evaluator_capability,
@@ -161,6 +166,159 @@ def benchmark_run_v02_exact_campaign(config: Path) -> None:
     except (ReproAssertError, OSError, ValueError) as exc:
         _fail(exc)
     click.echo(json.dumps(result, indent=2, sort_keys=True))
+
+
+@benchmark_group.command("prepare-v02-exact-campaign-config")
+@click.option(
+    "--campaign-freeze",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--exact-preregistration",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--cases-preparation",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--cohort-plan", type=click.Path(path_type=Path, exists=True, dir_okay=False), required=True
+)
+@click.option(
+    "--chronology", type=click.Path(path_type=Path, exists=True, dir_okay=False), required=True
+)
+@click.option(
+    "--hidden-extraction-receipt",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--issue-responses-root",
+    type=click.Path(path_type=Path, exists=True, file_okay=False),
+    required=True,
+)
+@click.option(
+    "--mapping-preparation",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--mapping-consensus",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--capability-index",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--runtime-manifest",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option("--runtime-manifest-sha256", required=True)
+@click.option(
+    "--gold-smoke-receipt",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--gold-specs", type=click.Path(path_type=Path, exists=True, dir_okay=False), required=True
+)
+@click.option(
+    "--execution-freeze",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--execution-authorization",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--output-root",
+    type=click.Path(path_type=Path, file_okay=False),
+    required=True,
+    help="New private campaign workspace, or an identical workspace to reverify.",
+)
+@click.option("--prepared-at", required=True, help="RFC 3339 UTC config preparation time.")
+@click.option(
+    "--executed-at",
+    required=True,
+    help=(
+        "RFC 3339 UTC time persisted on evaluator receipts; run the campaign immediately after "
+        "preparation."
+    ),
+)
+@click.option("--tool-git-sha", required=True, help="Exact authorized controller revision.")
+def benchmark_prepare_v02_exact_campaign_config(
+    campaign_freeze: Path,
+    exact_preregistration: Path,
+    cases_preparation: Path,
+    cohort_plan: Path,
+    chronology: Path,
+    hidden_extraction_receipt: Path,
+    issue_responses_root: Path,
+    mapping_preparation: Path,
+    mapping_consensus: Path,
+    capability_index: Path,
+    runtime_manifest: Path,
+    runtime_manifest_sha256: str,
+    gold_smoke_receipt: Path,
+    gold_specs: Path,
+    execution_freeze: Path,
+    execution_authorization: Path,
+    output_root: Path,
+    prepared_at: str,
+    executed_at: str,
+    tool_git_sha: str,
+) -> None:
+    """Atomically derive the provider-free exact 20-case runner config."""
+
+    try:
+        result = prepare_v02_exact_campaign_config(
+            inputs=ExactCampaignConfigInputs(
+                campaign_freeze=campaign_freeze,
+                exact_preregistration=exact_preregistration,
+                cases_preparation=cases_preparation,
+                cohort_plan=cohort_plan,
+                chronology=chronology,
+                hidden_extraction_receipt=hidden_extraction_receipt,
+                issue_responses_root=issue_responses_root,
+                mapping_preparation=mapping_preparation,
+                mapping_consensus=mapping_consensus,
+                capability_index=capability_index,
+                runtime_manifest=runtime_manifest,
+                runtime_manifest_sha256=runtime_manifest_sha256,
+                gold_smoke_receipt=gold_smoke_receipt,
+                gold_specs=gold_specs,
+                execution_freeze=execution_freeze,
+                execution_authorization=execution_authorization,
+            ),
+            output_root=output_root,
+            prepared_at=prepared_at,
+            executed_at=executed_at,
+            tool_git_sha=tool_git_sha,
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(json.dumps(result.summary(), indent=2, sort_keys=True))
+
+
+@benchmark_group.command("verify-v02-exact-campaign-config")
+@click.argument("config", type=click.Path(path_type=Path, exists=True, dir_okay=False))
+def benchmark_verify_v02_exact_campaign_config(config: Path) -> None:
+    """Freshly verify one exact config and every upstream authority."""
+
+    try:
+        result = verify_v02_exact_campaign_config(config)
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(json.dumps(result.summary(), indent=2, sort_keys=True))
 
 
 @benchmark_group.command("produce-snapshot")
