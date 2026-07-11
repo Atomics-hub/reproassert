@@ -53,6 +53,12 @@ from reproassert.benchmark_v02_instance_controller import (
     run_instance_gold_smoke,
     verify_instance_gold_smoke_receipt,
 )
+from reproassert.benchmark_v02_mapping_packets import (
+    prepare_v02_mapping_packets,
+    seal_v02_mapping_consensus,
+    verify_v02_mapping_consensus,
+    verify_v02_mapping_packets,
+)
 from reproassert.benchmark_v02_object_source import (
     prepare_v02_object_source_case,
     verify_v02_object_source_receipt,
@@ -560,6 +566,146 @@ def benchmark_verify_v02_hidden_gold(preparation_receipt: Path) -> None:
                 "case_count": prepared.case_count,
                 "preparation_receipt_sha256": prepared.receipt_sha256,
                 "provider_calls": 0,
+                "verified": True,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+@benchmark_group.command("prepare-v02-mapping-packets")
+@click.option(
+    "--hidden-extraction-receipt",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option("--prepared-at", required=True, help="UTC packet preparation timestamp.")
+@click.option("--tool-git-sha", required=True, help="Exact 40-hex controller revision.")
+@click.option(
+    "--output-root",
+    type=click.Path(path_type=Path, file_okay=False),
+    default=_default_v02_private_preparation_root,
+    show_default="private user state directory",
+)
+def benchmark_prepare_v02_mapping_packets(
+    hidden_extraction_receipt: Path,
+    prepared_at: str,
+    tool_git_sha: str,
+    output_root: Path,
+) -> None:
+    """Prepare 20 blank hunk-mapping packets; never infer reviewer decisions."""
+
+    try:
+        _ensure_private_output_root(output_root)
+        verified_hidden = verify_v02_hidden_gold(hidden_extraction_receipt)
+        prepared = prepare_v02_mapping_packets(
+            verified_hidden=verified_hidden,
+            output_root=output_root,
+            prepared_at=prepared_at,
+            tool_git_sha=tool_git_sha,
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(
+        json.dumps(
+            {
+                "case_count": prepared.case_count,
+                "preparation_receipt_sha256": prepared.receipt_sha256,
+                "provider_calls": 0,
+                "status": "prepared_review_required_provider_disabled",
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+@benchmark_group.command("verify-v02-mapping-packets")
+@click.argument("receipt", type=click.Path(path_type=Path, exists=True, dir_okay=False))
+def benchmark_verify_v02_mapping_packets(receipt: Path) -> None:
+    """Verify all 20 blank packets and their exact patch-algebra commitments."""
+
+    try:
+        prepared = verify_v02_mapping_packets(receipt)
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(
+        json.dumps(
+            {
+                "case_count": prepared.case_count,
+                "preparation_receipt_sha256": prepared.receipt_sha256,
+                "provider_calls": 0,
+                "verified": True,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+@benchmark_group.command("seal-v02-mapping-consensus")
+@click.option(
+    "--preparation-receipt",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--submissions-root",
+    type=click.Path(path_type=Path, exists=True, file_okay=False),
+    required=True,
+)
+@click.option("--sealed-at", required=True, help="UTC consensus seal timestamp.")
+@click.option("--output", type=click.Path(path_type=Path, dir_okay=False), required=True)
+def benchmark_seal_v02_mapping_consensus(
+    preparation_receipt: Path, submissions_root: Path, sealed_at: str, output: Path
+) -> None:
+    """Seal genuine two-reviewer agreement or a valid third-reviewer tie break."""
+
+    try:
+        _ensure_private_output_root(output.parent)
+        sealed = seal_v02_mapping_consensus(
+            preparation_path=preparation_receipt,
+            submissions_root=submissions_root,
+            output_path=output,
+            sealed_at=sealed_at,
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(
+        json.dumps(
+            {
+                "case_count": sealed.case_count,
+                "provider_calls": 0,
+                "seal_sha256": sealed.sha256,
+                "status": "sealed_complete",
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+@benchmark_group.command("verify-v02-mapping-consensus")
+@click.argument("seal", type=click.Path(path_type=Path, exists=True, dir_okay=False))
+@click.option(
+    "--preparation-receipt",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+def benchmark_verify_v02_mapping_consensus(seal: Path, preparation_receipt: Path) -> None:
+    """Verify a sealed mapping set still binds the exact 20-case preparation."""
+
+    try:
+        verified = verify_v02_mapping_consensus(seal, preparation_path=preparation_receipt)
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(
+        json.dumps(
+            {
+                "case_count": verified.case_count,
+                "provider_calls": 0,
+                "seal_sha256": verified.sha256,
                 "verified": True,
             },
             indent=2,
