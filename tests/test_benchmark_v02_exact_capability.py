@@ -285,3 +285,223 @@ def test_capability_index_cli_prepares_and_verifies(
     )
     assert checked.exit_code == 0, checked.output
     assert json.loads(checked.output)["verified"] is True
+
+
+def _verify_index_with_dummy_evidence(path: Path) -> None:
+    capability.verify_v02_exact_image_capability_index(
+        path,
+        manifest_path=Path("manifest.json"),
+        expected_manifest_sha256="a" * 64,
+        gold_smoke_receipt_path=Path("gold.json"),
+        hidden_extraction_receipt=Path("hidden.json"),
+    )
+
+
+def test_capability_index_rejects_overwrite_future_date_and_bad_producer_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest, manifest_sha, gold, hidden = _inputs(tmp_path)
+    hidden_receipt = tmp_path / "hidden.json"
+    hidden_receipt.write_text("{}")
+    monkeypatch.setattr(capability, "verify_v02_hidden_gold", lambda _path: hidden)
+    output = tmp_path / "existing.json"
+    output.write_text("do not replace")
+
+    with pytest.raises(PolicyRejection, match="overwrite"):
+        capability.prepare_v02_exact_image_capability_index(
+            manifest_path=manifest,
+            expected_manifest_sha256=manifest_sha,
+            gold_smoke_receipt_path=gold,
+            hidden_extraction_receipt=hidden_receipt,
+            prepared_at="2026-07-11T09:00:00Z",
+            tool_git_sha="a" * 40,
+            output_path=output,
+        )
+    assert output.read_text() == "do not replace"
+
+    with pytest.raises(PolicyRejection, match="future-dated"):
+        capability._derive_index(
+            manifest_path=manifest,
+            expected_manifest_sha256=manifest_sha,
+            gold_smoke_receipt_path=gold,
+            hidden_extraction_receipt=hidden_receipt,
+            prepared_at="2999-01-01T00:00:00Z",
+            tool_git_sha="a" * 40,
+        )
+    with pytest.raises(PolicyRejection, match="tool Git SHA"):
+        capability._derive_index(
+            manifest_path=manifest,
+            expected_manifest_sha256=manifest_sha,
+            gold_smoke_receipt_path=gold,
+            hidden_extraction_receipt=hidden_receipt,
+            prepared_at="2026-07-11T09:00:00Z",
+            tool_git_sha="not-a-sha",
+        )
+
+
+def test_capability_index_rejects_unsafe_encoding_shape_identity_and_size(tmp_path: Path) -> None:
+    invalid_json = tmp_path / "invalid.json"
+    invalid_json.write_bytes(b"{")
+    with pytest.raises(PolicyRejection, match="invalid JSON"):
+        _verify_index_with_dummy_evidence(invalid_json)
+
+    noncanonical = tmp_path / "noncanonical.json"
+    noncanonical.write_bytes(b"{}")
+    with pytest.raises(PolicyRejection, match="not canonical"):
+        _verify_index_with_dummy_evidence(noncanonical)
+
+    wrong_fields = tmp_path / "wrong-fields.json"
+    wrong_fields.write_bytes(capability._canonical({"unexpected": True}) + b"\n")
+    with pytest.raises(PolicyRejection, match="fields"):
+        _verify_index_with_dummy_evidence(wrong_fields)
+
+    identity = {
+        "algorithm": "wrong",
+        "benchmark_version": "0.2",
+        "case_count": 20,
+        "cases": [],
+        "claims": {},
+        "index_sha256": "0" * 64,
+        "prepared_at": "2026-07-11T09:00:00Z",
+        "schema_version": "1.0.0",
+        "status": "runtime_attested_20_evaluator_preflight_19",
+        "tool_git_sha": "a" * 40,
+    }
+    identity_path = tmp_path / "identity.json"
+    identity_path.write_bytes(capability._canonical(identity) + b"\n")
+    with pytest.raises(PolicyRejection, match="identity"):
+        _verify_index_with_dummy_evidence(identity_path)
+
+    oversized = tmp_path / "oversized.json"
+    oversized.write_bytes(b"x" * (1024 * 1024 + 1))
+    with pytest.raises(PolicyRejection, match="size limit"):
+        _verify_index_with_dummy_evidence(oversized)
+    with pytest.raises(PolicyRejection, match="read safely"):
+        _verify_index_with_dummy_evidence(tmp_path / "missing.json")
+
+
+@pytest.mark.parametrize("value", [None, "", "2026-02-30T00:00:00Z"])
+def test_capability_index_rejects_invalid_timestamps(value: object) -> None:
+    with pytest.raises(PolicyRejection, match="timestamp"):
+        capability._timestamp(value)
+
+
+def _rewrite_gold(gold: Path, mutation: object) -> None:
+    record = json.loads(gold.read_bytes())
+    assert callable(mutation)
+    mutation(record)
+    gold.write_bytes(capability._canonical(record) + b"\n")
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        (lambda record: record.update(selection="rk-v0.2-001"), "complete all-case"),
+        (
+            lambda record: record["inputs"].update(instance_runtime_manifest_sha256="0" * 64),
+            "exact runtime manifest",
+        ),
+        (
+            lambda record: record["inputs"].update(hidden_extraction_receipt_sha256="0" * 64),
+            "hidden extraction",
+        ),
+        (
+            lambda record: record["results"][0].update(instance_id="wrong__instance-1"),
+            "exact runtime entry",
+        ),
+        (
+            lambda record: record["results"][0].update(classification="semantic_failure"),
+            "Non-014",
+        ),
+        (
+            lambda record: record["results"][13].update(reason="setup_failure"),
+            "Case 014",
+        ),
+    ],
+)
+def test_capability_issuer_rejects_cross_evidence_substitution(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mutation: object,
+    message: str,
+) -> None:
+    manifest, manifest_sha, gold, hidden = _inputs(tmp_path)
+    _rewrite_gold(gold, mutation)
+    _install_verifiers(monkeypatch, gold)
+    case_id = "rk-v0.2-014" if message == "Case 014" else "rk-v0.2-001"
+    with pytest.raises(PolicyRejection, match=message):
+        capability.issue_verified_v02_exact_image_evaluator_capability(
+            manifest_path=manifest,
+            expected_manifest_sha256=manifest_sha,
+            gold_smoke_receipt_path=gold,
+            verified_hidden=hidden,  # type: ignore[arg-type]
+            case_id=case_id,
+        )
+
+
+def test_capability_issuer_rejects_manifest_gold_toctou_and_forged_commitment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest, manifest_sha, gold, hidden = _inputs(tmp_path)
+    _install_verifiers(monkeypatch, gold)
+    with pytest.raises(PolicyRejection, match="explicit commitment"):
+        capability.issue_verified_v02_exact_image_evaluator_capability(
+            manifest_path=manifest,
+            expected_manifest_sha256="0" * 64,
+            gold_smoke_receipt_path=gold,
+            verified_hidden=hidden,  # type: ignore[arg-type]
+            case_id="rk-v0.2-001",
+        )
+
+    short_manifest = tmp_path / "short-manifest.json"
+    short_manifest.write_bytes(
+        instance_runtime_manifest_bytes(
+            harness_git_sha="a" * 40,
+            harness_specs_sha256="b" * 64,
+            entries=(_runtime(1),),
+        )
+    )
+    short_sha = load_instance_runtime_manifest(short_manifest).sha256
+    with pytest.raises(PolicyRejection, match="complete 20-case"):
+        capability.issue_verified_v02_exact_image_evaluator_capability(
+            manifest_path=short_manifest,
+            expected_manifest_sha256=short_sha,
+            gold_smoke_receipt_path=gold,
+            verified_hidden=hidden,  # type: ignore[arg-type]
+            case_id="rk-v0.2-001",
+        )
+
+    monkeypatch.setattr(
+        capability,
+        "verify_instance_gold_smoke_receipt",
+        lambda path: GoldSmokeReceipt(path, "0" * 64, 20, 19, 1),
+    )
+    with pytest.raises(PolicyRejection, match="changed after verification"):
+        capability.issue_verified_v02_exact_image_evaluator_capability(
+            manifest_path=manifest,
+            expected_manifest_sha256=manifest_sha,
+            gold_smoke_receipt_path=gold,
+            verified_hidden=hidden,  # type: ignore[arg-type]
+            case_id="rk-v0.2-001",
+        )
+
+    _install_verifiers(monkeypatch, gold)
+    issued = capability.issue_verified_v02_exact_image_evaluator_capability(
+        manifest_path=manifest,
+        expected_manifest_sha256=manifest_sha,
+        gold_smoke_receipt_path=gold,
+        verified_hidden=hidden,  # type: ignore[arg-type]
+        case_id="rk-v0.2-001",
+    )
+    object.__setattr__(issued, "evaluator_public_commitment_sha256", "0" * 64)
+    with pytest.raises(PolicyRejection, match="public commitment"):
+        capability.require_v02_exact_image_evaluator_capability(issued)
+
+
+def test_capability_rejects_invalid_case_and_oversized_gold(tmp_path: Path) -> None:
+    with pytest.raises(PolicyRejection, match="case ID"):
+        capability._case("rk-v0.2-../../secret")
+    oversized = tmp_path / "gold.json"
+    oversized.write_bytes(b"x" * (capability.MAX_GOLD_SMOKE_RECEIPT_BYTES + 1))
+    with pytest.raises(PolicyRejection, match="verifier limit"):
+        capability._read_gold(oversized)
