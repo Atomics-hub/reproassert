@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import replace
+from pathlib import Path
 from typing import ClassVar
 
 import pytest
@@ -130,6 +131,7 @@ class FakeDocker:
                     },
                 },
                 "Image": image_id,
+                "State": {"OOMKilled": False},
                 "Mounts": [
                     {
                         "Destination": mount["dst"],
@@ -146,6 +148,11 @@ class FakeDocker:
             return self._result(json.dumps([self.containers[args[2]]]))
         if args[:3] == ["container", "rm", "--force"]:
             self.containers.pop(args[3], None)
+            return self._result("")
+        if args[0] == "cp" and args[1].endswith(":/tmp/reproassert-junit.xml"):
+            Path(args[2]).write_bytes(
+                b'<testsuite tests="1"><testcase><failure>expected</failure></testcase></testsuite>'
+            )
             return self._result("")
         if args[:2] == ["start", "--attach"] and "test-base" in args[2]:
             return self._result("one failed\n", returncode=1)
@@ -236,6 +243,28 @@ def test_prepares_two_fresh_workspaces_and_runs_bounded_pytest() -> None:
 
     executor.cleanup()
     assert not fake.containers
+
+
+def test_pytest_execution_returns_bounded_junit_and_oom_evidence() -> None:
+    fake = FakeDocker()
+    executor = _executor(fake)
+    executor.acquire()
+    executor.prepare_workspaces(fixed_patch=b"diff --git a/a b/a\n")
+    executor.stage_candidate(
+        relative_path="tests/test_reproassert_issue_14305.py",
+        content=b"def test_repro():\n    assert False\n",
+    )
+
+    result = executor.run_pytest(
+        workspace="base",
+        targets=("tests/test_reproassert_issue_14305.py::test_repro",),
+    )
+
+    assert result.junit_xml is not None
+    assert b"<testcase>" in result.junit_xml
+    assert result.oom_killed is False
+    assert any(command[0] == "cp" for command in fake.commands)
+    executor.cleanup()
 
 
 @pytest.mark.parametrize(

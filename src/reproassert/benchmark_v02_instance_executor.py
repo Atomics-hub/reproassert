@@ -99,6 +99,8 @@ class InstancePytestResult:
     output: str
     timed_out: bool
     output_truncated: bool
+    junit_xml: bytes | None = None
+    oom_killed: bool = False
 
 
 class InstanceRuntimeExecutor:
@@ -235,7 +237,10 @@ class InstanceRuntimeExecutor:
         if self.runtime.test_command_profile != "pytest-v1":
             raise self._reject("Frozen instance runtime does not use the pytest command profile.")
         return self.run_test_command(
-            workspace=workspace, targets=targets, collect_only=collect_only
+            workspace=workspace,
+            targets=targets,
+            collect_only=collect_only,
+            emit_junit=not collect_only,
         )
 
     def run_test_command(
@@ -246,6 +251,7 @@ class InstanceRuntimeExecutor:
         collect_only: bool = False,
         sympy_test_file: str | None = None,
         sympy_test_identifier: str | None = None,
+        emit_junit: bool = False,
     ) -> InstancePytestResult:
         """Run exactly one manifest-bound harness command profile."""
 
@@ -263,8 +269,10 @@ class InstanceRuntimeExecutor:
             checked_targets = tuple(_pytest_target(target) for target in targets)
             script = _PYTEST_SCRIPT
             profile_args = ["--collect-only"] if collect_only else []
+            if emit_junit:
+                profile_args.append("--junitxml=/tmp/reproassert-junit.xml")
         elif self.runtime.test_command_profile == "sympy-bin-test-v1":
-            if targets or collect_only:
+            if targets or collect_only or emit_junit:
                 raise self._reject(
                     "The frozen SymPy command profile rejects pytest targets and collection mode."
                 )
@@ -298,15 +306,49 @@ class InstanceRuntimeExecutor:
                 max_output_bytes=self.policy.max_output_bytes,
                 allow_failure=True,
             )
+            junit_xml = self._read_junit(name) if emit_junit else None
+            oom_killed = self._container_oom_killed(name)
             return InstancePytestResult(
                 workspace=workspace,
                 exit_code=result.returncode,
                 output=result.output,
                 timed_out=result.timed_out,
                 output_truncated=result.output_truncated,
+                junit_xml=junit_xml,
+                oom_killed=oom_killed,
             )
         finally:
             self._remove_container(name)
+
+    def _read_junit(self, name: str) -> bytes | None:
+        """Copy a bounded pytest JUnit artifact from a stopped sandbox container."""
+
+        with tempfile.TemporaryDirectory(prefix="reproassert-instance-junit-") as temporary:
+            os.chmod(temporary, 0o700)
+            destination = Path(temporary) / "junit.xml"
+            copied = self._run(
+                ["cp", f"{name}:/tmp/reproassert-junit.xml", str(destination)],
+                timeout=30,
+                allow_failure=True,
+            )
+            if copied.returncode != 0 or copied.timed_out or copied.output_truncated:
+                return None
+            try:
+                stat_result = destination.lstat()
+            except FileNotFoundError as exc:
+                raise self._reject("Pytest did not produce its required JUnit evidence.") from exc
+            if not destination.is_file() or destination.is_symlink():
+                raise self._reject("Pytest JUnit evidence is not a regular file.")
+            if not 1 <= stat_result.st_size <= MAX_STAGED_BYTES:
+                raise self._reject("Pytest JUnit evidence is empty or exceeds the byte limit.")
+            return destination.read_bytes()
+
+    def _container_oom_killed(self, name: str) -> bool:
+        payload = self._inspect_one(["container", "inspect", name], "container")
+        state = payload.get("State")
+        if not isinstance(state, dict) or type(state.get("OOMKilled")) is not bool:
+            raise self._reject("Docker omitted the container OOM status.")
+        return cast(bool, state["OOMKilled"])
 
     def cleanup(self) -> None:
         errors: list[str] = []
