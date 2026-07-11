@@ -1672,7 +1672,7 @@ def test_recovered_crash_chain_uses_latest_effective_terminal_and_schema(
     Draft202012Validator(schema).validate(recovery)
 
 
-def test_preparation_review_seal_and_verification_cli_never_expose_paid_run(
+def test_preparation_review_seal_and_verification_cli_are_provider_free(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     artifacts = _prepare(tmp_path)
@@ -1915,7 +1915,7 @@ def test_preparation_review_seal_and_verification_cli_never_expose_paid_run(
     assert json.loads(verified.output)["provider_invoked_by_this_command"] is False
     help_result = runner.invoke(cli.main, ["benchmark", "--help"])
     assert help_result.exit_code == 0
-    assert "run-v02" not in help_result.output
+    assert "run-v02-exact-campaign" in help_result.output
     assert "seal-v02-causal-controls" in help_result.output
     assert "verify-v02-causal-controls" in help_result.output
 

@@ -48,6 +48,7 @@ from reproassert.benchmark_v02_chronology import (
     prepare_v02_chronology_evidence,
     verify_v02_chronology_evidence,
 )
+from reproassert.benchmark_v02_exact_campaign_controller import run_v02_exact_campaign
 from reproassert.benchmark_v02_exact_capability import (
     issue_verified_v02_exact_image_evaluator_capability,
     prepare_v02_exact_image_capability_index,
@@ -148,6 +149,18 @@ def main() -> None:
 @main.group("benchmark")
 def benchmark_group() -> None:
     """Prepare inert benchmark evidence without running a generator or model."""
+
+
+@benchmark_group.command("run-v02-exact-campaign")
+@click.argument("config", type=click.Path(path_type=Path, exists=True, dir_okay=False))
+def benchmark_run_v02_exact_campaign(config: Path) -> None:
+    """Run or safely resume the authorized exact 20-case campaign."""
+
+    try:
+        result = run_v02_exact_campaign(config)
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(json.dumps(result, indent=2, sort_keys=True))
 
 
 @benchmark_group.command("produce-snapshot")
