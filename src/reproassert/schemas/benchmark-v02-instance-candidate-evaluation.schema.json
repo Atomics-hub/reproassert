@@ -59,8 +59,47 @@
     "executed_at": { "$ref": "#/$defs/timestamp" },
     "inputs": {
       "type": "object", "additionalProperties": false,
-      "required": ["instance_runtime_manifest_sha256"],
-      "properties": { "instance_runtime_manifest_sha256": { "$ref": "#/$defs/sha256" } }
+      "required": ["algorithm", "case_id", "evaluator_public_commitment_sha256", "gold_smoke", "hidden_inputs", "runtime", "runtime_manifest_sha256"],
+      "properties": {
+        "algorithm": { "const": "reproassert-v02-exact-image-evaluator-capability-v1" },
+        "case_id": { "$ref": "#/$defs/case_id" },
+        "evaluator_public_commitment_sha256": { "$ref": "#/$defs/sha256" },
+        "runtime_manifest_sha256": { "$ref": "#/$defs/sha256" },
+        "runtime": {
+          "type": "object", "additionalProperties": false,
+          "required": ["base_sha", "base_tree_oid", "case_id", "image_digest", "image_id", "image_tag", "instance_id", "spec_sha256", "test_command_profile"],
+          "properties": {
+            "base_sha": { "$ref": "#/$defs/git_sha" }, "base_tree_oid": { "$ref": "#/$defs/git_sha" },
+            "case_id": { "$ref": "#/$defs/case_id" },
+            "image_digest": { "$ref": "#/$defs/image_sha256" }, "image_id": { "$ref": "#/$defs/image_sha256" },
+            "image_tag": { "type": "string", "minLength": 3, "maxLength": 264 },
+            "instance_id": { "type": "string", "minLength": 3, "maxLength": 240 },
+            "spec_sha256": { "$ref": "#/$defs/sha256" },
+            "test_command_profile": { "enum": ["pytest-v1", "sympy-bin-test-v1"] }
+          }
+        },
+        "gold_smoke": {
+          "type": "object", "additionalProperties": false,
+          "required": ["case_classification", "case_reason", "receipt_commitment_sha256", "receipt_sha256"],
+          "properties": {
+            "case_classification": { "enum": ["semantic_valid", "infrastructure_failure"] },
+            "case_reason": { "enum": ["fails_on_base_passes_on_fixed", "network_dependency"] },
+            "receipt_commitment_sha256": { "$ref": "#/$defs/sha256" },
+            "receipt_sha256": { "$ref": "#/$defs/sha256" }
+          }
+        },
+        "hidden_inputs": {
+          "type": "object", "additionalProperties": false,
+          "required": ["developer_tests_bytes", "developer_tests_sha256", "hidden_extraction_receipt_sha256", "production_patch_bytes", "production_patch_sha256"],
+          "properties": {
+            "developer_tests_bytes": { "type": "integer", "minimum": 1, "maximum": 2097152 },
+            "developer_tests_sha256": { "$ref": "#/$defs/sha256" },
+            "hidden_extraction_receipt_sha256": { "$ref": "#/$defs/sha256" },
+            "production_patch_bytes": { "type": "integer", "minimum": 1, "maximum": 2097152 },
+            "production_patch_sha256": { "$ref": "#/$defs/sha256" }
+          }
+        }
+      }
     },
     "outcome": {
       "type": "object", "additionalProperties": false,
@@ -108,6 +147,7 @@
   },
   "$defs": {
     "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "image_sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
     "git_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
     "case_id": { "type": "string", "pattern": "^rk-v0\\.2-[0-9]{3}$" },
     "timestamp": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?Z$" },

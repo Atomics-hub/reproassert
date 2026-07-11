@@ -192,6 +192,14 @@ Read [sandbox profiles](sandbox-profiles.md), [security model](security-model.md
 
 ## Capability-gated differential evaluator
 
+The exact SWE-bench image lane uses a distinct verifier-issued
+`VerifiedV02ExactImageEvaluatorCapability`. Issuance requires one complete 20-case runtime manifest,
+the complete 19-valid/1-infrastructure gold-smoke denominator, and freshly verified hidden artifact
+commitments. Each candidate receipt carries the resulting public commitment plus the selected
+runtime/spec/image identity and redacted production/developer-test hashes. This prevents a caller
+from swapping a locally convenient image, case spec, gold receipt, or private patch after authority
+was issued.
+
 The v0.2 structural package code defines a nominal `VerifiedV02EvaluatorCapability`. Its digest binds
 the case, base commit/root/content tree, hidden-fixed and fixing-head trees, production/developer
 patch identities, evaluator commitment, and either a complete dependency receipt/plan/tree/image set
