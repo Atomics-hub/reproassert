@@ -3333,10 +3333,7 @@ def _run_transactional_openai_generation(run: _RunContext) -> tuple[ValidatedCan
     model = policy.requested_model
     if model is None:
         raise _reject("v02_generator", "The scored model identity is missing.")
-    request_payload = _openai_request_payload(run.request, model)
-    encoded_request = json.dumps(request_payload, ensure_ascii=True, separators=(",", ":")).encode(
-        "utf-8"
-    )
+    encoded_request = _canonical_openai_request_bytes(run.request, model)
     if len(encoded_request) > generator_module.MAX_OPENAI_REQUEST_BYTES:
         raise _ControlledFailure("no_output", "openai_request_limit")
 
@@ -5098,10 +5095,11 @@ def _find_case(cases: tuple[PreregisteredV02Case, ...], case_id: str) -> Preregi
 
 def _required_reservation(policy: V02ScoredRunPolicy, request: GenerationRequest) -> int:
     pricing = _require_pricing(policy)
-    rendered_bytes = len(_rendered_input_text(request).encode("utf-8"))
-    # UTF-8 bytes are a conservative upper bound for tokenizer units in the fixed request.
+    outbound_bytes = len(_canonical_openai_request_bytes(request, policy.requested_model))
+    # UTF-8 request-body bytes conservatively upper-bound tokenizer units and include every
+    # transmitted instruction, schema, model/config field, and rendered input byte.
     token_numerator = (
-        rendered_bytes * pricing.input_microusd_per_million_tokens
+        outbound_bytes * pricing.input_microusd_per_million_tokens
         + OPENAI_MAX_OUTPUT_TOKENS * pricing.output_microusd_per_million_tokens
     )
     sandbox = math.ceil(policy.max_case_wall_ms * pricing.sandbox_microusd_per_second / 1_000)
@@ -5158,6 +5156,21 @@ def _openai_request_payload(request: GenerationRequest, model: str) -> dict[str,
             }
         },
     }
+
+
+def _canonical_openai_request_bytes(request: GenerationRequest, model: object) -> bytes:
+    """Return the exact canonical JSON body transmitted by the scored OpenAI adapter."""
+
+    return json.dumps(
+        _openai_request_payload(request, _bounded_model(model)),
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+
+
+def _outbound_request_sha256(request: GenerationRequest, model: object) -> str:
+    return hashlib.sha256(_canonical_openai_request_bytes(request, model)).hexdigest()
 
 
 def _openai_adapter_config_sha256(model: object) -> str:

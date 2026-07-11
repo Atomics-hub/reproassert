@@ -18,9 +18,7 @@ from reproassert.benchmark_v02_instance_controller import verify_instance_gold_s
 from reproassert.benchmark_v02_instance_runtime import load_instance_runtime_manifest
 from reproassert.benchmark_v02_package import EXPECTED_CASE_COUNT, load_v02_preregistration
 from reproassert.benchmark_v02_runner import (
-    EXECUTION_REQUEST_SET_ALGORITHM,
     V02PricingSnapshot,
-    _execution_request_set_sha256,
     _pricing_from_record,
 )
 from reproassert.candidate import MAX_TEST_BYTES
@@ -40,6 +38,7 @@ MAX_CASE_MICROUSD = 250_000
 MAX_CASE_WALL_MS = 600_000
 PROVIDER_TIMEOUT_MS = 120_000
 MAX_OUTPUT_TOKENS = 4_096
+OUTBOUND_REQUEST_SET_ALGORITHM = "reproassert-v02-outbound-request-set-v1"
 
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _GIT_SHA = re.compile(r"[0-9a-f]{40}\Z")
@@ -121,10 +120,10 @@ def prepare_v02_exact_image_execution_freeze(
     request_rows = _preparation_requests(
         prepared.root, preparation, case_ids, controller_git_sha=controller_sha
     )
-    requests = tuple((case_id, digest) for case_id, digest, _ in request_rows)
+    requests = tuple((case_id, outbound_digest) for case_id, _, outbound_digest, _ in request_rows)
     reservations = tuple(
-        (case_id, _required_reservation(pricing, rendered_bytes))
-        for case_id, _, rendered_bytes in request_rows
+        (case_id, _required_reservation(pricing, outbound_bytes))
+        for case_id, _, _, outbound_bytes in request_rows
     )
     over_cap = tuple(case_id for case_id, reserve in reservations if reserve > MAX_CASE_MICROUSD)
     if over_cap:
@@ -133,8 +132,8 @@ def prepare_v02_exact_image_execution_freeze(
         )
     reservation_total = sum(reserve for _, reserve in reservations)
     if reservation_total > MAX_CAMPAIGN_MICROUSD:
-        raise _reject("Rendered request reservations exceed the approved campaign cap.")
-    request_set_sha256 = _execution_request_set_sha256(
+        raise _reject("Outbound request reservations exceed the approved campaign cap.")
+    request_set_sha256 = _outbound_request_set_sha256(
         campaign_id=freeze.campaign_id,
         preregistration_sha256=freeze.preregistration_sha256,
         cohort_sha256=freeze.cohort_sha256,
@@ -192,14 +191,14 @@ def prepare_v02_exact_image_execution_freeze(
             "requested_model": model,
         },
         "request_set": {
-            "algorithm": EXECUTION_REQUEST_SET_ALGORITHM,
+            "algorithm": OUTBOUND_REQUEST_SET_ALGORITHM,
             "preparation_request_set_sha256": _digest(
                 preparation.get("request_set_sha256"), "preparation request set"
             ),
             "request_count": EXPECTED_CASE_COUNT,
             "request_set_sha256": request_set_sha256,
             "requests": [
-                {"case_id": case_id, "rendered_input_sha256": digest}
+                {"case_id": case_id, "outbound_request_sha256": digest}
                 for case_id, digest in requests
             ],
         },
@@ -300,17 +299,17 @@ def verify_v02_exact_image_execution_freeze(
         case_ids,
         controller_git_sha=cast(str, record["controller_git_sha"]),
     )
-    requests = tuple((case_id, digest) for case_id, digest, _ in request_rows)
+    requests = tuple((case_id, outbound_digest) for case_id, _, outbound_digest, _ in request_rows)
     reservations = tuple(
-        (case_id, _required_reservation(pricing, rendered_bytes))
-        for case_id, _, rendered_bytes in request_rows
+        (case_id, _required_reservation(pricing, outbound_bytes))
+        for case_id, _, _, outbound_bytes in request_rows
     )
     if any(reserve > MAX_CASE_MICROUSD for _, reserve in reservations):
         raise _reject("Execution freeze contains a request above the approved per-case cap.")
     reservation_total = sum(reserve for _, reserve in reservations)
     if reservation_total > MAX_CAMPAIGN_MICROUSD:
         raise _reject("Execution freeze request reservations exceed the campaign cap.")
-    expected_set = _execution_request_set_sha256(
+    expected_set = _outbound_request_set_sha256(
         campaign_id=freeze.campaign_id,
         preregistration_sha256=freeze.preregistration_sha256,
         cohort_sha256=freeze.cohort_sha256,
@@ -318,12 +317,12 @@ def verify_v02_exact_image_execution_freeze(
     )
     request_set = _mapping(record["request_set"], "request set")
     if request_set != {
-        "algorithm": EXECUTION_REQUEST_SET_ALGORITHM,
+        "algorithm": OUTBOUND_REQUEST_SET_ALGORITHM,
         "preparation_request_set_sha256": preparation["request_set_sha256"],
         "request_count": 20,
         "request_set_sha256": expected_set,
         "requests": [
-            {"case_id": case_id, "rendered_input_sha256": digest} for case_id, digest in requests
+            {"case_id": case_id, "outbound_request_sha256": digest} for case_id, digest in requests
         ],
     }:
         raise _reject("Execution freeze request bindings are invalid.")
@@ -568,11 +567,11 @@ def _preparation_requests(
     case_ids: tuple[str, ...],
     *,
     controller_git_sha: str,
-) -> tuple[tuple[str, str, int], ...]:
+) -> tuple[tuple[str, str, str, int], ...]:
     rows = receipt.get("packages")
     if not isinstance(rows, list) or len(rows) != len(case_ids):
         raise _reject("Preparation package index is invalid.")
-    requests: list[tuple[str, str, int]] = []
+    requests: list[tuple[str, str, str, int]] = []
     for expected, raw_row in zip(case_ids, rows, strict=True):
         row = _mapping(raw_row, "preparation package row")
         if row.get("case_id") != expected:
@@ -602,23 +601,49 @@ def _preparation_requests(
         rendered = provider_request.get("input")
         if not isinstance(rendered, str):
             raise _reject("Provider request rendered input is invalid.")
-        rendered_bytes = len(rendered.encode("utf-8"))
         digest = _digest(request.get("rendered_input_sha256"), "rendered input")
         if hashlib.sha256(rendered.encode("utf-8")).hexdigest() != digest:
             raise _reject("Rendered input hash differs from the exact provider request bytes.")
-        requests.append((expected, digest, rendered_bytes))
+        outbound_raw = _canonical(provider_request)
+        outbound_digest = _digest(request.get("outbound_request_sha256"), "outbound request")
+        if hashlib.sha256(outbound_raw).hexdigest() != outbound_digest:
+            raise _reject("Outbound request hash differs from the exact canonical provider body.")
+        requests.append((expected, digest, outbound_digest, len(outbound_raw)))
     return tuple(requests)
 
 
-def _required_reservation(pricing: V02PricingSnapshot, rendered_bytes: int) -> int:
+def _required_reservation(pricing: V02PricingSnapshot, outbound_bytes: int) -> int:
     token_numerator = (
-        rendered_bytes * pricing.input_microusd_per_million_tokens
+        outbound_bytes * pricing.input_microusd_per_million_tokens
         + MAX_OUTPUT_TOKENS * pricing.output_microusd_per_million_tokens
     )
     model = _ceil_per_million(token_numerator)
     sandbox = math.ceil(MAX_CASE_WALL_MS * pricing.sandbox_microusd_per_second / 1_000)
     artifact = _ceil_per_million(MAX_TEST_BYTES * pricing.artifact_microusd_per_million_bytes)
     return model + sandbox + artifact + pricing.paid_storage_microusd
+
+
+def _outbound_request_set_sha256(
+    *,
+    campaign_id: str,
+    preregistration_sha256: str,
+    cohort_sha256: str,
+    requests: tuple[tuple[str, str], ...],
+) -> str:
+    return hashlib.sha256(
+        _canonical(
+            {
+                "algorithm": OUTBOUND_REQUEST_SET_ALGORITHM,
+                "campaign_id": campaign_id,
+                "preregistration_sha256": preregistration_sha256,
+                "cohort_sha256": cohort_sha256,
+                "requests": [
+                    {"case_id": case_id, "outbound_request_sha256": digest}
+                    for case_id, digest in requests
+                ],
+            }
+        )
+    ).hexdigest()
 
 
 def _ceil_per_million(value: int) -> int:

@@ -25,6 +25,7 @@ from reproassert.benchmark_v02_package import _require_outside_source_checkout
 from reproassert.benchmark_v02_preparation import verify_v02_dataset_preparation
 from reproassert.benchmark_v02_runner import (
     V02PricingSnapshot,
+    _canonical_openai_request_bytes,
     _openai_request_payload,
     _pricing_from_record,
     _rendered_input_sha256,
@@ -183,8 +184,8 @@ def prepare_v02_cases(
 
             gold = hidden_case_artifacts(hidden, case_id)
             _reject_gold_leak(projection_source, gold)
-            provider_request, rendered_input_sha256 = _render_provider_request(
-                projection_value, exact_source_plan, pricing
+            provider_request, rendered_input_sha256, outbound_request_sha256 = (
+                _render_provider_request(projection_value, exact_source_plan, pricing)
             )
             request = _request_envelope(
                 case_id=case_id,
@@ -194,6 +195,7 @@ def prepare_v02_cases(
                 tool_git_sha=producer_sha,
                 provider_request=provider_request,
                 rendered_input_sha256=rendered_input_sha256,
+                outbound_request_sha256=outbound_request_sha256,
             )
             _reject_gold_content(
                 _canonical(request), gold, f"provider request envelope for {case_id}"
@@ -385,7 +387,7 @@ def verify_v02_cases(receipt_path: Path) -> V02CasesPreparation:
             MAX_RECEIPT_BYTES,
             "request",
         )
-        provider_request, rendered_input_sha256 = _render_provider_request(
+        provider_request, rendered_input_sha256, outbound_request_sha256 = _render_provider_request(
             projection_value, exact_source_plan, pricing
         )
         expected_request = _request_envelope(
@@ -396,6 +398,7 @@ def verify_v02_cases(receipt_path: Path) -> V02CasesPreparation:
             tool_git_sha=cast(str, cast(dict[str, object], record["tool"])["git_sha"]),
             provider_request=provider_request,
             rendered_input_sha256=rendered_input_sha256,
+            outbound_request_sha256=outbound_request_sha256,
         )
         if request != expected_request:
             raise _reject(f"Request envelope differs from trusted inputs for {case_id}.")
@@ -631,6 +634,7 @@ def _request_envelope(
     tool_git_sha: str,
     provider_request: dict[str, object],
     rendered_input_sha256: str,
+    outbound_request_sha256: str,
 ) -> dict[str, object]:
     return {
         "algorithm": "reproassert-v02-provider-disabled-request-envelope-v1",
@@ -652,6 +656,7 @@ def _request_envelope(
         },
         "provider_request": provider_request,
         "rendered_input_sha256": rendered_input_sha256,
+        "outbound_request_sha256": outbound_request_sha256,
         "status": "frozen_not_executable_pending_preregistration_and_authorization",
         "tool_git_sha": tool_git_sha,
     }
@@ -661,7 +666,7 @@ def _render_provider_request(
     projection: dict[str, object],
     exact_source_plan: VerifiedGitObjectPlan,
     pricing: V02PricingSnapshot,
-) -> tuple[dict[str, object], str]:
+) -> tuple[dict[str, object], str, str]:
     issue_url = cast(str, projection["issue_url"])
     issue_text = cast(str, projection["issue_text"])
     issue_number = parse_issue_url(issue_url).number
@@ -689,7 +694,10 @@ def _render_provider_request(
         )
         payload = _openai_request_payload(request, pricing.requested_model)
         rendered_sha256 = _rendered_input_sha256(request)
-    return payload, rendered_sha256
+        outbound_sha256 = hashlib.sha256(
+            _canonical_openai_request_bytes(request, pricing.requested_model)
+        ).hexdigest()
+    return payload, rendered_sha256, outbound_sha256
 
 
 def _review_workflow(case_id: str, gold: dict[str, dict[str, object]]) -> dict[str, object]:

@@ -32,9 +32,11 @@ The protocol distinguishes three nested units:
 Before the scored lane begins, the configuration freezes the maximum attempts, agent steps or calls, wall time, output, and attributable cost per campaign. Candidate selection may use generator-visible base execution feedback, but never the fixed tree, gold tests, causal-control results, or semantic verdicts. Increasing attempts after observing failures, silently restarting a campaign, or choosing the best candidate with oracle feedback creates a different experiment.
 
 The exact-image lane additionally requires `prepare-v02-execution-freeze`. It revalidates the 20-case
-preparation, runtime manifest, and complete gold-smoke receipt; binds every rendered request hash,
-pricing snapshot, model, and merged controller SHA; and recomputes a per-request worst-case
-reservation before accepting the exact USD 5.00 total / USD 0.25 per-case zero-overage approval.
+preparation, runtime manifest, and complete gold-smoke receipt; binds every canonical outbound
+request-body hash, pricing snapshot, model, and merged controller SHA; and recomputes a per-request
+worst-case reservation before accepting the exact USD 5.00 total / USD 0.25 per-case zero-overage
+approval. The priced bytes include the rendered input plus instructions, schema, model, and fixed
+adapter options; input-only accounting is rejected.
 The freeze command reads no provider key and makes no provider call. A request above either cap
 rejects the entire freeze; the cap is never raised implicitly. It emits a statement containing the
 final freeze hash; `authorize-v02-execution` accepts only that exact statement after the freeze.

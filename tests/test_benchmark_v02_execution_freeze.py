@@ -52,9 +52,15 @@ def _request_preparation(
         package_path = Path("cases") / case_id / "package.json"
         (root / request_path).parent.mkdir(parents=True)
         rendered = "x" * rendered_bytes
+        provider_request = {"input": rendered, "instructions": "fixed", "model": "fixture"}
         request = {
             "case_id": case_id,
-            "provider_request": {"input": rendered},
+            "provider_request": provider_request,
+            "outbound_request_sha256": hashlib.sha256(
+                json.dumps(
+                    provider_request, sort_keys=True, separators=(",", ":"), allow_nan=False
+                ).encode()
+            ).hexdigest(),
             "rendered_input_sha256": hashlib.sha256(rendered.encode()).hexdigest(),
             "tool_git_sha": tool_git_sha,
         }
@@ -79,7 +85,10 @@ def test_preparation_requests_bind_exact_rendered_bytes_and_controller_sha(tmp_p
     rows = _preparation_requests(tmp_path, preparation, case_ids, controller_git_sha=tool_sha)
 
     assert len(rows) == 20
-    assert all(rendered_bytes == 100 for _, _, rendered_bytes in rows)
+    assert all(outbound_bytes > 100 for _, _, _, outbound_bytes in rows)
+    assert all(
+        outbound_digest != rendered_digest for _, rendered_digest, outbound_digest, _ in rows
+    )
     with pytest.raises(PolicyRejection, match="controller SHA"):
         _preparation_requests(tmp_path, preparation, case_ids, controller_git_sha="8" * 40)
 
@@ -91,6 +100,29 @@ def test_reservation_audit_rejects_known_oversize_requests() -> None:
     assert _required_reservation(pricing, 380_607) == 303_888
     assert _required_reservation(pricing, 300_000) <= MAX_CASE_MICROUSD
     assert _required_reservation(pricing, 374_714) > MAX_CASE_MICROUSD
+
+
+def test_preparation_prices_full_outbound_body_and_rejects_overhead_tampering(
+    tmp_path: Path,
+) -> None:
+    tool_sha = "9" * 40
+    preparation = _request_preparation(tmp_path, tool_git_sha=tool_sha, rendered_bytes=100)
+    case_ids = tuple(f"rk-v0.2-{position:03d}" for position in range(1, 21))
+    rows = _preparation_requests(tmp_path, preparation, case_ids, controller_git_sha=tool_sha)
+
+    assert all(outbound_bytes > 100 for _, _, _, outbound_bytes in rows)
+
+    first_package = json.loads((tmp_path / "cases/rk-v0.2-001/package.json").read_text())
+    request_path = tmp_path / first_package["request_envelope"]["path"]
+    request = json.loads(request_path.read_text())
+    request["provider_request"]["instructions"] = "tampered instructions"
+    tampered = _canonical(request)
+    request_path.write_bytes(tampered)
+    first_package["request_envelope"]["sha256"] = hashlib.sha256(tampered).hexdigest()
+    (tmp_path / "cases/rk-v0.2-001/package.json").write_bytes(_canonical(first_package))
+
+    with pytest.raises(PolicyRejection, match="Outbound request hash"):
+        _preparation_requests(tmp_path, preparation, case_ids, controller_git_sha=tool_sha)
 
 
 def test_approval_statement_binds_final_freeze_hash_and_exact_caps() -> None:

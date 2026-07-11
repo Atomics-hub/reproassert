@@ -50,9 +50,9 @@
       "type": "object", "additionalProperties": false,
       "required": ["algorithm", "preparation_request_set_sha256", "request_count", "request_set_sha256", "requests"],
       "properties": {
-        "algorithm": {"const": "reproassert-v02-execution-request-set-v1"}, "preparation_request_set_sha256": {"$ref": "#/$defs/sha256"},
+        "algorithm": {"const": "reproassert-v02-outbound-request-set-v1"}, "preparation_request_set_sha256": {"$ref": "#/$defs/sha256"},
         "request_count": {"const": 20}, "request_set_sha256": {"$ref": "#/$defs/sha256"},
-        "requests": {"type": "array", "minItems": 20, "maxItems": 20, "items": {"type": "object", "additionalProperties": false, "required": ["case_id", "rendered_input_sha256"], "properties": {"case_id": {"$ref": "#/$defs/case_id"}, "rendered_input_sha256": {"$ref": "#/$defs/sha256"}}}}
+        "requests": {"type": "array", "minItems": 20, "maxItems": 20, "items": {"type": "object", "additionalProperties": false, "required": ["case_id", "outbound_request_sha256"], "properties": {"case_id": {"$ref": "#/$defs/case_id"}, "outbound_request_sha256": {"$ref": "#/$defs/sha256"}}}}
       }
     },
     "schema_version": {"const": "1.0.0"},
