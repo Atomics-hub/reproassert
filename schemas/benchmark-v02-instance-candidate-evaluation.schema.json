@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Atomics-hub/reproassert/blob/main/schemas/benchmark-v02-instance-candidate-evaluation.schema.json",
+  "title": "ReproAssert v0.2 exact-instance candidate evaluation receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "algorithm", "benchmark_version", "case_id", "candidate", "candidate_profile", "causal_controls",
+    "claims", "executed_at", "inputs", "outcome", "phases", "policy",
+    "receipt_sha256", "schema_version", "tool_git_sha"
+  ],
+  "properties": {
+    "algorithm": { "const": "reproassert-v02-instance-candidate-evaluation-v1" },
+    "benchmark_version": { "const": "0.2" },
+    "schema_version": { "const": "1.0.0" },
+    "case_id": { "$ref": "#/$defs/case_id" },
+    "candidate": {
+      "type": "object", "additionalProperties": false,
+      "required": ["bytes", "relative_path", "sha256", "target"],
+      "properties": {
+        "bytes": { "type": "integer", "minimum": 1, "maximum": 262144 },
+        "relative_path": { "type": "string", "minLength": 8, "maxLength": 300 },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "target": { "type": "string", "minLength": 8, "maxLength": 502 }
+      }
+    },
+    "candidate_profile": {
+      "type": "object", "additionalProperties": false,
+      "required": ["command_profile", "profile_id", "profile_sha256", "required_function", "staging_path", "staging_path_sha256"],
+      "properties": {
+        "command_profile": { "enum": ["pytest-v1", "sympy-bin-test-v1"] },
+        "profile_id": { "enum": ["pytest-v1", "sympy-native-v1"] },
+        "profile_sha256": { "$ref": "#/$defs/sha256" },
+        "required_function": { "type": "string", "pattern": "^test_[A-Za-z_][A-Za-z0-9_]{0,199}$" },
+        "staging_path": { "type": "string", "minLength": 8, "maxLength": 300 },
+        "staging_path_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "causal_controls": {
+      "type": "object", "additionalProperties": false,
+      "required": ["candidate_on_fixed", "l2_causal_controls_passed", "remaining_required_controls", "semantic_review_required"],
+      "properties": {
+        "candidate_on_fixed": { "enum": ["pass", "fail"] },
+        "l2_causal_controls_passed": { "const": false },
+        "remaining_required_controls": {
+          "const": ["fix_minus_issue_relevant_hunks", "base_plus_issue_relevant_hunks"]
+        },
+        "semantic_review_required": { "const": true }
+      }
+    },
+    "claims": {
+      "const": {
+        "hidden_bytes_emitted": false,
+        "model_or_provider_invoked": false,
+        "network_during_sandbox_execution": false,
+        "provider_calls": 0
+      }
+    },
+    "executed_at": { "$ref": "#/$defs/timestamp" },
+    "inputs": {
+      "type": "object", "additionalProperties": false,
+      "required": ["instance_runtime_manifest_sha256"],
+      "properties": { "instance_runtime_manifest_sha256": { "$ref": "#/$defs/sha256" } }
+    },
+    "outcome": {
+      "type": "object", "additionalProperties": false,
+      "required": ["accepted", "base_consistency", "classification", "fixed_consistency", "reason"],
+      "properties": {
+        "accepted": { "type": "boolean" },
+        "base_consistency": { "type": "string", "pattern": "^[0-3]/3$" },
+        "classification": { "enum": ["verified_reproduction", "timeout", "oom_killed", "output_limit", "infrastructure_failure", "generic_crash", "flaky", "wrong_or_flaky_failure", "does_not_fail_on_base", "does_not_pass_on_fixed", "controller_failure"] },
+        "fixed_consistency": { "type": "string", "pattern": "^[0-3]/3$" },
+        "reason": { "type": "string", "minLength": 10, "maxLength": 300 }
+      }
+    },
+    "phases": {
+      "type": "object", "additionalProperties": false,
+      "required": ["gold_base_collect", "gold_fixed_collect", "gold_base", "gold_fixed", "candidate_runs"],
+      "properties": {
+        "gold_base_collect": { "oneOf": [{ "$ref": "#/$defs/evidence" }, { "type": "null" }] },
+        "gold_fixed_collect": { "oneOf": [{ "$ref": "#/$defs/evidence" }, { "type": "null" }] },
+        "gold_base": { "$ref": "#/$defs/evidence" },
+        "gold_fixed": { "$ref": "#/$defs/evidence" },
+        "candidate_runs": {
+          "type": "array", "minItems": 6, "maxItems": 6,
+          "prefixItems": [
+            { "$ref": "#/$defs/base_run" }, { "$ref": "#/$defs/fixed_run" },
+            { "$ref": "#/$defs/fixed_run" }, { "$ref": "#/$defs/base_run" },
+            { "$ref": "#/$defs/base_run" }, { "$ref": "#/$defs/fixed_run" }
+          ],
+          "items": false
+        }
+      }
+    },
+    "policy": {
+      "type": "object", "additionalProperties": false,
+      "required": ["base_runs", "fixed_runs", "profile", "sandbox"],
+      "properties": {
+        "base_runs": { "const": 3 }, "fixed_runs": { "const": 3 },
+        "profile": { "const": "reproassert-v02-instance-candidate-evaluation-resources-v1" },
+        "sandbox": {
+          "const": { "capabilities": "drop_all", "network_mode": "none", "no_new_privileges": true, "read_only_root": true, "test_user": "65532:65532" }
+        }
+      }
+    },
+    "receipt_sha256": { "$ref": "#/$defs/sha256" },
+    "tool_git_sha": { "$ref": "#/$defs/git_sha" }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "git_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "case_id": { "type": "string", "pattern": "^rk-v0\\.2-[0-9]{3}$" },
+    "timestamp": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?Z$" },
+    "evidence": {
+      "type": "object", "additionalProperties": false,
+      "required": ["exit_code", "junit_sha256", "oom_killed", "output_bytes", "output_sha256", "output_stored", "output_truncated", "timed_out"],
+      "properties": {
+        "exit_code": { "type": "integer", "minimum": 0, "maximum": 255 },
+        "output_bytes": { "type": "integer", "minimum": 0, "maximum": 2097152 },
+        "output_sha256": { "$ref": "#/$defs/sha256" },
+        "junit_sha256": { "oneOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }] },
+        "oom_killed": { "type": "boolean" },
+        "output_stored": { "const": false }, "output_truncated": { "type": "boolean" }, "timed_out": { "type": "boolean" }
+      }
+    },
+    "base_run": {
+      "type": "object", "additionalProperties": false,
+      "required": ["collection", "failure_fingerprint_sha256", "result", "workspace"],
+      "properties": {
+        "collection": { "oneOf": [{ "$ref": "#/$defs/evidence" }, { "type": "null" }] },
+        "failure_fingerprint_sha256": { "oneOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }] },
+        "result": { "$ref": "#/$defs/evidence" },
+        "workspace": { "const": "base" }
+      }
+    },
+    "fixed_run": {
+      "type": "object", "additionalProperties": false,
+      "required": ["collection", "failure_fingerprint_sha256", "result", "workspace"],
+      "properties": {
+        "collection": { "oneOf": [{ "$ref": "#/$defs/evidence" }, { "type": "null" }] },
+        "failure_fingerprint_sha256": { "oneOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }] },
+        "result": { "$ref": "#/$defs/evidence" },
+        "workspace": { "const": "fixed" }
+      }
+    }
+  }
+}

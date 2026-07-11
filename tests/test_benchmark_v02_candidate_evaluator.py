@@ -19,6 +19,7 @@ from reproassert.benchmark_v02_instance_runtime import (
 )
 from reproassert.errors import PolicyRejection
 from reproassert.sandbox import SandboxPolicy
+from reproassert.schema import schema_text
 
 
 def _manifest(tmp_path: Path) -> tuple[Path, str]:
@@ -197,6 +198,10 @@ def test_accepts_consistent_causal_candidate_and_redacts_hidden_bytes(tmp_path: 
         ).read_text()
     )
     jsonschema.validate(receipt, schema)
+    public_schema = Path(
+        "schemas/benchmark-v02-instance-candidate-evaluation.schema.json"
+    ).read_text()
+    assert schema_text("benchmark-v02-instance-candidate-evaluation") == public_schema
 
 
 def test_flaky_base_is_rejected_without_claiming_l2(tmp_path: Path) -> None:
