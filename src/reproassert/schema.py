@@ -9,6 +9,7 @@ SCHEMA_FILENAMES = {
     "benchmark-source-index": "benchmark-source-index.schema.json",
     "benchmark-object-source-receipt": "benchmark-object-source-receipt.schema.json",
     "benchmark-v02-fix-mapping": "benchmark-v02-fix-mapping.schema.json",
+    "benchmark-v02-chronology-evidence": "benchmark-v02-chronology-evidence.schema.json",
     "benchmark-v02-mapping-packet-set": "benchmark-v02-mapping-packet-set.schema.json",
     "benchmark-v02-mapping-review-submission": (
         "benchmark-v02-mapping-review-submission.schema.json"

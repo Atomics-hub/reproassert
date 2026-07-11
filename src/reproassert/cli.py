@@ -42,6 +42,11 @@ from reproassert.benchmark_v02_campaign import (
     verify_v02_semantic_review_set,
 )
 from reproassert.benchmark_v02_cases import prepare_v02_cases, verify_v02_cases
+from reproassert.benchmark_v02_chronology import (
+    capture_v02_public_issue_responses,
+    prepare_v02_chronology_evidence,
+    verify_v02_chronology_evidence,
+)
 from reproassert.benchmark_v02_execution_freeze import (
     authorize_v02_exact_image_execution,
     exact_approval_statement,
@@ -566,6 +571,145 @@ def benchmark_verify_v02_hidden_gold(preparation_receipt: Path) -> None:
                 "case_count": prepared.case_count,
                 "preparation_receipt_sha256": prepared.receipt_sha256,
                 "provider_calls": 0,
+                "verified": True,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+@benchmark_group.command("capture-v02-chronology")
+@click.option(
+    "--cohort-plan",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--output-root",
+    type=click.Path(path_type=Path, file_okay=False),
+    required=True,
+)
+def benchmark_capture_v02_chronology(cohort_plan: Path, output_root: Path) -> None:
+    """Capture 20 public issue responses without credentials or model-provider access."""
+
+    try:
+        _ensure_private_output_root(output_root)
+        captured = capture_v02_public_issue_responses(
+            cohort_plan_path=cohort_plan, output_root=output_root
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(
+        json.dumps(
+            {
+                "case_count": 20,
+                "credentials_sent": False,
+                "issue_responses_root": str(captured),
+                "provider_calls": 0,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+@benchmark_group.command("prepare-v02-chronology")
+@click.option(
+    "--cohort-plan",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--hidden-extraction-receipt",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--issue-responses-root",
+    type=click.Path(path_type=Path, exists=True, file_okay=False),
+    required=True,
+)
+@click.option("--captured-at", required=True, help="UTC evidence capture timestamp.")
+@click.option("--tool-git-sha", required=True, help="Exact 40-hex controller revision.")
+@click.option("--output", type=click.Path(path_type=Path, dir_okay=False), required=True)
+def benchmark_prepare_v02_chronology(
+    cohort_plan: Path,
+    hidden_extraction_receipt: Path,
+    issue_responses_root: Path,
+    captured_at: str,
+    tool_git_sha: str,
+    output: Path,
+) -> None:
+    """Seal 20 chronology pairs from captured public responses and verified metadata."""
+
+    try:
+        _ensure_private_output_root(output.parent)
+        verified = prepare_v02_chronology_evidence(
+            cohort_plan_path=cohort_plan,
+            hidden_extraction_receipt=hidden_extraction_receipt,
+            issue_responses_root=issue_responses_root,
+            captured_at=captured_at,
+            tool_git_sha=tool_git_sha,
+            output_path=output,
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(
+        json.dumps(
+            {
+                "case_count": verified.case_count,
+                "issue_precedes_fix_count": verified.issue_precedes_fix_count,
+                "provider_calls": verified.provider_calls,
+                "receipt_sha256": verified.sha256,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+@benchmark_group.command("verify-v02-chronology")
+@click.argument("receipt", type=click.Path(path_type=Path, exists=True, dir_okay=False))
+@click.option(
+    "--cohort-plan",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--hidden-extraction-receipt",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--issue-responses-root",
+    type=click.Path(path_type=Path, exists=True, file_okay=False),
+    required=True,
+)
+def benchmark_verify_v02_chronology(
+    receipt: Path,
+    cohort_plan: Path,
+    hidden_extraction_receipt: Path,
+    issue_responses_root: Path,
+) -> None:
+    """Rederive one chronology receipt from its exact 20 source pairs."""
+
+    try:
+        verified = verify_v02_chronology_evidence(
+            receipt,
+            cohort_plan_path=cohort_plan,
+            hidden_extraction_receipt=hidden_extraction_receipt,
+            issue_responses_root=issue_responses_root,
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(
+        json.dumps(
+            {
+                "case_count": verified.case_count,
+                "issue_precedes_fix_count": verified.issue_precedes_fix_count,
+                "provider_calls": verified.provider_calls,
+                "receipt_sha256": verified.sha256,
                 "verified": True,
             },
             indent=2,

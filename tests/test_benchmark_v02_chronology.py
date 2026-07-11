@@ -3,12 +3,16 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import jsonschema
 import pytest
+from click.testing import CliRunner
 
 import reproassert.benchmark_v02_chronology as chronology
+import reproassert.cli as cli
+from reproassert.cli import main
 from reproassert.errors import PolicyRejection
 
 
@@ -215,3 +219,80 @@ def test_public_capture_uses_bounded_credential_free_paths(
     assert observed[-1] == "/repos/owner/repository-20/issues/20"
     assert len(tuple(captured.glob("*.json"))) == 20
     assert all(path.stat().st_mode & 0o777 == 0o600 for path in captured.glob("*.json"))
+
+
+def test_chronology_cli_reports_provider_free_capture_prepare_and_verify(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    os.chmod(tmp_path, 0o700)
+    cohort = tmp_path / "cohort.json"
+    hidden = tmp_path / "hidden.json"
+    cohort.write_text("{}")
+    hidden.write_text("{}")
+    responses = tmp_path / "responses"
+    responses.mkdir(mode=0o700)
+    receipt = tmp_path / "chronology.json"
+    receipt.write_text("{}")
+    verified = SimpleNamespace(
+        case_count=20,
+        issue_precedes_fix_count=20,
+        provider_calls=0,
+        sha256="a" * 64,
+    )
+    monkeypatch.setattr(cli, "capture_v02_public_issue_responses", lambda **_kwargs: responses)
+    monkeypatch.setattr(cli, "prepare_v02_chronology_evidence", lambda **_kwargs: verified)
+    monkeypatch.setattr(cli, "verify_v02_chronology_evidence", lambda *_args, **_kwargs: verified)
+    runner = CliRunner()
+
+    capture = runner.invoke(
+        main,
+        [
+            "benchmark",
+            "capture-v02-chronology",
+            "--cohort-plan",
+            str(cohort),
+            "--output-root",
+            str(tmp_path / "capture"),
+        ],
+    )
+    assert capture.exit_code == 0, capture.output
+    assert json.loads(capture.output)["credentials_sent"] is False
+
+    prepare = runner.invoke(
+        main,
+        [
+            "benchmark",
+            "prepare-v02-chronology",
+            "--cohort-plan",
+            str(cohort),
+            "--hidden-extraction-receipt",
+            str(hidden),
+            "--issue-responses-root",
+            str(responses),
+            "--captured-at",
+            "2026-01-01T00:00:00Z",
+            "--tool-git-sha",
+            "a" * 40,
+            "--output",
+            str(tmp_path / "prepared.json"),
+        ],
+    )
+    assert prepare.exit_code == 0, prepare.output
+    assert json.loads(prepare.output)["issue_precedes_fix_count"] == 20
+
+    verify = runner.invoke(
+        main,
+        [
+            "benchmark",
+            "verify-v02-chronology",
+            str(receipt),
+            "--cohort-plan",
+            str(cohort),
+            "--hidden-extraction-receipt",
+            str(hidden),
+            "--issue-responses-root",
+            str(responses),
+        ],
+    )
+    assert verify.exit_code == 0, verify.output
+    assert json.loads(verify.output)["verified"] is True
