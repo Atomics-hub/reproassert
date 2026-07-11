@@ -281,11 +281,12 @@ def _evaluate_v02_exact_frozen_case_with_factory(
             else None
         )
         pricing = runner._require_pricing(run.policy)
-        trusted_completed_receipt = (
+        trusted_cumulative_duration = (
             _trusted_completed_receipt_cost(snapshot, run, prior, pricing)
             if prior is not None
-            else False
+            else None
         )
+        trusted_completed_receipt = trusted_cumulative_duration is not None
         evaluation_output_path = (
             receipt_path.with_name(f".{RECEIPT_FILENAME}.{uuid.uuid4().hex}.recovery")
             if receipt_recovery
@@ -330,8 +331,13 @@ def _evaluate_v02_exact_frozen_case_with_factory(
                 os.replace(evaluation_output_path, receipt_path)
                 runner._fsync_directory(run.attempt_directory)
         receipt_recoverable = True
-        duration_ms = verified.evaluator_wall_ms + (
+        prior_duration_ms = (
             prior.evaluator_wall_ms if prior is not None and not trusted_completed_receipt else 0
+        )
+        duration_ms = (
+            cast(int, trusted_cumulative_duration)
+            if trusted_completed_receipt
+            else verified.evaluator_wall_ms + prior_duration_ms
         )
         if not _differential_finished(snapshot, run):
             runner._finish_phase(
@@ -345,7 +351,9 @@ def _evaluate_v02_exact_frozen_case_with_factory(
                     "accepted": verified.accepted,
                     "classification": verified.classification,
                     "exact_receipt_sha256": verified.sha256,
-                    "evaluator_wall_ms": duration_ms,
+                    "current_receipt_evaluator_wall_ms": verified.evaluator_wall_ms,
+                    "prior_evaluator_wall_ms": prior_duration_ms,
+                    "cumulative_evaluator_wall_ms": duration_ms,
                     "network_mode": "none",
                     "sandbox_cost_microusd": runner._sandbox_cost(pricing, duration_ms),
                 },
@@ -663,7 +671,7 @@ def _trusted_completed_receipt_cost(
     run: runner._RunContext,
     receipt: CandidateEvaluationReceipt,
     pricing: runner.V02PricingSnapshot,
-) -> bool:
+) -> int | None:
     events = [event for event in snapshot.events if event["attempt_id"] == run.attempt_id]
     phases = [
         cast(Mapping[str, object], event["payload"])
@@ -678,13 +686,26 @@ def _trusted_completed_receipt_cost(
         and cast(Mapping[str, object], event["payload"])["category"] == "sandbox_compute"
     ]
     if not phases and not costs:
-        return False
-    if len(phases) != 1 or len(costs) != 1:
+        return None
+    if len(phases) != 1 or len(costs) > 1:
         raise _reject("Completed evaluator recovery cost state is ambiguous.")
     phase = phases[0]
-    cost = costs[0]
     evidence = phase.get("evidence")
-    duration_ms = receipt.evaluator_wall_ms
+    current_duration = (
+        evidence.get("current_receipt_evaluator_wall_ms") if isinstance(evidence, Mapping) else None
+    )
+    prior_duration = (
+        evidence.get("prior_evaluator_wall_ms") if isinstance(evidence, Mapping) else None
+    )
+    cumulative_duration = (
+        evidence.get("cumulative_evaluator_wall_ms") if isinstance(evidence, Mapping) else None
+    )
+    if any(
+        not isinstance(value, int) or isinstance(value, bool) or value < 0
+        for value in (current_duration, prior_duration, cumulative_duration)
+    ):
+        raise _reject("Completed evaluator duration bindings are invalid.")
+    duration_ms = cast(int, cumulative_duration)
     amount = runner._sandbox_cost(pricing, duration_ms)
     expected_cost_evidence = {
         "duration_ms": duration_ms,
@@ -695,15 +716,21 @@ def _trusted_completed_receipt_cost(
         or phase.get("classification_code") is not None
         or not isinstance(evidence, Mapping)
         or evidence.get("exact_receipt_sha256") != receipt.sha256
-        or evidence.get("evaluator_wall_ms") != duration_ms
+        or current_duration != receipt.evaluator_wall_ms
+        or duration_ms != cast(int, current_duration) + cast(int, prior_duration)
         or evidence.get("sandbox_cost_microusd") != amount
-        or cost.get("amount_microusd") != amount
-        or cost.get("status")
-        != ("measured" if pricing.sandbox_microusd_per_second else "zero_verified")
-        or cost.get("evidence_sha256") != runner._sha256_json(expected_cost_evidence)
     ):
         raise _reject("Completed evaluator receipt and sandbox cost bindings disagree.")
-    return True
+    if costs:
+        cost = costs[0]
+        if (
+            cost.get("amount_microusd") != amount
+            or cost.get("status")
+            != ("measured" if pricing.sandbox_microusd_per_second else "zero_verified")
+            or cost.get("evidence_sha256") != runner._sha256_json(expected_cost_evidence)
+        ):
+            raise _reject("Completed evaluator receipt and sandbox cost bindings disagree.")
+    return duration_ms
 
 
 def _verify_reusable_receipt(

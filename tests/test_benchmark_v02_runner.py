@@ -1030,7 +1030,15 @@ def test_exact_scored_recovery_reconstructs_exact_authorized_input_without_provi
     assert provider_calls == 0
 
 
-@pytest.mark.parametrize("crash_boundary", ["before_phase_finish", "after_cost_before_result"])
+@pytest.mark.parametrize(
+    "crash_boundary",
+    [
+        "before_phase_finish",
+        "after_phase_before_cost",
+        "after_cost_before_result",
+        "chained_pre_phase_then_after_cost",
+    ],
+)
 def test_exact_scored_reuses_durable_receipt_after_pre_result_crash(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, crash_boundary: str
 ) -> None:
@@ -1097,6 +1105,17 @@ def test_exact_scored_reuses_durable_receipt_after_pre_result_crash(
             raise RuntimeError("simulated crash after cost before result")
         return original_write_result(*args, **kwargs)  # type: ignore[arg-type]
 
+    original_record_cost = runner._record_cost
+    sandbox_cost_attempts = 0
+
+    def crash_before_cost(*args: object, **kwargs: object) -> Any:
+        nonlocal sandbox_cost_attempts
+        if kwargs.get("category") == "sandbox_compute":
+            sandbox_cost_attempts += 1
+            if sandbox_cost_attempts == 1:
+                raise RuntimeError("simulated crash after phase before cost")
+        return original_record_cost(*args, **kwargs)  # type: ignore[arg-type]
+
     monkeypatch.setattr(generator_module, "_post_openai_response", forbidden_provider)
     monkeypatch.setattr(
         exact_scored, "require_v02_exact_image_evaluator_capability", lambda value: value
@@ -1117,9 +1136,16 @@ def test_exact_scored_reuses_durable_receipt_after_pre_result_crash(
     if crash_boundary == "before_phase_finish":
         monkeypatch.setattr(runner, "_finish_phase", crash_before_phase_finish)
         expected_error = "before phase finish"
-    else:
+    elif crash_boundary == "after_phase_before_cost":
+        monkeypatch.setattr(runner, "_record_cost", crash_before_cost)
+        expected_error = "after phase before cost"
+    elif crash_boundary == "after_cost_before_result":
         monkeypatch.setattr(exact_scored, "_write_result", crash_after_cost)
         expected_error = "after cost before result"
+    else:
+        monkeypatch.setattr(runner, "_finish_phase", crash_before_phase_finish)
+        monkeypatch.setattr(exact_scored, "_write_result", crash_after_cost)
+        expected_error = "before phase finish"
     kwargs = {
         "preregistration_path": preregistration_path,
         "exact_preregistration": authority,
@@ -1144,9 +1170,14 @@ def test_exact_scored_reuses_durable_receipt_after_pre_result_crash(
         exact_scored.evaluate_v02_exact_frozen_case(**kwargs)
     stale_recovery = run.attempt_directory / f".{exact_scored.RECEIPT_FILENAME}.stale.recovery"
     stale_recovery.write_text("stale")
+    if crash_boundary == "chained_pre_phase_then_after_cost":
+        with pytest.raises(RuntimeError, match="after cost before result"):
+            exact_scored.evaluate_v02_exact_frozen_case(**kwargs)
     result = exact_scored.evaluate_v02_exact_frozen_case(**kwargs)
     assert result.evaluation_kind == "exact_image_receipt"
-    expected_evaluator_calls = 2 if crash_boundary == "before_phase_finish" else 1
+    expected_evaluator_calls = (
+        2 if crash_boundary in {"before_phase_finish", "chained_pre_phase_then_after_cost"} else 1
+    )
     assert evaluator_calls == expected_evaluator_calls
     assert provider_calls == 0
     assert stale_recovery.read_text() == "stale"
