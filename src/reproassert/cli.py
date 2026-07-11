@@ -39,6 +39,8 @@ from reproassert.benchmark_v02_campaign import (
     verify_v02_causal_control_set,
     verify_v02_semantic_review_set,
 )
+from reproassert.benchmark_v02_cases import prepare_v02_cases, verify_v02_cases
+from reproassert.benchmark_v02_hidden import prepare_v02_hidden_gold, verify_v02_hidden_gold
 from reproassert.benchmark_v02_object_source import (
     prepare_v02_object_source_case,
     verify_v02_object_source_receipt,
@@ -402,6 +404,204 @@ def benchmark_verify_v02_dataset(preparation_receipt: Path) -> None:
                 "parser_receipt_sha256": prepared.parser_receipt_sha256,
                 "preparation_receipt_sha256": prepared.receipt_sha256,
                 "provider_calls": prepared.provider_calls,
+                "verified": True,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+@benchmark_group.command("prepare-v02-hidden-gold")
+@click.option(
+    "--source-dataset",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--cohort-plan",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--image-digest",
+    default=FROZEN_V02_DATASET_PARSER_IMAGE_ID,
+    show_default=True,
+)
+@click.option("--prepared-at", required=True, help="UTC preparation timestamp.")
+@click.option(
+    "--output-root",
+    type=click.Path(path_type=Path, file_okay=False),
+    default=_default_v02_private_preparation_root,
+    show_default="private user state directory",
+)
+def benchmark_prepare_v02_hidden_gold(
+    source_dataset: Path,
+    cohort_plan: Path,
+    image_digest: str,
+    prepared_at: str,
+    output_root: Path,
+) -> None:
+    """Extract evaluator-private hidden gold in the frozen no-network sandbox."""
+
+    try:
+        _ensure_private_output_root(output_root)
+        prepared = prepare_v02_hidden_gold(
+            output_root=output_root,
+            source_dataset_path=source_dataset,
+            cohort_plan_path=cohort_plan,
+            image_digest=image_digest,
+            prepared_at=prepared_at,
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(
+        json.dumps(
+            {
+                "artifacts_sha256": prepared.artifacts_sha256,
+                "case_count": prepared.case_count,
+                "preparation_receipt_sha256": prepared.receipt_sha256,
+                "provider_calls": 0,
+                "status": "evaluator_private_prepared_no_provider",
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+@benchmark_group.command("verify-v02-hidden-gold")
+@click.argument(
+    "preparation_receipt",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+)
+def benchmark_verify_v02_hidden_gold(preparation_receipt: Path) -> None:
+    """Freshly rerun hidden extraction and byte-verify all 20 evaluator artifacts."""
+
+    try:
+        verified = verify_v02_hidden_gold(preparation_receipt)
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    prepared = verified.prepared
+    click.echo(
+        json.dumps(
+            {
+                "artifacts_sha256": prepared.artifacts_sha256,
+                "case_count": prepared.case_count,
+                "preparation_receipt_sha256": prepared.receipt_sha256,
+                "provider_calls": 0,
+                "verified": True,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+@benchmark_group.command("prepare-v02-cases")
+@click.option(
+    "--cohort-plan",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--dataset-preparation-receipt",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--hidden-extraction-receipt",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--object-sources-root",
+    type=click.Path(path_type=Path, exists=True, file_okay=False),
+    required=True,
+)
+@click.option(
+    "--pricing-snapshot",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--dependency-plans-root",
+    type=click.Path(path_type=Path, exists=True, file_okay=False),
+)
+@click.option("--tool-git-sha", required=True, help="Exact 40-hex controller revision.")
+@click.option("--prepared-at", required=True, help="UTC preparation timestamp.")
+@click.option(
+    "--output-root",
+    type=click.Path(path_type=Path, file_okay=False),
+    default=_default_v02_private_preparation_root,
+    show_default="private user state directory",
+)
+def benchmark_prepare_v02_cases(
+    cohort_plan: Path,
+    dataset_preparation_receipt: Path,
+    hidden_extraction_receipt: Path,
+    object_sources_root: Path,
+    pricing_snapshot: Path,
+    dependency_plans_root: Path | None,
+    tool_git_sha: str,
+    prepared_at: str,
+    output_root: Path,
+) -> None:
+    """Prepare the frozen 20-case evaluator set with provider execution disabled."""
+
+    try:
+        _ensure_private_output_root(output_root)
+        prepared = prepare_v02_cases(
+            cohort_plan_path=cohort_plan,
+            dataset_preparation_receipt=dataset_preparation_receipt,
+            hidden_extraction_receipt=hidden_extraction_receipt,
+            object_sources_root=object_sources_root,
+            dependency_plans_root=dependency_plans_root,
+            output_root=output_root,
+            pricing_snapshot_path=pricing_snapshot,
+            tool_git_sha=tool_git_sha,
+            prepared_at=prepared_at,
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(
+        json.dumps(
+            {
+                "campaign_ready_count": prepared.campaign_ready_count,
+                "case_count": prepared.case_count,
+                "dependency_ready_count": prepared.dependency_ready_count,
+                "preparation_receipt_sha256": prepared.receipt_sha256,
+                "provider_calls": 0,
+                "provider_execution_enabled": False,
+                "status": "prepared_review_required_provider_disabled",
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+@benchmark_group.command("verify-v02-cases")
+@click.argument(
+    "preparation_receipt",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+)
+def benchmark_verify_v02_cases(preparation_receipt: Path) -> None:
+    """Freshly verify the frozen case preparation and its deny-by-default spend gate."""
+
+    try:
+        prepared = verify_v02_cases(preparation_receipt)
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(
+        json.dumps(
+            {
+                "campaign_ready_count": prepared.campaign_ready_count,
+                "case_count": prepared.case_count,
+                "dependency_ready_count": prepared.dependency_ready_count,
+                "preparation_receipt_sha256": prepared.receipt_sha256,
+                "provider_calls": 0,
+                "provider_execution_enabled": False,
                 "verified": True,
             },
             indent=2,

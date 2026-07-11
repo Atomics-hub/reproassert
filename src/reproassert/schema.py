@@ -32,6 +32,8 @@ SCHEMA_FILENAMES = {
         "benchmark-v02-dataset-container-attestation.schema.json"
     ),
     "benchmark-v02-dataset-preparation": "benchmark-v02-dataset-preparation.schema.json",
+    "benchmark-v02-cases-preparation": "benchmark-v02-cases-preparation.schema.json",
+    "benchmark-v02-hidden-extraction": "benchmark-v02-hidden-extraction.schema.json",
     "benchmark-v02-selection-freeze": "benchmark-v02-selection-freeze.schema.json",
     "benchmark-v02-replay-bundle": "benchmark-v02-replay-bundle.schema.json",
     "benchmark-v02-replay-result": "benchmark-v02-replay-result.schema.json",

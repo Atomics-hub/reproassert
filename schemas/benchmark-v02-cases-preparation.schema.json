@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Atomics-hub/reproassert/blob/main/schemas/benchmark-v02-cases-preparation.schema.json",
+  "title": "ReproAssert provider-disabled v0.2 case preparation receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["algorithm", "benchmark_version", "case_count", "claims", "dependency_ready_count", "inputs", "packages", "prepared_at", "preparation_set_sha256", "provider_execution_enabled", "request_set_sha256", "receipt_sha256", "schema_version", "spend_gate", "status", "tool"],
+  "properties": {
+    "algorithm": {"const": "reproassert-v02-cases-preparation-v1"},
+    "benchmark_version": {"const": "0.2"},
+    "case_count": {"const": 20},
+    "claims": {
+      "const": {
+        "campaign_ready_count": 0,
+        "chronology": "unproven",
+        "model_or_provider_invoked": false,
+        "provider_calls": 0,
+        "reviewer_approvals_fabricated": false
+      }
+    },
+    "dependency_ready_count": {"type": "integer", "minimum": 0, "maximum": 20},
+    "inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cohort_plan", "dataset_preparation", "dependency_plans_root", "hidden_extraction", "object_sources_root", "pricing_snapshot"],
+      "properties": {
+        "cohort_plan": {"$ref": "#/$defs/reference"},
+        "dataset_preparation": {"$ref": "#/$defs/external_reference"},
+        "dependency_plans_root": {
+          "oneOf": [{"type": "null"}, {"$ref": "#/$defs/external_directory"}]
+        },
+        "hidden_extraction": {"$ref": "#/$defs/external_reference"},
+        "object_sources_root": {"$ref": "#/$defs/external_directory"},
+        "pricing_snapshot": {"$ref": "#/$defs/reference"}
+      }
+    },
+    "packages": {
+      "type": "array",
+      "minItems": 20,
+      "maxItems": 20,
+      "items": {"$ref": "#/$defs/package_reference"}
+    },
+    "prepared_at": {"type": "string", "pattern": "^20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"},
+    "preparation_set_sha256": {"$ref": "#/$defs/sha256"},
+    "provider_execution_enabled": {"const": false},
+    "request_set_sha256": {"$ref": "#/$defs/sha256"},
+    "receipt_sha256": {"$ref": "#/$defs/sha256"},
+    "schema_version": {"const": "1.0.0"},
+    "spend_gate": {"$ref": "#/$defs/reference"},
+    "status": {"const": "prepared_review_required_provider_disabled"},
+    "tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["git_sha", "provenance"],
+      "properties": {
+        "git_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "provenance": {"const": "publisher_declared_revision"}
+      }
+    }
+  },
+  "$defs": {
+    "case_id": {"type": "string", "pattern": "^rk-v0\\.2-(?:00[1-9]|01[0-9]|020)$"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bytes", "path", "sha256"],
+      "properties": {
+        "bytes": {"type": "integer", "minimum": 1},
+        "path": {"type": "string", "minLength": 1, "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "package_reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bytes", "case_id", "path", "sha256", "status"],
+      "properties": {
+        "bytes": {"type": "integer", "minimum": 1},
+        "case_id": {"$ref": "#/$defs/case_id"},
+        "path": {"type": "string", "minLength": 1, "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "status": {"const": "pre_review_preparation_blocked"}
+      }
+    },
+    "external_reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bytes", "path", "sha256", "storage"],
+      "properties": {
+        "bytes": {"type": "integer", "minimum": 1},
+        "path": {"type": "string", "pattern": "^/"},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "storage": {"const": "evaluator_private_external"}
+      }
+    },
+    "external_directory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "storage"],
+      "properties": {
+        "path": {"type": "string", "pattern": "^/"},
+        "storage": {"const": "evaluator_private_external_directory"}
+      }
+    }
+  }
+}

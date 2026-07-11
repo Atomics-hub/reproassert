@@ -95,6 +95,44 @@ authorization, and reviewer-role commitments before provider-capable work.
 
 ## Implemented local evaluator primitives
 
+### Provider-disabled 20-case preparation
+
+The supported zero-spend path now has two private stages. First, extract hidden evaluator inputs in
+the pinned no-network parser image:
+
+```console
+reproassert benchmark prepare-v02-hidden-gold \
+  --source-dataset <private-swe-bench-verified.parquet> \
+  --cohort-plan benchmarks/v0.2-draft/leak-audited-cohort-plan.json \
+  --prepared-at <rfc3339-utc> \
+  --output-root <private-0700-directory>
+```
+
+Then prepare all 20 cases:
+
+```console
+reproassert benchmark prepare-v02-cases \
+  --cohort-plan benchmarks/v0.2-draft/leak-audited-cohort-plan.json \
+  --dataset-preparation-receipt <private-dataset-receipt> \
+  --hidden-extraction-receipt <private-hidden-receipt> \
+  --object-sources-root <private-exact-object-sources> \
+  --pricing-snapshot benchmarks/v0.2-draft/gpt-5.4-mini-pricing-snapshot.json \
+  --tool-git-sha <exact-controller-revision> \
+  --prepared-at <rfc3339-utc> \
+  --output-root <fresh-private-0700-directory>
+```
+
+This reruns the dataset and hidden Docker boundaries, freshly rederives every Git source, freezes
+the exact provider request envelopes, and writes dependency, review, pricing, and unsigned spend
+preflight records. It cannot call a provider and does not read an API key. Its current honest output
+is 20/20 pre-review packets, 0/20 dependency-ready, 0/20 campaign-ready, and 0 provider calls.
+`verify-v02-cases` performs the same fresh checks and can fail closed when GitHub's unauthenticated
+public rate limit is exhausted.
+
+The frozen pricing capture records official GPT-5.4 mini rates of $0.75/M input tokens, $0.075/M
+cached input tokens, and $4.50/M output tokens as observed on 2026-07-10. It is not authorization.
+The packet contains only an unsigned proposal capped at $0.25 per case and $5.00 total.
+
 The preparation-only dependency executor now turns one strict reviewed wheel plan into fresh,
 distinct, quota-bounded tmpfs volumes; fixed networked download and network-disabled install phases;
 wheelhouse and installed-tree attestations; a typed read-only mount handle; and a canonical bounded

@@ -63,6 +63,17 @@ remain deferred, and nobody has been contacted.**
   500-row audit quarantined 64 rows; the selected 20/20 are mechanically clean. Issue text remains
   labeled `dataset_snapshot_at_pinned_commit`, `chronology_unproven`, and
   `historical_public_contamination_exposed`; no stronger chronology claim is made.
+- The evaluator-private hidden extractor authentically produced and freshly byte-reverified all
+  20 production patches, developer-test patches, and metadata records inside the same pinned,
+  no-network Docker boundary. Its receipt commits the exact dataset, cohort, worker, request,
+  container inspection, and artifact set without emitting hidden bytes or paths to stdout.
+- The provider-disabled case controller authentically prepared 20/20 private pre-review packets.
+  Preparation reran the dataset and hidden boundaries, freshly rederived all 20 exact Git sources,
+  froze the full provider request envelopes and official pricing capture, emitted genuine
+  two-reviewer/tie-break rubrics with empty reviewer slots, and wrote an unsigned $0.25/case,
+  $5/campaign proposal. Provider calls remained zero. Dependency-ready and campaign-ready counts
+  remain 0/20. One packet records a bounded pre-existing developer-test-line overlap in the exact
+  buggy-base context; this is contamination evidence, not an evaluator-boundary leak.
 - The causal wheel dependency executor now accepts only a strict plan path; creates fresh, distinct,
   exactly labeled local-tmpfs input, wheelhouse, and dependency volumes with byte and inode quotas;
   pins one immutable runner image ID; runs only the fixed source-free download and offline-install
@@ -122,12 +133,11 @@ remain deferred, and nobody has been contacted.**
 - Regular-file v1 source receipts: **16/20 accepted and independently reverified; four unsupported
   under that deliberately narrower policy**.
 - Leak-audited dataset selection: **20/20 frozen**; prospective issue chronology remains unproven.
-- Prepared dependency and hidden-fix evaluator packages: **0/20 authentic scored case packages**.
-  The provider-free dataset transaction has authentically materialized and freshly rederived 20/20
-  safe projections locally. Exact-object preparation and fresh nominal source issuance also passed
-  20/20 locally, including the frozen tracked-symlink and Gitlink cases. The remaining dependency,
-  hidden-fix package evidence, and genuine reviewer assignments do not yet exist.
-  The issuer, runner, replay, controls, and schemas are implemented, but no paid campaign ran.
+- Prepared evaluator inputs: **20/20 hidden records and 20/20 pre-review case packets**. These are
+  not authentic scored case packages. Hash-locked dependency execution receipts are 0/20, genuine
+  mapping and semantic reviewer assignments are absent, preregistration is unbound, and spend is
+  not authorized. The issuer, runner, replay, controls, and schemas are implemented, but no paid
+  campaign ran.
 - Exact-object source receipts: **20/20 accepted and independently reverified locally**; private
   receipts are not a public index and have not changed the frozen campaign prerequisite.
 - Independently validated or maintainer-accepted tests: **0**.
@@ -143,8 +153,9 @@ remain deferred, and nobody has been contacted.**
 
 1. Treat v0.2.0 as validation-ready tooling, not as benchmark-success evidence; retain v0.1.0 as an
    immutable historical release and require the same exact tag-source gate for every later release.
-2. Ask Tom for one explicit capped authorization artifact only after the 20 private case packages,
-   request bindings, pricing snapshot, and campaign freeze pass offline verification.
+2. Produce and execute reviewed hash-locked dependency plans for all 20 cases; complete genuine
+   mapping review and preregistration. Only then turn the current unsigned cap proposal into an
+   exact authorization request for Tom.
 3. Run the 20-case campaign without inspecting hidden fixes in generation, finalize only through the
    causal-control and reviewer-consensus gate, and publish failures as well as successes.
 4. Prepare maintainer-validation packets from accepted candidates, but contact nobody without Tom's
