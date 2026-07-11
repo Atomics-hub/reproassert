@@ -1,9 +1,9 @@
-# 0018: Require genuine v0.2.1 amendment consensus before runtime migration
+# 0018: Require operator-attested v0.2.1 amendment consensus before runtime migration
 
 ## Decision
 
-The all-20 v0.2.1 evaluator amendment remains provider-disabled until two genuine, oracle-aware
-human reviewers approve the exact pending amendment. Review identities are reused from the already
+The all-20 v0.2.1 evaluator amendment remains provider-disabled until two oracle-aware human
+reviewers approve the exact pending amendment. Review identities are reused from the already
 frozen mapping-review roster. The first two mapping reviewers are the primaries; a third reviewer
 may act only when that identity was declared in the mapping handoff and the primaries disagree.
 Future semantic reviewers remain disjoint because they must stay blind to gold evidence.
@@ -13,6 +13,12 @@ old/new gold-spec and gold-smoke commitments, runtime manifest, hidden extractio
 delta, and final tool Git SHA. Submissions bind the raw handoff hash and make an explicit
 oracle-review declaration. A sealed consensus is evidence only; verifier-issued in-process
 authority is required by downstream code.
+
+Reviewer submissions are canonical, hash-bound, operator-collected receipts; they are not digitally
+signed identity proofs. An operator with write access to the private review root could impersonate
+a declared reviewer. The verifier therefore proves roster, independence declarations, chronology,
+and agreement structure—not human authorship. External signatures or independently controlled
+submission channels are required before making a cryptographic reviewer-authenticity claim.
 
 ## Provider-disabled boundary
 

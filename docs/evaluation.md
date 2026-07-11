@@ -96,9 +96,12 @@ The first v0.2.1 review boundary is provider-disabled. Prepare the amendment han
 primary mapping reviewers independently submit the strict
 `benchmark-v021-amendment-review-submission` schema, then seal with
 `seal-v021-amendment-review-consensus`. A declared third reviewer is accepted only after primary
-disagreement. The future semantic-review roster stays disjoint. Even an approved consensus cannot
-invoke a provider: no v0.2.1 run command or executable config exists until the separately versioned
-runtime migration and full preregistration/freeze/authorization chain is implemented.
+disagreement. The future semantic-review roster stays disjoint. These submissions are unsigned,
+operator-collected human receipts: the verifier proves their bindings, declared identities,
+chronology, and agreement structure, but not cryptographic human authorship. Even an approved
+consensus cannot invoke a provider: no v0.2.1 run command or executable config exists until the
+separately versioned runtime migration and full preregistration/freeze/authorization chain is
+implemented.
 Verification reruns every upstream verifier:
 
 ```bash

@@ -1,4 +1,4 @@
-"""Provider-free, human-issued consensus for the v0.2.1 evaluator amendment."""
+"""Provider-free, operator-attested human consensus for the v0.2.1 amendment."""
 
 from __future__ import annotations
 
