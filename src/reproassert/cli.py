@@ -51,6 +51,10 @@ from reproassert.benchmark_v02_exact_capability import (
     prepare_v02_exact_image_capability_index,
     verify_v02_exact_image_capability_index,
 )
+from reproassert.benchmark_v02_exact_preregistration import (
+    prepare_v02_exact_preregistration,
+    verify_v02_exact_preregistration,
+)
 from reproassert.benchmark_v02_execution_freeze import (
     authorize_v02_exact_image_execution,
     exact_approval_statement,
@@ -664,6 +668,153 @@ def benchmark_verify_v02_exact_capabilities(
             expected_manifest_sha256=expected_manifest_sha256,
             gold_smoke_receipt_path=gold_smoke_receipt,
             hidden_extraction_receipt=hidden_extraction_receipt,
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    result = asdict(verified)
+    result["verified"] = True
+    click.echo(json.dumps(result, indent=2, sort_keys=True, default=str))
+
+
+def _exact_preregistration_evidence_options(function: _CommandFunction) -> _CommandFunction:
+    options = (
+        click.option(
+            "--cases-preparation",
+            type=click.Path(path_type=Path, exists=True, dir_okay=False),
+            required=True,
+        ),
+        click.option(
+            "--cohort-plan",
+            type=click.Path(path_type=Path, exists=True, dir_okay=False),
+            required=True,
+        ),
+        click.option(
+            "--chronology",
+            type=click.Path(path_type=Path, exists=True, dir_okay=False),
+            required=True,
+        ),
+        click.option(
+            "--hidden-extraction-receipt",
+            type=click.Path(path_type=Path, exists=True, dir_okay=False),
+            required=True,
+        ),
+        click.option(
+            "--issue-responses-root",
+            type=click.Path(path_type=Path, exists=True, file_okay=False),
+            required=True,
+        ),
+        click.option(
+            "--mapping-preparation",
+            type=click.Path(path_type=Path, exists=True, dir_okay=False),
+            required=True,
+        ),
+        click.option(
+            "--mapping-consensus",
+            type=click.Path(path_type=Path, exists=True, dir_okay=False),
+            required=True,
+        ),
+        click.option(
+            "--capability-index",
+            type=click.Path(path_type=Path, exists=True, dir_okay=False),
+            required=True,
+        ),
+        click.option(
+            "--instance-runtime-manifest",
+            type=click.Path(path_type=Path, exists=True, dir_okay=False),
+            required=True,
+        ),
+        click.option("--expected-manifest-sha256", required=True),
+        click.option(
+            "--gold-smoke-receipt",
+            type=click.Path(path_type=Path, exists=True, dir_okay=False),
+            required=True,
+        ),
+    )
+    decorated = function
+    for option in reversed(options):
+        decorated = option(decorated)
+    return decorated
+
+
+@benchmark_group.command("prepare-v02-exact-preregistration")
+@_exact_preregistration_evidence_options
+@click.option("--frozen-at", required=True, help="UTC pre-inference freeze timestamp.")
+@click.option("--tool-git-sha", required=True, help="Exact final controller revision.")
+@click.option("--output", type=click.Path(path_type=Path, dir_okay=False), required=True)
+def benchmark_prepare_v02_exact_preregistration(
+    cases_preparation: Path,
+    cohort_plan: Path,
+    chronology: Path,
+    hidden_extraction_receipt: Path,
+    issue_responses_root: Path,
+    mapping_preparation: Path,
+    mapping_consensus: Path,
+    capability_index: Path,
+    instance_runtime_manifest: Path,
+    expected_manifest_sha256: str,
+    gold_smoke_receipt: Path,
+    frozen_at: str,
+    tool_git_sha: str,
+    output: Path,
+) -> None:
+    """Freeze exact requests and evaluator commitments after genuine mapping consensus."""
+
+    try:
+        _ensure_private_output_root(output.parent)
+        verified = prepare_v02_exact_preregistration(
+            cases_preparation_path=cases_preparation,
+            cohort_plan_path=cohort_plan,
+            chronology_path=chronology,
+            hidden_extraction_receipt=hidden_extraction_receipt,
+            issue_responses_root=issue_responses_root,
+            mapping_preparation_path=mapping_preparation,
+            mapping_consensus_path=mapping_consensus,
+            capability_index_path=capability_index,
+            runtime_manifest_path=instance_runtime_manifest,
+            expected_runtime_manifest_sha256=expected_manifest_sha256,
+            gold_smoke_receipt_path=gold_smoke_receipt,
+            frozen_at=frozen_at,
+            tool_git_sha=tool_git_sha,
+            output_path=output,
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(json.dumps(asdict(verified), indent=2, sort_keys=True, default=str))
+
+
+@benchmark_group.command("verify-v02-exact-preregistration")
+@click.argument("preregistration", type=click.Path(path_type=Path, exists=True, dir_okay=False))
+@_exact_preregistration_evidence_options
+def benchmark_verify_v02_exact_preregistration(
+    preregistration: Path,
+    cases_preparation: Path,
+    cohort_plan: Path,
+    chronology: Path,
+    hidden_extraction_receipt: Path,
+    issue_responses_root: Path,
+    mapping_preparation: Path,
+    mapping_consensus: Path,
+    capability_index: Path,
+    instance_runtime_manifest: Path,
+    expected_manifest_sha256: str,
+    gold_smoke_receipt: Path,
+) -> None:
+    """Freshly verify the exact successor freeze against every bound evidence source."""
+
+    try:
+        verified = verify_v02_exact_preregistration(
+            preregistration,
+            cases_preparation_path=cases_preparation,
+            cohort_plan_path=cohort_plan,
+            chronology_path=chronology,
+            hidden_extraction_receipt=hidden_extraction_receipt,
+            issue_responses_root=issue_responses_root,
+            mapping_preparation_path=mapping_preparation,
+            mapping_consensus_path=mapping_consensus,
+            capability_index_path=capability_index,
+            runtime_manifest_path=instance_runtime_manifest,
+            expected_runtime_manifest_sha256=expected_manifest_sha256,
+            gold_smoke_receipt_path=gold_smoke_receipt,
         )
     except (ReproAssertError, OSError, ValueError) as exc:
         _fail(exc)

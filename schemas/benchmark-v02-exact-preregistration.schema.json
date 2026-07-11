@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Atomics-hub/reproassert/blob/main/schemas/benchmark-v02-exact-preregistration.schema.json",
+  "title": "ReproAssert v0.2 exact-image successor preregistration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["algorithm", "benchmark_version", "case_count", "case_set_sha256", "cases", "claims", "cohort_sha256", "evidence", "frozen_at", "policy", "preregistration_sha256", "request_set_sha256", "schema_version", "status", "tool_git_sha"],
+  "properties": {
+    "algorithm": {"const": "reproassert-v02-exact-image-preregistration-v1"},
+    "benchmark_version": {"const": "0.2"},
+    "case_count": {"const": 20},
+    "case_set_sha256": {"$ref": "#/$defs/sha256"},
+    "cases": {"type": "array", "minItems": 20, "maxItems": 20, "items": {"$ref": "#/$defs/case"}},
+    "claims": {"const": {"evaluator_preflight_ready_count": 19, "infrastructure_failure_count": 1, "mapping_approved_count": 20, "model_or_provider_invoked": false, "provider_calls": 0}},
+    "cohort_sha256": {"$ref": "#/$defs/sha256"},
+    "evidence": {
+      "type": "object", "additionalProperties": false,
+      "required": ["capability_index_sha256", "cases_preparation_sha256", "chronology_sha256", "mapping_consensus_sha256", "mapping_packet_set_sha256", "runtime_manifest_sha256"],
+      "properties": {
+        "capability_index_sha256": {"$ref": "#/$defs/sha256"},
+        "cases_preparation_sha256": {"$ref": "#/$defs/sha256"},
+        "chronology_sha256": {"$ref": "#/$defs/sha256"},
+        "mapping_consensus_sha256": {"$ref": "#/$defs/sha256"},
+        "mapping_packet_set_sha256": {"$ref": "#/$defs/sha256"},
+        "runtime_manifest_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "frozen_at": {"$ref": "#/$defs/timestamp"},
+    "policy": {"const": {"candidate_budget_per_case": 1, "case_014_disposition": "retained_infrastructure_failure_network_disabled", "evaluator": "exact_swebench_instance_image_v1", "hidden_fix_generator_visible": false, "mapping_consensus_required": true, "preinference_freeze": true}},
+    "preregistration_sha256": {"$ref": "#/$defs/sha256"},
+    "request_set_sha256": {"$ref": "#/$defs/sha256"},
+    "schema_version": {"const": "1.0.0"},
+    "status": {"const": "frozen_preinference_exact_image"},
+    "tool_git_sha": {"$ref": "#/$defs/git_sha"}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "git_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "timestamp": {"type": "string", "format": "date-time", "pattern": "Z$"},
+    "case": {
+      "type": "object", "additionalProperties": false,
+      "required": ["base_sha", "candidate_profile", "case_commitment_sha256", "case_id", "difficulty", "evaluator_commitment_sha256", "evaluator_status", "generator_projection_sha256", "instance_id", "issue_url", "mapping_selected_hunks_sha256", "outbound_request_sha256", "rendered_input_sha256", "repo", "request_envelope_sha256", "smoke", "source_projection_commitment_sha256", "test_command_profile"],
+      "properties": {
+        "base_sha": {"$ref": "#/$defs/git_sha"},
+        "candidate_profile": {"enum": ["pytest-v1", "sympy-native-v1"]},
+        "case_commitment_sha256": {"$ref": "#/$defs/sha256"},
+        "case_id": {"type": "string", "pattern": "^rk-v0\\.2-(?:00[1-9]|01[0-9]|020)$"},
+        "difficulty": {"enum": ["lt_15m", "15m_to_1h"]},
+        "evaluator_commitment_sha256": {"$ref": "#/$defs/sha256"},
+        "evaluator_status": {"enum": ["runtime_attested_evaluator_preflight_ready", "runtime_attested_gold_smoke_infrastructure_failure"]},
+        "generator_projection_sha256": {"$ref": "#/$defs/sha256"},
+        "instance_id": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+__[A-Za-z0-9_.-]+-[1-9][0-9]*$"},
+        "issue_url": {"type": "string", "pattern": "^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/issues/[1-9][0-9]*$"},
+        "mapping_selected_hunks_sha256": {"$ref": "#/$defs/sha256"},
+        "outbound_request_sha256": {"$ref": "#/$defs/sha256"},
+        "rendered_input_sha256": {"$ref": "#/$defs/sha256"},
+        "repo": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"},
+        "request_envelope_sha256": {"$ref": "#/$defs/sha256"},
+        "smoke": {"type": "boolean"},
+        "source_projection_commitment_sha256": {"$ref": "#/$defs/sha256"},
+        "test_command_profile": {"enum": ["pytest-v1", "sympy-bin-test-v1"]}
+      }
+    }
+  }
+}

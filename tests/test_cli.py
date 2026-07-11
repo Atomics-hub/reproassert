@@ -269,6 +269,10 @@ def test_schema_command_prints_preparation_receipt_schemas() -> None:
         ("benchmark-v02-case-package", "benchmark-v02-case-package.schema.json"),
         ("benchmark-v02-preregistration", "benchmark-v02-preregistration.schema.json"),
         (
+            "benchmark-v02-exact-preregistration",
+            "benchmark-v02-exact-preregistration.schema.json",
+        ),
+        (
             "benchmark-v02-semantic-verification",
             "benchmark-v02-semantic-verification.schema.json",
         ),
