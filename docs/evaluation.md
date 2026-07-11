@@ -40,6 +40,26 @@ Submission files live at `<submissions-root>/<case-id>/*.json`. Each binds the e
 declares mapping-only/no-generator/no-semantic-review roles, and must be timestamped strictly after
 packet preparation and no later than sealing. Missing reviews fail closed.
 
+## Exact-image successor preregistration
+
+After all 20 mapping decisions are genuinely approved, freeze the successor with
+`reproassert benchmark prepare-v02-exact-preregistration`. The command requires the final cases
+preparation, cohort plan, chronology evidence and its source captures, mapping packet/consensus
+pair, exact capability index, runtime manifest, hidden extraction, and gold-smoke receipt. Use
+`reproassert benchmark prepare-v02-exact-preregistration --help` for the complete explicit path
+contract.
+
+The freeze is provider-free. It records 19 evaluator-preflight-ready cases and retains case 014 as
+the one no-network infrastructure failure. Verification reruns every upstream verifier:
+
+```bash
+reproassert benchmark verify-v02-exact-preregistration \
+  "$PRIVATE_ROOT/benchmark-v02-exact-preregistration.json" \
+  ...the same exact evidence paths used during preparation...
+```
+
+The output is a successor contract, not a benchmark result or spend authorization.
+
 Version 0.1 evaluates whether ReproAssert can turn a historical GitHub issue into a verified failing pytest reproduction before applying the known human fix. The protocol is frozen before scored runs and separates generation from hidden-fix evaluation. Its historical issue-snapshot limitation is recorded in the [v0.1 provenance erratum](../benchmarks/v0.1/ERRATA.md).
 
 Hardening note (2026-07-10): before any live-model smoke or scored attempt, the executable contract

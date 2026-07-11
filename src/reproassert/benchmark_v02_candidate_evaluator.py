@@ -17,6 +17,17 @@ from reproassert.benchmark_v02_exact_capability import (
     VerifiedV02ExactImageEvaluatorCapability,
     require_v02_exact_image_evaluator_capability,
 )
+from reproassert.benchmark_v02_hidden import (
+    VerifiedV02HiddenExtraction,
+    hidden_case_artifacts,
+)
+from reproassert.benchmark_v02_instance_controller import (
+    MAX_GOLD_SMOKE_RECEIPT_BYTES,
+    MAX_GOLD_SPECS_BYTES,
+    GoldSmokeSpec,
+    _load_gold_specs,
+    verify_instance_gold_smoke_receipt,
+)
 from reproassert.benchmark_v02_instance_executor import (
     InstancePytestResult,
     InstanceRuntimeExecutor,
@@ -79,8 +90,8 @@ class CandidateArtifact:
 
 
 @dataclass(frozen=True)
-class HiddenEvaluatorInputs:
-    """Private evaluator-only oracle material."""
+class _ResolvedHiddenEvaluatorInputs:
+    """Private oracle material resolved only from freshly verified authority."""
 
     production_patch: bytes
     gold_test_patch: bytes
@@ -142,20 +153,165 @@ def candidate_execution_profile(
     raise _reject("Frozen candidate command profile is unsupported.")
 
 
+def _resolve_hidden_evaluator_inputs(
+    *,
+    evaluator_capability: VerifiedV02ExactImageEvaluatorCapability,
+    verified_hidden: VerifiedV02HiddenExtraction,
+    gold_smoke_receipt_path: Path,
+    gold_specs_path: Path,
+) -> _ResolvedHiddenEvaluatorInputs:
+    """Resolve private bytes and targets without accepting any caller-authored oracle value."""
+
+    capability = require_v02_exact_image_evaluator_capability(evaluator_capability)
+    # This call is the nominal-authority gate. It also rechecks the hidden receipt and artifacts
+    # after fresh extraction verification, before any private path is opened here.
+    refs = hidden_case_artifacts(verified_hidden, capability.case_id)
+    if verified_hidden.prepared.receipt_sha256 != capability.hidden_extraction_receipt_sha256:
+        raise _reject("Fresh hidden extraction differs from the evaluator capability.")
+    production_patch = _read_committed_hidden_ref(
+        refs.get("production_patch"),
+        label="production patch",
+        expected_sha256=capability.production_patch_sha256,
+        expected_bytes=capability.production_patch_bytes,
+    )
+    developer_tests = _read_committed_hidden_ref(
+        refs.get("developer_tests"),
+        label="developer tests",
+        expected_sha256=capability.developer_tests_sha256,
+        expected_bytes=capability.developer_tests_bytes,
+    )
+
+    verified_gold = verify_instance_gold_smoke_receipt(Path(gold_smoke_receipt_path))
+    gold_receipt_raw = _read_regular_bounded(
+        Path(gold_smoke_receipt_path), MAX_GOLD_SMOKE_RECEIPT_BYTES, "gold-smoke receipt"
+    )
+    if (
+        verified_gold.sha256 != capability.gold_smoke_receipt_sha256
+        or hashlib.sha256(gold_receipt_raw).hexdigest() != verified_gold.sha256
+    ):
+        raise _reject("Gold-smoke receipt differs from the evaluator capability.")
+    gold_receipt = json.loads(gold_receipt_raw)
+    if (
+        not isinstance(gold_receipt, dict)
+        or gold_receipt.get("receipt_sha256") != capability.gold_smoke_receipt_commitment_sha256
+    ):
+        raise _reject("Gold-smoke receipt commitment differs from the evaluator capability.")
+    gold_inputs = gold_receipt.get("inputs")
+    if (
+        not isinstance(gold_inputs, dict)
+        or gold_inputs.get("hidden_extraction_receipt_sha256")
+        != capability.hidden_extraction_receipt_sha256
+    ):
+        raise _reject("Gold-smoke receipt does not bind the supplied hidden extraction.")
+    expected_specs_sha256 = _digest(gold_inputs.get("gold_specs_sha256"), "gold specs")
+    gold_specs_raw = _read_regular_bounded(
+        Path(gold_specs_path), MAX_GOLD_SPECS_BYTES, "gold specs"
+    )
+    if hashlib.sha256(gold_specs_raw).hexdigest() != expected_specs_sha256:
+        raise _reject("Gold specs differ from the gold-smoke receipt commitment.")
+    matches = tuple(
+        spec
+        for spec in _load_gold_specs(gold_specs_raw)
+        if spec.instance_id == capability.runtime.instance_id
+    )
+    if len(matches) != 1:
+        raise _reject("Gold specs do not resolve exactly one evaluator case.")
+    spec: GoldSmokeSpec = matches[0]
+    return _ResolvedHiddenEvaluatorInputs(
+        production_patch=production_patch,
+        gold_test_patch=developer_tests,
+        gold_targets=spec.fail_to_pass,
+    )
+
+
+def _read_committed_hidden_ref(
+    value: object,
+    *,
+    label: str,
+    expected_sha256: str,
+    expected_bytes: int,
+) -> bytes:
+    if not isinstance(value, dict) or set(value) != {"bytes", "path", "sha256"}:
+        raise _reject(f"Verified {label} reference is invalid.")
+    if value.get("sha256") != expected_sha256 or value.get("bytes") != expected_bytes:
+        raise _reject(f"Verified {label} reference differs from the evaluator capability.")
+    path = value.get("path")
+    if not isinstance(path, Path):
+        raise _reject(f"Verified {label} path is invalid.")
+    content = _read_regular_bounded(path, MAX_HIDDEN_PATCH_BYTES, label)
+    if len(content) != expected_bytes or hashlib.sha256(content).hexdigest() != expected_sha256:
+        raise _reject(f"Verified {label} changed after authority verification.")
+    return _hidden_bytes(content, label)
+
+
+def _read_regular_bounded(path: Path, limit: int, label: str) -> bytes:
+    try:
+        with open_regular_file(path) as stream:
+            content = stream.read(limit + 1)
+    except (OSError, PolicyRejection) as exc:
+        raise _reject(f"Committed {label} could not be read safely.") from exc
+    if len(content) > limit:
+        raise _reject(f"Committed {label} exceeds its byte limit.")
+    return content
+
+
 def evaluate_instance_candidate(
+    *,
+    evaluator_capability: VerifiedV02ExactImageEvaluatorCapability,
+    verified_hidden: VerifiedV02HiddenExtraction,
+    gold_smoke_receipt_path: Path,
+    gold_specs_path: Path,
+    manifest_path: Path,
+    expected_manifest_sha256: str,
+    case_id: str,
+    candidate: CandidateArtifact,
+    output_path: Path,
+    executed_at: str,
+    tool_git_sha: str,
+    executor_factory: ExecutorFactory | None = None,
+) -> CandidateEvaluationReceipt:
+    """Resolve private inputs from verified authority, then evaluate one candidate.
+
+    Raw production patches, developer tests, and test targets are intentionally absent from this
+    public scored API. The caller supplies fresh hidden-extraction authority plus committed evidence
+    files; the evaluator derives and byte-verifies the private inputs internally.
+    """
+
+    capability = require_v02_exact_image_evaluator_capability(evaluator_capability)
+    hidden = _resolve_hidden_evaluator_inputs(
+        evaluator_capability=capability,
+        verified_hidden=verified_hidden,
+        gold_smoke_receipt_path=gold_smoke_receipt_path,
+        gold_specs_path=gold_specs_path,
+    )
+    return _evaluate_instance_candidate_with_resolved_hidden(
+        evaluator_capability=capability,
+        manifest_path=manifest_path,
+        expected_manifest_sha256=expected_manifest_sha256,
+        case_id=case_id,
+        candidate=candidate,
+        hidden=hidden,
+        output_path=output_path,
+        executed_at=executed_at,
+        tool_git_sha=tool_git_sha,
+        executor_factory=executor_factory,
+    )
+
+
+def _evaluate_instance_candidate_with_resolved_hidden(
     *,
     evaluator_capability: VerifiedV02ExactImageEvaluatorCapability,
     manifest_path: Path,
     expected_manifest_sha256: str,
     case_id: str,
     candidate: CandidateArtifact,
-    hidden: HiddenEvaluatorInputs,
+    hidden: _ResolvedHiddenEvaluatorInputs,
     output_path: Path,
     executed_at: str,
     tool_git_sha: str,
     executor_factory: ExecutorFactory | None = None,
 ) -> CandidateEvaluationReceipt:
-    """Evaluate one candidate without invoking a model or exposing hidden bytes.
+    """Execute with private inputs already resolved by the scored public boundary.
 
     The hidden gold test/fix pair first attests the evaluator environment. The candidate must then
     collect on both trees, fail in every base run, and pass in every fixed run. This establishes a

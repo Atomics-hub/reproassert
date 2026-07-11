@@ -17,6 +17,7 @@ SCHEMA_FILENAMES = {
     "benchmark-v02-mapping-consensus-set": ("benchmark-v02-mapping-consensus-set.schema.json"),
     "benchmark-v02-case-package": "benchmark-v02-case-package.schema.json",
     "benchmark-v02-preregistration": "benchmark-v02-preregistration.schema.json",
+    "benchmark-v02-exact-preregistration": "benchmark-v02-exact-preregistration.schema.json",
     "benchmark-v02-semantic-verification": ("benchmark-v02-semantic-verification.schema.json"),
     "benchmark-v02-private-event": "benchmark-v02-private-event.schema.json",
     "benchmark-v02-private-result": "benchmark-v02-private-result.schema.json",
