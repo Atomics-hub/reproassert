@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
+from typing import Any, TypeVar
 
 import click
 from rich.console import Console
@@ -40,6 +42,12 @@ from reproassert.benchmark_v02_campaign import (
     verify_v02_semantic_review_set,
 )
 from reproassert.benchmark_v02_cases import prepare_v02_cases, verify_v02_cases
+from reproassert.benchmark_v02_execution_freeze import (
+    authorize_v02_exact_image_execution,
+    exact_approval_statement,
+    prepare_v02_exact_image_execution_freeze,
+    verify_v02_exact_image_execution_freeze,
+)
 from reproassert.benchmark_v02_hidden import prepare_v02_hidden_gold, verify_v02_hidden_gold
 from reproassert.benchmark_v02_instance_controller import (
     run_instance_gold_smoke,
@@ -79,6 +87,7 @@ from reproassert.workflow import (
 
 console = Console()
 error_console = Console(stderr=True)
+_CommandFunction = TypeVar("_CommandFunction", bound=Callable[..., Any])
 
 
 def _default_run_base() -> Path:
@@ -1136,6 +1145,198 @@ def benchmark_verify_v02_campaign(campaign_freeze: Path, preregistration: Path) 
                 "case_count": len(verified.case_ids),
                 "preparation_only": True,
                 "provider_authorized": False,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+def _exact_image_freeze_inputs(function: _CommandFunction) -> _CommandFunction:
+    options = (
+        click.option(
+            "--campaign-freeze",
+            type=click.Path(path_type=Path, exists=True, dir_okay=False),
+            required=True,
+        ),
+        click.option(
+            "--preregistration",
+            type=click.Path(path_type=Path, exists=True, dir_okay=False),
+            required=True,
+        ),
+        click.option(
+            "--cases-preparation",
+            type=click.Path(path_type=Path, exists=True, dir_okay=False),
+            required=True,
+        ),
+        click.option(
+            "--instance-runtime-manifest",
+            type=click.Path(path_type=Path, exists=True, dir_okay=False),
+            required=True,
+        ),
+        click.option(
+            "--gold-smoke-receipt",
+            type=click.Path(path_type=Path, exists=True, dir_okay=False),
+            required=True,
+        ),
+    )
+    for option in reversed(options):
+        function = option(function)
+    return function
+
+
+@benchmark_group.command("prepare-v02-execution-freeze")
+@_exact_image_freeze_inputs
+@click.option("--prepared-at", required=True, help="Freeze time in RFC 3339 UTC.")
+@click.option(
+    "--controller-git-sha",
+    required=True,
+    help="Exact merged 40-hex controller revision also bound by every request envelope.",
+)
+@click.option(
+    "--requested-model",
+    required=True,
+    help="Exact model already bound by the pricing snapshot and requests.",
+)
+@click.option("--output", type=click.Path(path_type=Path, dir_okay=False), required=True)
+def benchmark_freeze_v02_execution(
+    campaign_freeze: Path,
+    preregistration: Path,
+    cases_preparation: Path,
+    instance_runtime_manifest: Path,
+    gold_smoke_receipt: Path,
+    prepared_at: str,
+    controller_git_sha: str,
+    requested_model: str,
+    output: Path,
+) -> None:
+    """Bind evidence, requests, pricing, and cap audit before final user approval."""
+
+    try:
+        _ensure_private_output_root(output.parent)
+        verified = prepare_v02_exact_image_execution_freeze(
+            campaign_freeze_path=campaign_freeze,
+            preregistration_path=preregistration,
+            cases_preparation_receipt=cases_preparation,
+            instance_runtime_manifest_path=instance_runtime_manifest,
+            gold_smoke_receipt_path=gold_smoke_receipt,
+            prepared_at=prepared_at,
+            controller_git_sha=controller_git_sha,
+            requested_model=requested_model,
+            output_path=output,
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(
+        json.dumps(
+            {
+                "campaign_id": verified.campaign_id,
+                "execution_freeze": str(verified.path),
+                "execution_freeze_sha256": verified.sha256,
+                "max_campaign_usd": "5.00",
+                "max_case_usd": "0.25",
+                "overage_permitted": False,
+                "provider_authorized": False,
+                "provider_calls": 0,
+                "provider_invoked_by_this_command": False,
+                "request_set_sha256": verified.request_set_sha256,
+                "requested_model": verified.requested_model,
+                "required_approval_statement": exact_approval_statement(verified.sha256),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+@benchmark_group.command("authorize-v02-execution")
+@click.argument("execution_freeze", type=click.Path(path_type=Path, exists=True, dir_okay=False))
+@_exact_image_freeze_inputs
+@click.option(
+    "--approval-file", type=click.Path(path_type=Path, exists=True, dir_okay=False), required=True
+)
+@click.option("--approval-ref", required=True)
+@click.option("--authorized-at", required=True)
+@click.option("--output", type=click.Path(path_type=Path, dir_okay=False), required=True)
+def benchmark_authorize_v02_execution(
+    execution_freeze: Path,
+    campaign_freeze: Path,
+    preregistration: Path,
+    cases_preparation: Path,
+    instance_runtime_manifest: Path,
+    gold_smoke_receipt: Path,
+    approval_file: Path,
+    approval_ref: str,
+    authorized_at: str,
+    output: Path,
+) -> None:
+    """Authorize one exact prepared-freeze hash without invoking a provider."""
+    try:
+        _ensure_private_output_root(output.parent)
+        verified = authorize_v02_exact_image_execution(
+            execution_freeze_path=execution_freeze,
+            campaign_freeze_path=campaign_freeze,
+            preregistration_path=preregistration,
+            cases_preparation_receipt=cases_preparation,
+            instance_runtime_manifest_path=instance_runtime_manifest,
+            gold_smoke_receipt_path=gold_smoke_receipt,
+            approval_file=approval_file,
+            approval_ref=approval_ref,
+            authorized_at=authorized_at,
+            output_path=output,
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(
+        json.dumps(
+            {
+                "authorization": str(verified.path),
+                "authorization_sha256": verified.sha256,
+                "authorized_at": verified.authorized_at,
+                "campaign_id": verified.campaign_id,
+                "execution_freeze_sha256": verified.execution_freeze_sha256,
+                "provider_calls": 0,
+                "provider_invoked_by_this_command": False,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+@benchmark_group.command("verify-v02-execution-freeze")
+@click.argument("execution_freeze", type=click.Path(path_type=Path, exists=True, dir_okay=False))
+@_exact_image_freeze_inputs
+def benchmark_verify_v02_execution_freeze(
+    execution_freeze: Path,
+    campaign_freeze: Path,
+    preregistration: Path,
+    cases_preparation: Path,
+    instance_runtime_manifest: Path,
+    gold_smoke_receipt: Path,
+) -> None:
+    """Reverify an exact-image execution freeze without reading credentials."""
+
+    try:
+        verified = verify_v02_exact_image_execution_freeze(
+            execution_freeze,
+            campaign_freeze_path=campaign_freeze,
+            preregistration_path=preregistration,
+            cases_preparation_receipt=cases_preparation,
+            instance_runtime_manifest_path=instance_runtime_manifest,
+            gold_smoke_receipt_path=gold_smoke_receipt,
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(
+        json.dumps(
+            {
+                "campaign_id": verified.campaign_id,
+                "execution_freeze_sha256": verified.sha256,
+                "max_campaign_usd": "5.00",
+                "max_case_usd": "0.25",
+                "provider_calls": 0,
+                "request_set_sha256": verified.request_set_sha256,
             },
             indent=2,
             sort_keys=True,

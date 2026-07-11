@@ -238,6 +238,13 @@ request, pricing, authorization, causal-control, and reviewer commitments must b
 provider-capable run. Its issue snapshots remain labeled `chronology_unproven` and
 `historical_public_contamination_exposed`; no historical-cleanliness claim is implied.
 
+The final exact-image authorization is also fail-closed on spend. `reproassert benchmark
+prepare-v02-execution-freeze` recomputes all 20 worst-case request reservations and binds the merged
+controller SHA before emitting its final hash. A separate `authorize-v02-execution` command accepts
+only a later $5 total / $0.25 per-case zero-overage approval naming that exact hash. Neither command
+reads a provider key or makes a provider call. See
+[ADR 0014](docs/decisions/0014-exact-image-campaign-freeze-and-request-cap.md).
+
 See the [v0.2 protocol](benchmarks/v0.2-draft/README.md), [evaluation model](docs/evaluation.md), and
 [market-validation gates](docs/market-validation.md). Passing the internal 6/20 continuation gate
 would justify more validation; it would not establish a general 30% success rate, superiority, or

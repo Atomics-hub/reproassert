@@ -21,6 +21,10 @@ SCHEMA_FILENAMES = {
     "benchmark-v02-campaign-finalization": ("benchmark-v02-campaign-finalization.schema.json"),
     "benchmark-v02-public-aggregate": "benchmark-v02-public-aggregate.schema.json",
     "benchmark-v02-execution-authorization": ("benchmark-v02-execution-authorization.schema.json"),
+    "benchmark-v02-execution-freeze": "benchmark-v02-execution-freeze.schema.json",
+    "benchmark-v02-exact-image-authorization": (
+        "benchmark-v02-exact-image-authorization.schema.json"
+    ),
     "benchmark-v02-execution-request-bindings": (
         "benchmark-v02-execution-request-bindings.schema.json"
     ),

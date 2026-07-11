@@ -268,6 +268,11 @@ def test_schema_command_prints_preparation_receipt_schemas() -> None:
             "benchmark-v02-semantic-verification",
             "benchmark-v02-semantic-verification.schema.json",
         ),
+        ("benchmark-v02-execution-freeze", "benchmark-v02-execution-freeze.schema.json"),
+        (
+            "benchmark-v02-exact-image-authorization",
+            "benchmark-v02-exact-image-authorization.schema.json",
+        ),
         ("dependency-execution-receipt", "dependency-execution-receipt.schema.json"),
     ):
         result = CliRunner().invoke(main, ["schema", "--name", name])
