@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import os
 import shutil
 from pathlib import Path
 
@@ -8,7 +10,7 @@ import pytest
 from reproassert.candidate import ValidatedCandidate, validate_candidate_payload
 from reproassert.candidate_workspace import prepare_candidate_workspace
 from reproassert.errors import PolicyRejection
-from reproassert.source_attestation import attest_source_tree
+from reproassert.source_attestation import ExpectedGitSpecialEntry, attest_source_tree
 
 
 def _candidate() -> ValidatedCandidate:
@@ -33,6 +35,12 @@ def _source(root: Path) -> Path:
     return source
 
 
+def _blob_oid(content: bytes) -> str:
+    digest = hashlib.sha1(f"blob {len(content)}\0".encode(), usedforsecurity=False)
+    digest.update(content)
+    return digest.hexdigest()
+
+
 def test_builds_exact_pristine_plus_candidate_without_mutating_source(tmp_path: Path) -> None:
     source = _source(tmp_path)
     pristine = attest_source_tree(source)
@@ -53,6 +61,31 @@ def test_builds_exact_pristine_plus_candidate_without_mutating_source(tmp_path: 
     assert (
         prepared.path / "tests" / "reproassert" / "test_issue_4.py"
     ).read_text() == candidate.test_content
+
+
+def test_builds_candidate_workspace_with_plan_bound_special_entries(tmp_path: Path) -> None:
+    source = _source(tmp_path)
+    target = "example_project.py"
+    os.symlink(target, source / "module-link")
+    (source / "vendor").mkdir()
+    specials = (
+        ExpectedGitSpecialEntry("module-link", "120000", _blob_oid(target.encode()), target),
+        ExpectedGitSpecialEntry("vendor", "160000", "1" * 40),
+    )
+    pristine = attest_source_tree(source, expected_special_entries=specials)
+
+    prepared = prepare_candidate_workspace(
+        source=source,
+        destination=tmp_path / "prepared-special",
+        relative_path="tests/reproassert/test_issue_4.py",
+        candidate=_candidate(),
+        expected_pristine=pristine,
+        expected_special_entries=specials,
+    )
+
+    assert os.readlink(prepared.path / "module-link") == target
+    assert not any((prepared.path / "vendor").iterdir())
+    assert prepared.candidate_applied_tree.algorithm.endswith("special-v1")
 
 
 def test_rejects_forged_candidate_dataclass_before_copy(tmp_path: Path) -> None:

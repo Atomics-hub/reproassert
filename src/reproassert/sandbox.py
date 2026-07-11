@@ -13,7 +13,7 @@ import time
 import uuid
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 from importlib import resources
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -24,7 +24,14 @@ from reproassert.dependency_attestor import (
 )
 from reproassert.errors import ReproAssertError
 from reproassert.safeio import sanitize_log
-from reproassert.source_attestation import SourceAttestationLimits, SourceTreeAttestation
+from reproassert.source_attestation import (
+    SOURCE_TREE_ALGORITHM,
+    SOURCE_TREE_SPECIAL_ALGORITHM,
+    ExpectedGitSpecialEntry,
+    SourceAttestationLimits,
+    SourceTreeAttestation,
+    validate_expected_git_special_entries,
+)
 
 if TYPE_CHECKING:
     from reproassert.dependency_executor import DependencyVolumeHandle
@@ -427,6 +434,7 @@ class DockerSandbox:
         run_id: str,
         expected: SourceTreeAttestation,
         limits: SourceAttestationLimits | None = None,
+        expected_special_entries: tuple[ExpectedGitSpecialEntry, ...] = (),
     ) -> str:
         """Stage inert source and prove the exact staged bytes before execution."""
 
@@ -436,6 +444,7 @@ class DockerSandbox:
                 volume,
                 run_id=run_id,
                 limits=limits,
+                expected_special_entries=expected_special_entries,
             )
             normalized = replace(
                 observed,
@@ -460,12 +469,23 @@ class DockerSandbox:
         *,
         run_id: str,
         limits: SourceAttestationLimits | None = None,
+        expected_special_entries: tuple[ExpectedGitSpecialEntry, ...] = (),
     ) -> SourceTreeAttestation:
         """Attest one controller-owned source volume in the pinned read-only image."""
 
         if volume not in self._volumes:
             raise ReproAssertError("sandbox_volume", "Workspace volume is not controller-owned.")
         active_limits = limits or SourceAttestationLimits()
+        special_entries = validate_expected_git_special_entries(
+            expected_special_entries, limits=active_limits
+        )
+        special_profile = json.dumps(
+            [asdict(entry) for entry in special_entries],
+            ensure_ascii=False,
+            allow_nan=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
         name = f"reproassert-attest-{_safe_token(run_id)}-{uuid.uuid4().hex[:10]}"
         process_args = (
             "/usr/local/bin/python",
@@ -480,6 +500,7 @@ class DockerSandbox:
             str(active_limits.max_total_bytes),
             str(active_limits.max_path_bytes),
             str(active_limits.max_component_bytes),
+            special_profile,
         )
         self._control(
             self.verification_create_args(
@@ -511,7 +532,13 @@ class DockerSandbox:
                     "sandbox_stage_attestation",
                     "Staged workspace attestor rejected the source tree.",
                 )
-            return parse_container_tree_attestation(attached.output, limits=active_limits)
+            return parse_container_tree_attestation(
+                attached.output,
+                limits=active_limits,
+                expected_algorithm=(
+                    SOURCE_TREE_SPECIAL_ALGORITHM if special_entries else SOURCE_TREE_ALGORITHM
+                ),
+            )
         finally:
             self._remove_container(name)
 

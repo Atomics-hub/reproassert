@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import shutil
 import tempfile
@@ -12,7 +13,7 @@ from reproassert.benchmark_v02_package import V02CaseIdentity
 from reproassert.candidate import validate_candidate_payload
 from reproassert.differential import DIFFERENTIAL_SCHEDULE, verify_differential_candidate
 from reproassert.sandbox import DockerSandbox
-from reproassert.source_attestation import attest_source_tree
+from reproassert.source_attestation import ExpectedGitSpecialEntry, attest_source_tree
 
 
 @pytest.mark.integration
@@ -40,8 +41,19 @@ def test_real_docker_interleaves_buggy_failure_and_fixed_pass() -> None:
         fixed = shutil.copytree(fixed_fixture, root / "fixed")
         shutil.rmtree(base / "tests" / "reproassert")
         shutil.rmtree(fixed / "tests" / "reproassert")
-        base_tree = attest_source_tree(base)
-        fixed_tree = attest_source_tree(fixed)
+        target = "slugger.py"
+        target_bytes = target.encode()
+        digest = hashlib.sha1(f"blob {len(target_bytes)}\0".encode(), usedforsecurity=False)
+        digest.update(target_bytes)
+        special_entries = (
+            ExpectedGitSpecialEntry("slugger-link.py", "120000", digest.hexdigest(), target),
+            ExpectedGitSpecialEntry("vendor", "160000", "1" * 40),
+        )
+        for source in (base, fixed):
+            os.symlink(target, source / "slugger-link.py")
+            (source / "vendor").mkdir()
+        base_tree = attest_source_tree(base, expected_special_entries=special_entries)
+        fixed_tree = attest_source_tree(fixed, expected_special_entries=special_entries)
         capability = package_module.VerifiedV02EvaluatorCapability(
             package_module._CAPABILITY_ISSUER,
             case=V02CaseIdentity(
@@ -69,6 +81,7 @@ def test_real_docker_interleaves_buggy_failure_and_fixed_pass() -> None:
             source_context_algorithm="reproassert-v02-source-context-v1",
             source_context_policy_sha256="e" * 64,
             source_context_sha256="0" * 64,
+            source_special_entries=special_entries,
             hidden_fixed_root_tree_oid=fixed_tree.reconstructed_git_tree_oid,
             fixing_head_commit_sha="d" * 40,
             fixing_head_root_tree_oid="e" * 40,

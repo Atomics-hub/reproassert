@@ -169,6 +169,7 @@ def verify_differential_candidate(
         base_expected = attest_source_tree(
             base_source,
             expected_git_tree_oid=capability.base_root_tree_oid,
+            expected_special_entries=capability.source_special_entries,
         )
         if base_expected.tree_sha256 != capability.source_tree_sha256:
             raise PolicyRejection(
@@ -180,10 +181,12 @@ def verify_differential_candidate(
             relative_path=relative_path,
             candidate=candidate,
             expected_pristine=base_expected,
+            expected_special_entries=capability.source_special_entries,
         )
         fixed_expected = attest_source_tree(
             fixed_source,
             expected_git_tree_oid=capability.hidden_fixed_root_tree_oid,
+            expected_special_entries=capability.source_special_entries,
         )
         fixed_prepared = prepare_candidate_workspace(
             source=fixed_source,
@@ -191,6 +194,7 @@ def verify_differential_candidate(
             relative_path=relative_path,
             candidate=candidate,
             expected_pristine=fixed_expected,
+            expected_special_entries=capability.source_special_entries,
         )
         base_workspace = base_prepared.path
         base_tree = base_prepared.candidate_applied_tree
@@ -266,6 +270,7 @@ def verify_differential_candidate(
                     base_workspace,
                     run_id=f"{run_id}-base",
                     expected=base_tree,
+                    expected_special_entries=capability.source_special_entries,
                 )
                 collection = sandbox.run_pytest(
                     volume=base_volume,
@@ -299,6 +304,7 @@ def verify_differential_candidate(
                     fixed_workspace,
                     run_id=f"{run_id}-fixed",
                     expected=fixed_tree,
+                    expected_special_entries=capability.source_special_entries,
                 )
                 role_counts = {"base": 0, "fixed": 0}
                 for schedule_ordinal, source_role in enumerate(DIFFERENTIAL_SCHEDULE, start=1):

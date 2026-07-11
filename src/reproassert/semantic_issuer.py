@@ -56,7 +56,11 @@ from reproassert.isolation_canary import (
     IsolationCanaryResult,
 )
 from reproassert.safeio import open_regular_file, require_private_directory
-from reproassert.source_attestation import SourceTreeAttestation, attest_source_tree
+from reproassert.source_attestation import (
+    ExpectedGitSpecialEntry,
+    SourceTreeAttestation,
+    attest_source_tree,
+)
 
 V02_SOURCE_EVIDENCE_ALGORITHM = "reproassert-v02-exact-object-source-v1"
 V02_REVIEWER_ROLE_SEAL_ALGORITHM = "reproassert-v02-reviewer-role-seal-v1"
@@ -307,7 +311,9 @@ def derive_v02_generator_source_context(
         os.chmod(parent, 0o700)
         workspace = materialize_git_workspace(source._plan, parent / "base")
         attestation = attest_source_tree(
-            workspace.path, expected_git_tree_oid=source.base_root_tree_oid
+            workspace.path,
+            expected_git_tree_oid=source.base_root_tree_oid,
+            expected_special_entries=_expected_special_entries(source._plan),
         )
         if attestation.tree_sha256 != source.source_tree_sha256:
             raise _reject("Source tree changed before generator context derivation.")
@@ -793,6 +799,7 @@ class _ApplicationSemanticIssuer:
             source_context_algorithm=derived.source_context.algorithm,
             source_context_policy_sha256=derived.source_context.policy_sha256,
             source_context_sha256=derived.source_context.context_sha256,
+            source_special_entries=_expected_special_entries(self._source._plan),
             hidden_fixed_root_tree_oid=verification.hidden_fixed_root_tree_oid,
             fixing_head_commit_sha=verification.fixing_head_commit_sha,
             fixing_head_root_tree_oid=verification.fixing_head_root_tree_oid,
@@ -849,18 +856,33 @@ def _materialize_and_attest(
         raise _reject("Exact-object source plan is invalid.") from exc
     if plan != exact_object_plan:
         raise _reject("Exact-object source plan fields are inconsistent.")
-    if plan.snapshot.symlink_count or plan.snapshot.gitlink_count:
-        raise _reject("The v0.2 source profile rejects symlinks and Gitlinks.")
     with tempfile.TemporaryDirectory(prefix="reproassert-v02-source-verify-") as temporary:
         parent = Path(temporary).resolve(strict=True)
         os.chmod(parent, 0o700)
         workspace = materialize_git_workspace(plan, parent / "source")
         attestation = attest_source_tree(
-            workspace.path, expected_git_tree_oid=plan.snapshot.root_tree_oid
+            workspace.path,
+            expected_git_tree_oid=plan.snapshot.root_tree_oid,
+            expected_special_entries=_expected_special_entries(plan),
         )
         if workspace.tree_sha256 != plan.tree_sha256:
             raise _reject("Materialized exact-object source identity is inconsistent.")
     return plan, attestation
+
+
+def _expected_special_entries(
+    plan: VerifiedGitObjectPlan,
+) -> tuple[ExpectedGitSpecialEntry, ...]:
+    return tuple(
+        ExpectedGitSpecialEntry(
+            path=entry.path,
+            mode=entry.mode,
+            oid=entry.oid,
+            symlink_target=plan.symlink_target(entry.path) if entry.is_symlink else None,
+        )
+        for entry in plan.snapshot.entries
+        if entry.is_symlink or entry.is_gitlink
+    )
 
 
 def _source_receipt_record(
@@ -880,8 +902,8 @@ def _source_receipt_record(
             "entry_count": plan.snapshot.entry_count,
             "regular_file_count": plan.snapshot.regular_file_count,
             "directory_count": plan.snapshot.directory_count,
-            "symlink_count": 0,
-            "gitlink_count": 0,
+            "symlink_count": plan.snapshot.symlink_count,
+            "gitlink_count": plan.snapshot.gitlink_count,
         },
         "source_attestation": asdict(attestation),
     }
@@ -1134,23 +1156,35 @@ def _rederive_patch_causality(
         parent = Path(temporary).resolve(strict=True)
         os.chmod(parent, 0o700)
         base = materialize_git_workspace(source._plan, parent / "base").path
-        base_attestation = attest_source_tree(base, expected_git_tree_oid=source.base_root_tree_oid)
+        special_entries = _expected_special_entries(source._plan)
+        base_attestation = attest_source_tree(
+            base,
+            expected_git_tree_oid=source.base_root_tree_oid,
+            expected_special_entries=special_entries,
+        )
         if base_attestation.tree_sha256 != source.source_tree_sha256:
             raise _reject("Base source changed before patch reconstruction.")
         fixed = parent / "fixed"
         shutil.copytree(base, fixed, symlinks=True, copy_function=shutil.copy2)
-        _apply_patch(fixed, production)
-        fixed_attestation = attest_source_tree(fixed)
+        special_paths = tuple(entry.path for entry in special_entries)
+        _apply_patch(fixed, production, immutable_special_paths=special_paths)
+        fixed_attestation = attest_source_tree(fixed, expected_special_entries=special_entries)
         if fixed_attestation.reconstructed_git_tree_oid == source.base_root_tree_oid:
             raise _reject("Production patch does not causally change the base tree.")
         hidden_fixed_oid = fixed_attestation.reconstructed_git_tree_oid
-        _apply_patch(fixed, developer)
+        _apply_patch(fixed, developer, immutable_special_paths=special_paths)
         head_attestation = attest_source_tree(
-            fixed, expected_git_tree_oid=mapping.head_root_tree_oid
+            fixed,
+            expected_git_tree_oid=mapping.head_root_tree_oid,
+            expected_special_entries=special_entries,
         )
         if head_attestation.reconstructed_git_tree_oid == hidden_fixed_oid:
             raise _reject("Developer tests patch does not change the production-fixed tree.")
-        final_base = attest_source_tree(base, expected_git_tree_oid=source.base_root_tree_oid)
+        final_base = attest_source_tree(
+            base,
+            expected_git_tree_oid=source.base_root_tree_oid,
+            expected_special_entries=special_entries,
+        )
         if final_base.tree_sha256 != source.source_tree_sha256:
             raise _reject("Patch reconstruction mutated the pristine base tree.")
     return (
@@ -1163,12 +1197,15 @@ def _rederive_patch_causality(
     )
 
 
-def _apply_patch(root: Path, patch: bytes) -> None:
+def _apply_patch(
+    root: Path, patch: bytes, *, immutable_special_paths: tuple[str, ...] = ()
+) -> None:
     if re.search(
         rb"(?m)^(?:new file mode|old mode|new mode) (?:120000|160000)$",
         patch,
     ):
         raise _reject("Evaluator patches may not introduce symlinks or Gitlinks.")
+    _require_patch_avoids_special_entries(patch, immutable_special_paths)
     patch = _apply_metadata_only_sections(root, patch)
     if not patch:
         return
@@ -1213,6 +1250,61 @@ def _apply_patch(root: Path, patch: bytes) -> None:
         raise _reject("Trusted patch application failed or timed out.") from exc
     if completed.returncode != 0:
         raise _reject("Production/developer patch does not apply exactly to the base tree.")
+
+
+def _require_patch_avoids_special_entries(
+    patch: bytes, immutable_special_paths: tuple[str, ...]
+) -> None:
+    if not immutable_special_paths:
+        return
+    starts = [match.start() for match in re.finditer(rb"(?m)^diff --git ", patch)]
+    if not starts or starts[0] != 0:
+        raise _reject("Evaluator patch structure cannot protect plan-bound special entries.")
+    starts.append(len(patch))
+    protected = tuple(path.encode("utf-8") for path in immutable_special_paths)
+    for index in range(len(starts) - 1):
+        section = patch[starts[index] : starts[index + 1]]
+        lines = section.splitlines()
+        header = lines[0]
+        parts = header.split(b" ")
+        if len(parts) != 4 or not parts[2].startswith(b"a/") or not parts[3].startswith(b"b/"):
+            raise _reject("Evaluator patch path cannot protect plan-bound special entries.")
+        old_path, new_path = parts[2][2:], parts[3][2:]
+        path_fields: list[bytes] = [old_path, new_path]
+        for prefix, expected, side_prefix in (
+            (b"--- ", old_path, b"a/"),
+            (b"+++ ", new_path, b"b/"),
+            (b"rename from ", old_path, b""),
+            (b"rename to ", new_path, b""),
+            (b"copy from ", old_path, b""),
+            (b"copy to ", new_path, b""),
+        ):
+            observed = [line[len(prefix) :] for line in lines if line.startswith(prefix)]
+            if len(observed) > 1:
+                raise _reject("Evaluator patch repeats a path-bearing metadata field.")
+            if not observed:
+                continue
+            value = observed[0]
+            if value == b"/dev/null" and prefix in {b"--- ", b"+++ "}:
+                continue
+            if value != side_prefix + expected:
+                raise _reject("Evaluator patch path metadata differs from its diff header.")
+            path_fields.append(expected)
+        for candidate in path_fields:
+            if (
+                not candidate
+                or candidate.startswith(b"/")
+                or b"\\" in candidate
+                or any(part in {b"", b".", b".."} for part in candidate.split(b"/"))
+            ):
+                raise _reject("Evaluator patch contains an unsafe path.")
+            if any(
+                candidate == path
+                or candidate.startswith(path + b"/")
+                or path.startswith(candidate + b"/")
+                for path in protected
+            ):
+                raise _reject("Evaluator patch touches a plan-bound symlink or Gitlink path.")
 
 
 def _apply_metadata_only_sections(root: Path, patch: bytes) -> bytes:

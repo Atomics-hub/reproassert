@@ -30,6 +30,10 @@ from reproassert.context import V02_SOURCE_CONTEXT_ALGORITHM, V02_SOURCE_CONTEXT
 from reproassert.errors import PolicyRejection, ReproAssertError
 from reproassert.intake import parse_issue_url
 from reproassert.safeio import open_regular_file, require_private_directory
+from reproassert.source_attestation import (
+    ExpectedGitSpecialEntry,
+    validate_expected_git_special_entries,
+)
 
 SCHEMA_VERSION = "1.0.0"
 BENCHMARK_VERSION = "0.2.0-draft"
@@ -399,6 +403,7 @@ class VerifiedV02EvaluatorCapability:
     source_context_algorithm: str
     source_context_policy_sha256: str
     source_context_sha256: str
+    source_special_entries: tuple[ExpectedGitSpecialEntry, ...]
     hidden_fixed_root_tree_oid: str
     fixing_head_commit_sha: str
     fixing_head_root_tree_oid: str
@@ -440,6 +445,7 @@ class VerifiedV02EvaluatorCapability:
         source_context_algorithm: str,
         source_context_policy_sha256: str,
         source_context_sha256: str,
+        source_special_entries: tuple[ExpectedGitSpecialEntry, ...],
         hidden_fixed_root_tree_oid: str,
         fixing_head_commit_sha: str,
         fixing_head_root_tree_oid: str,
@@ -457,6 +463,7 @@ class VerifiedV02EvaluatorCapability:
     ) -> None:
         if issuer is not _CAPABILITY_ISSUER:
             raise _rejection("Evaluator capability may only be issued by verified package loading.")
+        validated_special_entries = validate_expected_git_special_entries(source_special_entries)
         record = {
             "algorithm": "reproassert-v02-evaluator-capability-v1",
             "case": asdict(case),
@@ -479,6 +486,7 @@ class VerifiedV02EvaluatorCapability:
             "source_context_algorithm": source_context_algorithm,
             "source_context_policy_sha256": source_context_policy_sha256,
             "source_context_sha256": source_context_sha256,
+            "source_special_entries": [asdict(entry) for entry in validated_special_entries],
             "hidden_fixed_root_tree_oid": hidden_fixed_root_tree_oid,
             "fixing_head_commit_sha": fixing_head_commit_sha,
             "fixing_head_root_tree_oid": fixing_head_root_tree_oid,
@@ -507,6 +515,7 @@ class VerifiedV02EvaluatorCapability:
                 "upstream_instance_id",
                 "fixing_pr_number",
                 "verification_completed_at",
+                "source_special_entries",
             }:
                 continue
             if name == "source_context_algorithm":
@@ -541,9 +550,10 @@ class VerifiedV02EvaluatorCapability:
         )
         object.__setattr__(self, "case", case)
         for name, value in record.items():
-            if name in {"algorithm", "case"}:
+            if name in {"algorithm", "case", "source_special_entries"}:
                 continue
             object.__setattr__(self, name, value)
+        object.__setattr__(self, "source_special_entries", validated_special_entries)
         object.__setattr__(
             self,
             "capability_sha256",
@@ -584,6 +594,9 @@ def require_v02_evaluator_capability(value: object) -> VerifiedV02EvaluatorCapab
             "source_context_algorithm": capability.source_context_algorithm,
             "source_context_policy_sha256": capability.source_context_policy_sha256,
             "source_context_sha256": capability.source_context_sha256,
+            "source_special_entries": [
+                asdict(entry) for entry in capability.source_special_entries
+            ],
             "hidden_fixed_root_tree_oid": capability.hidden_fixed_root_tree_oid,
             "fixing_head_commit_sha": capability.fixing_head_commit_sha,
             "fixing_head_root_tree_oid": capability.fixing_head_root_tree_oid,
@@ -608,6 +621,10 @@ def require_v02_evaluator_capability(value: object) -> VerifiedV02EvaluatorCapab
             tree_sha256=capability.dependency_tree_sha256,
             runner_image_id=capability.dependency_runner_image_id,
         )
+        if validate_expected_git_special_entries(capability.source_special_entries) != (
+            capability.source_special_entries
+        ):
+            raise _rejection("Evaluator capability special-entry profile is invalid.")
         expected = hashlib.sha256(_canonical_json_bytes(record)).hexdigest()
     except (AttributeError, TypeError, ValueError) as exc:
         raise _rejection("Evaluator capability fields are invalid.") from exc

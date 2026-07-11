@@ -36,5 +36,10 @@ into caller-controlled data.
 - Safe projections retain `chronology_unproven`; preparation does not upgrade that claim.
 - A complete case package still requires exact source, reviewed dependency evidence, fixing-PR
   capture, privacy and role review, isolation evidence, and application-owned semantic issuance.
+- Exact source evidence preserves plan-bound, root-confined tracked symlinks and opaque Gitlinks.
+  Symlinks are re-attested by path, target, and blob OID without dereferencing; Gitlinks remain
+  empty, retain their commit OID, and are never fetched. Evaluator patches may not touch, traverse,
+  introduce, or change either kind of entry, and their profile remains bound into the process-local
+  evaluator capability through candidate staging and differential execution.
 - No pricing or spend approval should be requested until all 20 packages and exact rendered requests
   pass the offline readiness gate.

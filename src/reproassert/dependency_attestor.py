@@ -6,6 +6,7 @@ import re
 from reproassert.errors import ReproAssertError
 from reproassert.source_attestation import (
     SOURCE_TREE_ALGORITHM,
+    SOURCE_TREE_SPECIAL_ALGORITHM,
     SourceAttestationLimits,
     SourceTreeAttestation,
 )
@@ -26,7 +27,6 @@ import sys
 import unicodedata
 from collections import deque
 
-ALGORITHM = "reproassert-source-tree-v1"
 root = sys.argv[1]
 (
     max_members,
@@ -36,7 +36,46 @@ root = sys.argv[1]
     max_total_bytes,
     max_path_bytes,
     max_component_bytes,
-) = map(int, sys.argv[2:])
+) = map(int, sys.argv[2:9])
+special_profile = json.loads(sys.argv[9])
+if not isinstance(special_profile, list):
+    raise RuntimeError("invalid-special-profile")
+special_by_path = {}
+for item in special_profile:
+    if not isinstance(item, dict) or set(item) != {"mode", "oid", "path", "symlink_target"}:
+        raise RuntimeError("invalid-special-profile")
+    path = item["path"]
+    mode = item["mode"]
+    oid = item["oid"]
+    target = item["symlink_target"]
+    if (
+        not isinstance(path, str)
+        or path in special_by_path
+        or mode not in {"120000", "160000"}
+        or not isinstance(oid, str)
+        or len(oid) != 40
+        or any(character not in "0123456789abcdef" for character in oid)
+    ):
+        raise RuntimeError("invalid-special-profile")
+    if mode == "120000":
+        if not isinstance(target, str):
+            raise RuntimeError("invalid-special-profile")
+        target_bytes = target.encode("utf-8")
+        digest = hashlib.sha1(
+            f"blob {len(target_bytes)}\0".encode("ascii"),
+            usedforsecurity=False,
+        )
+        digest.update(target_bytes)
+        if digest.hexdigest() != oid or len(target_bytes) > max_file_bytes:
+            raise RuntimeError("invalid-special-profile")
+    elif target is not None:
+        raise RuntimeError("invalid-special-profile")
+    special_by_path[path] = item
+ALGORITHM = (
+    "reproassert-source-tree-special-v1"
+    if special_by_path
+    else "reproassert-source-tree-v1"
+)
 
 
 def fail(reason):
@@ -104,7 +143,10 @@ try:
     git_children = {(): []}
     directory_snapshots = []
     file_snapshots = []
+    symlink_snapshots = []
+    gitlink_snapshots = []
     seen_directories = set()
+    seen_special = set()
     member_count = 0
     file_count = 0
     directory_count = 0
@@ -150,6 +192,68 @@ try:
                 member_count += 1
                 if member_count > max_members:
                     fail("member-limit")
+
+                relative_text = "/".join(child_parts)
+                special = special_by_path.get(relative_text)
+                if special is not None and special["mode"] == "160000":
+                    if not stat.S_ISDIR(initial.st_mode):
+                        fail("gitlink-changed")
+                    descriptor = open_directory(root_descriptor, child_parts)
+                    try:
+                        if os.listdir(descriptor):
+                            fail("gitlink-populated")
+                        final = os.fstat(descriptor)
+                    finally:
+                        os.close(descriptor)
+                    if final.st_dev != root_stat.st_dev:
+                        fail("mount-boundary")
+                    directory_count += 1
+                    if directory_count > max_directories:
+                        fail("directory-limit")
+                    oid = bytes.fromhex(special["oid"])
+                    canonical_entries.append(
+                        (b"G", relative_path, b"160000", 0, hashlib.sha256(oid).digest())
+                    )
+                    git_children[encoded_parts].append(
+                        (encoded_name, b"160000", oid, False)
+                    )
+                    gitlink_snapshots.append((child_parts, snapshot(final)))
+                    seen_special.add(relative_text)
+                    continue
+
+                if special is not None and special["mode"] == "120000":
+                    if not stat.S_ISLNK(initial.st_mode):
+                        fail("symlink-changed")
+                    target = os.readlink(name, dir_fd=directory_descriptor)
+                    final = os.stat(name, dir_fd=directory_descriptor, follow_symlinks=False)
+                    if target != special["symlink_target"] or snapshot(final) != snapshot(initial):
+                        fail("symlink-changed")
+                    if final.st_dev != root_stat.st_dev:
+                        fail("mount-boundary")
+                    target_bytes = target.encode("utf-8")
+                    file_count += 1
+                    total_bytes += len(target_bytes)
+                    if (
+                        len(target_bytes) > max_file_bytes
+                        or file_count > max_files
+                        or total_bytes > max_total_bytes
+                    ):
+                        fail("file-limit")
+                    canonical_entries.append(
+                        (
+                            b"L",
+                            relative_path,
+                            b"120000",
+                            len(target_bytes),
+                            hashlib.sha256(target_bytes).digest(),
+                        )
+                    )
+                    git_children[encoded_parts].append(
+                        (encoded_name, b"120000", bytes.fromhex(special["oid"]), False)
+                    )
+                    symlink_snapshots.append((child_parts, snapshot(final), target))
+                    seen_special.add(relative_text)
+                    continue
 
                 if stat.S_ISDIR(initial.st_mode):
                     directory_count += 1
@@ -235,6 +339,8 @@ try:
         finally:
             os.close(directory_descriptor)
 
+    if seen_special != set(special_by_path):
+        fail("special-missing")
     for parts, expected in directory_snapshots:
         descriptor = open_directory(root_descriptor, parts)
         try:
@@ -260,6 +366,26 @@ try:
             os.close(parent_descriptor)
         if observed != expected:
             fail("file-changed")
+    for parts, expected, expected_target in symlink_snapshots:
+        parent_descriptor = open_directory(root_descriptor, parts[:-1])
+        try:
+            observed = snapshot(
+                os.stat(parts[-1], dir_fd=parent_descriptor, follow_symlinks=False)
+            )
+            target = os.readlink(parts[-1], dir_fd=parent_descriptor)
+        finally:
+            os.close(parent_descriptor)
+        if observed != expected or target != expected_target:
+            fail("symlink-changed")
+    for parts, expected in gitlink_snapshots:
+        descriptor = open_directory(root_descriptor, parts)
+        try:
+            observed = snapshot(os.fstat(descriptor))
+            populated = bool(os.listdir(descriptor))
+        finally:
+            os.close(descriptor)
+        if observed != expected or populated:
+            fail("gitlink-changed")
     if snapshot(os.fstat(root_descriptor)) != root_snapshot:
         fail("root-changed")
 
@@ -319,6 +445,7 @@ def parse_container_tree_attestation(
     raw: str,
     *,
     limits: SourceAttestationLimits | None = None,
+    expected_algorithm: str = SOURCE_TREE_ALGORITHM,
 ) -> SourceTreeAttestation:
     """Strictly parse bounded JSON emitted by ``DEPENDENCY_TREE_ATTESTOR_SCRIPT``."""
 
@@ -380,7 +507,8 @@ def parse_container_tree_attestation(
         )
     }
     if (
-        value["algorithm"] != SOURCE_TREE_ALGORITHM
+        expected_algorithm not in {SOURCE_TREE_ALGORITHM, SOURCE_TREE_SPECIAL_ALGORITHM}
+        or value["algorithm"] != expected_algorithm
         or not isinstance(tree_sha256, str)
         or _SHA256.fullmatch(tree_sha256) is None
         or not isinstance(git_oid, str)
@@ -400,7 +528,7 @@ def parse_container_tree_attestation(
             "Container tree attestation invariants are invalid.",
         )
     return SourceTreeAttestation(
-        algorithm=SOURCE_TREE_ALGORITHM,
+        algorithm=expected_algorithm,
         tree_sha256=tree_sha256,
         reconstructed_git_tree_oid=git_oid,
         expected_git_tree_oid=None,

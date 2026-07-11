@@ -6,12 +6,14 @@ import re
 import stat
 import unicodedata
 from collections import deque
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
 from reproassert.errors import PolicyRejection
 
 SOURCE_TREE_ALGORITHM = "reproassert-source-tree-v1"
+SOURCE_TREE_SPECIAL_ALGORITHM = "reproassert-source-tree-special-v1"
 
 _READ_CHUNK_SIZE = 64 * 1024
 _EMPTY_CONTENT_SHA256 = hashlib.sha256(b"").digest()
@@ -69,6 +71,20 @@ class SourceTreeAttestation:
 
 
 @dataclass(frozen=True)
+class ExpectedGitSpecialEntry:
+    """One plan-bound special Git entry allowed during source attestation.
+
+    Symlinks retain their exact already-validated target. Gitlinks are empty directories pinned to
+    a commit object ID; this attestor never follows or fetches them.
+    """
+
+    path: str
+    mode: str
+    oid: str
+    symlink_target: str | None = None
+
+
+@dataclass(frozen=True)
 class _PendingDirectory:
     parts: tuple[str, ...]
     encoded_parts: tuple[bytes, ...]
@@ -110,6 +126,7 @@ def attest_source_tree(
     *,
     limits: SourceAttestationLimits | None = None,
     expected_git_tree_oid: str | None = None,
+    expected_special_entries: Iterable[ExpectedGitSpecialEntry] = (),
 ) -> SourceTreeAttestation:
     """Attest an inert extracted tree without following any filesystem link.
 
@@ -121,6 +138,11 @@ def attest_source_tree(
 
     active_limits = limits or SourceAttestationLimits()
     expected_oid = _validate_expected_oid(expected_git_tree_oid)
+    validated_special_entries = validate_expected_git_special_entries(
+        expected_special_entries, limits=active_limits
+    )
+    special_entries = {entry.path: entry for entry in validated_special_entries}
+    algorithm = SOURCE_TREE_SPECIAL_ALGORITHM if special_entries else SOURCE_TREE_ALGORITHM
     root_path = Path(root)
     if _is_git_metadata_component(root_path.name):
         raise PolicyRejection(
@@ -133,7 +155,7 @@ def attest_source_tree(
         if not stat.S_ISDIR(root_stat.st_mode):
             raise PolicyRejection("source_not_directory", "Source root is not a directory.")
 
-        result = _attest_open_tree(root_fd, root_stat, active_limits)
+        result = _attest_open_tree(root_fd, root_stat, active_limits, special_entries, algorithm)
     finally:
         os.close(root_fd)
 
@@ -143,7 +165,7 @@ def attest_source_tree(
             "Reconstructed Git tree does not match the expected root tree object.",
         )
     return SourceTreeAttestation(
-        algorithm=SOURCE_TREE_ALGORITHM,
+        algorithm=algorithm,
         tree_sha256=result.tree_sha256,
         reconstructed_git_tree_oid=result.reconstructed_git_tree_oid,
         expected_git_tree_oid=expected_oid,
@@ -168,14 +190,21 @@ class _AttestationResult:
 
 
 def _attest_open_tree(
-    root_fd: int, root_stat: os.stat_result, limits: SourceAttestationLimits
+    root_fd: int,
+    root_stat: os.stat_result,
+    limits: SourceAttestationLimits,
+    expected_special_entries: dict[str, ExpectedGitSpecialEntry],
+    algorithm: str,
 ) -> _AttestationResult:
     queue = deque([_PendingDirectory((), (), root_stat.st_dev, root_stat.st_ino)])
     canonical_entries: list[_CanonicalEntry] = []
     git_children: dict[tuple[bytes, ...], list[_GitEntry]] = {(): []}
     directory_snapshots: list[_PathSnapshot] = []
     file_snapshots: list[_PathSnapshot] = []
+    symlink_snapshots: list[tuple[_PathSnapshot, str]] = []
+    gitlink_snapshots: list[_PathSnapshot] = []
     seen_directories: set[tuple[int, int]] = set()
+    seen_special_entries: set[str] = set()
 
     member_count = 0
     file_count = 0
@@ -249,6 +278,106 @@ def _attest_open_tree(
                     raise PolicyRejection(
                         "source_member_limit", "Source tree exceeds the member limit."
                     )
+
+                special = expected_special_entries.get("/".join(parts))
+                if special is not None and special.mode == "160000":
+                    if not stat.S_ISDIR(entry_stat.st_mode):
+                        raise PolicyRejection(
+                            "source_gitlink_changed", "Plan-bound Gitlink changed type."
+                        )
+                    gitlink_fd = _open_relative_directory(root_fd, parts)
+                    try:
+                        if os.listdir(gitlink_fd):
+                            raise PolicyRejection(
+                                "source_gitlink_populated",
+                                "Plan-bound Gitlink directory is not empty.",
+                            )
+                        final_stat = os.fstat(gitlink_fd)
+                    finally:
+                        os.close(gitlink_fd)
+                    directory_count += 1
+                    if final_stat.st_dev != root_stat.st_dev:
+                        raise PolicyRejection(
+                            "source_mount_boundary", "Source tree crosses a filesystem boundary."
+                        )
+                    if directory_count > limits.max_directories:
+                        raise PolicyRejection(
+                            "source_directory_limit", "Source tree exceeds the directory limit."
+                        )
+                    canonical_entries.append(
+                        _CanonicalEntry(
+                            kind=b"G",
+                            path=relative_path,
+                            mode=b"160000",
+                            size=0,
+                            content_sha256=hashlib.sha256(bytes.fromhex(special.oid)).digest(),
+                        )
+                    )
+                    git_children[pending.encoded_parts].append(
+                        _GitEntry(
+                            name=encoded_name,
+                            mode=b"160000",
+                            oid=bytes.fromhex(special.oid),
+                            is_directory=False,
+                        )
+                    )
+                    gitlink_snapshots.append(_snapshot(parts, final_stat))
+                    seen_special_entries.add(special.path)
+                    continue
+
+                if special is not None and special.mode == "120000":
+                    if not stat.S_ISLNK(entry_stat.st_mode):
+                        raise PolicyRejection(
+                            "source_symlink_changed", "Plan-bound symlink changed type."
+                        )
+                    try:
+                        target = os.readlink(name, dir_fd=directory_fd)
+                        final_stat = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+                    except OSError as exc:
+                        raise PolicyRejection(
+                            "source_tree_changed", "Plan-bound symlink changed during attestation."
+                        ) from exc
+                    if target != special.symlink_target or not _same_snapshot(
+                        entry_stat, final_stat
+                    ):
+                        raise PolicyRejection(
+                            "source_symlink_changed", "Plan-bound symlink target changed."
+                        )
+                    if final_stat.st_dev != root_stat.st_dev:
+                        raise PolicyRejection(
+                            "source_mount_boundary", "Source tree crosses a filesystem boundary."
+                        )
+                    target_bytes = target.encode("utf-8")
+                    file_count += 1
+                    total_bytes += len(target_bytes)
+                    if (
+                        len(target_bytes) > limits.max_file_bytes
+                        or file_count > limits.max_files
+                        or total_bytes > limits.max_total_bytes
+                    ):
+                        raise PolicyRejection(
+                            "source_total_bytes", "Source tree exceeds an attestation limit."
+                        )
+                    canonical_entries.append(
+                        _CanonicalEntry(
+                            kind=b"L",
+                            path=relative_path,
+                            mode=b"120000",
+                            size=len(target_bytes),
+                            content_sha256=hashlib.sha256(target_bytes).digest(),
+                        )
+                    )
+                    git_children[pending.encoded_parts].append(
+                        _GitEntry(
+                            name=encoded_name,
+                            mode=b"120000",
+                            oid=bytes.fromhex(special.oid),
+                            is_directory=False,
+                        )
+                    )
+                    symlink_snapshots.append((_snapshot(parts, final_stat), target))
+                    seen_special_entries.add(special.path)
+                    continue
 
                 if stat.S_ISDIR(entry_stat.st_mode):
                     directory_count += 1
@@ -337,9 +466,20 @@ def _attest_open_tree(
         finally:
             os.close(directory_fd)
 
-    _revalidate_snapshots(root_fd, root_stat, directory_snapshots, file_snapshots)
+    if seen_special_entries != set(expected_special_entries):
+        raise PolicyRejection(
+            "source_special_missing", "A plan-bound special Git entry is missing."
+        )
+    _revalidate_snapshots(
+        root_fd,
+        root_stat,
+        directory_snapshots,
+        file_snapshots,
+        symlink_snapshots,
+        gitlink_snapshots,
+    )
     tree_oid = _reconstruct_git_tree(git_children)
-    tree_sha256 = _canonical_tree_sha256(canonical_entries)
+    tree_sha256 = _canonical_tree_sha256(canonical_entries, algorithm)
     return _AttestationResult(
         tree_sha256=tree_sha256,
         reconstructed_git_tree_oid=tree_oid,
@@ -428,8 +568,8 @@ def _reconstruct_git_tree(
     return tree_oids[()].hex()
 
 
-def _canonical_tree_sha256(entries: list[_CanonicalEntry]) -> str:
-    digest = hashlib.sha256(SOURCE_TREE_ALGORITHM.encode("ascii") + b"\0")
+def _canonical_tree_sha256(entries: list[_CanonicalEntry], algorithm: str) -> str:
+    digest = hashlib.sha256(algorithm.encode("ascii") + b"\0")
     for entry in sorted(entries, key=lambda item: (item.path, item.kind)):
         digest.update(entry.kind)
         digest.update(len(entry.path).to_bytes(8, "big"))
@@ -446,6 +586,8 @@ def _revalidate_snapshots(
     root_stat: os.stat_result,
     directories: list[_PathSnapshot],
     files: list[_PathSnapshot],
+    symlinks: list[tuple[_PathSnapshot, str]],
+    gitlinks: list[_PathSnapshot],
 ) -> None:
     for expected in directories:
         descriptor = _open_relative_directory(root_fd, expected.parts)
@@ -477,6 +619,34 @@ def _revalidate_snapshots(
             os.close(directory_fd)
         if not _snapshot_matches(expected, observed):
             raise PolicyRejection("source_tree_changed", "Source file changed during attestation.")
+
+    for expected, expected_target in symlinks:
+        directory_fd = _open_relative_directory(root_fd, expected.parts[:-1])
+        try:
+            observed = os.stat(expected.parts[-1], dir_fd=directory_fd, follow_symlinks=False)
+            target = os.readlink(expected.parts[-1], dir_fd=directory_fd)
+        except OSError as exc:
+            raise PolicyRejection(
+                "source_tree_changed", "Plan-bound symlink changed during attestation."
+            ) from exc
+        finally:
+            os.close(directory_fd)
+        if not _snapshot_matches(expected, observed) or target != expected_target:
+            raise PolicyRejection(
+                "source_tree_changed", "Plan-bound symlink changed during attestation."
+            )
+
+    for expected in gitlinks:
+        descriptor = _open_relative_directory(root_fd, expected.parts)
+        try:
+            observed = os.fstat(descriptor)
+            populated = bool(os.listdir(descriptor))
+        finally:
+            os.close(descriptor)
+        if not _snapshot_matches(expected, observed) or populated:
+            raise PolicyRejection(
+                "source_tree_changed", "Plan-bound Gitlink changed during attestation."
+            )
 
     if not _same_snapshot(root_stat, os.fstat(root_fd)):
         raise PolicyRejection("source_tree_changed", "Source root changed during attestation.")
@@ -563,6 +733,65 @@ def _validate_expected_oid(value: str | None) -> str | None:
             "invalid_git_tree_oid", "Expected Git tree object ID must be 40 lowercase hex digits."
         )
     return value
+
+
+def _validate_expected_special_entries(
+    values: Iterable[ExpectedGitSpecialEntry], limits: SourceAttestationLimits
+) -> dict[str, ExpectedGitSpecialEntry]:
+    result: dict[str, ExpectedGitSpecialEntry] = {}
+    for value in values:
+        if not isinstance(value, ExpectedGitSpecialEntry) or value.mode not in {"120000", "160000"}:
+            raise PolicyRejection("source_special_policy", "Expected special Git entry is invalid.")
+        parts = tuple(value.path.split("/"))
+        if not parts or any(part in {"", ".", ".."} for part in parts):
+            raise PolicyRejection("source_special_policy", "Expected special Git path is unsafe.")
+        encoded_parts = tuple(_validate_component(part, limits) for part in parts)
+        if len(b"/".join(encoded_parts)) > limits.max_path_bytes:
+            raise PolicyRejection("source_special_policy", "Expected special Git path is too long.")
+        if _GIT_OID_RE.fullmatch(value.oid) is None or value.path in result:
+            raise PolicyRejection(
+                "source_special_policy", "Expected special Git identity is invalid."
+            )
+        if value.mode == "120000":
+            if not isinstance(value.symlink_target, str):
+                raise PolicyRejection(
+                    "source_special_policy", "Expected Git symlink target is invalid."
+                )
+            try:
+                target_bytes = value.symlink_target.encode("utf-8")
+            except UnicodeError as exc:
+                raise PolicyRejection(
+                    "source_special_policy", "Expected Git symlink target is invalid."
+                ) from exc
+            if len(target_bytes) > limits.max_file_bytes:
+                raise PolicyRejection(
+                    "source_special_policy", "Expected Git symlink target is too large."
+                )
+            digest = hashlib.sha1(
+                f"blob {len(target_bytes)}\0".encode("ascii"), usedforsecurity=False
+            )
+            digest.update(target_bytes)
+            if digest.hexdigest() != value.oid:
+                raise PolicyRejection(
+                    "source_special_policy", "Expected Git symlink target identity is invalid."
+                )
+        elif value.symlink_target is not None:
+            raise PolicyRejection(
+                "source_special_policy", "Expected Gitlink may not have a symlink target."
+            )
+        result[value.path] = value
+    return result
+
+
+def validate_expected_git_special_entries(
+    values: Iterable[ExpectedGitSpecialEntry],
+    *,
+    limits: SourceAttestationLimits | None = None,
+) -> tuple[ExpectedGitSpecialEntry, ...]:
+    """Validate and canonically order one exact-plan special-entry profile."""
+
+    validated = _validate_expected_special_entries(values, limits or SourceAttestationLimits())
+    return tuple(validated[path] for path in sorted(validated, key=lambda value: value.encode()))
 
 
 def _required_flag(name: str) -> int:

@@ -210,6 +210,7 @@ def _capability() -> package_module.VerifiedV02EvaluatorCapability:
         source_context_algorithm=issuer.V02_SOURCE_CONTEXT_ALGORITHM,
         source_context_policy_sha256=issuer.V02_SOURCE_CONTEXT_POLICY_SHA256,
         source_context_sha256="b" * 64,
+        source_special_entries=(),
         hidden_fixed_root_tree_oid="c" * 40,
         fixing_head_commit_sha="d" * 40,
         fixing_head_root_tree_oid="e" * 40,
@@ -1009,3 +1010,23 @@ index 0000000..0123456
 """
     with pytest.raises(PolicyRejection, match="symlinks or Gitlinks"):
         issuer._apply_patch(root, special)
+
+    mismatched = b"""diff --git a/safe.py b/safe.py
+--- a/link
++++ b/link
+@@ -1 +1 @@
+-old
++new
+"""
+    with pytest.raises(PolicyRejection, match="metadata differs"):
+        issuer._apply_patch(root, mismatched, immutable_special_paths=("link",))
+
+    descending = b"""diff --git a/vendor/module.py b/vendor/module.py
+--- a/vendor/module.py
++++ b/vendor/module.py
+@@ -1 +1 @@
+-old
++new
+"""
+    with pytest.raises(PolicyRejection, match="plan-bound"):
+        issuer._apply_patch(root, descending, immutable_special_paths=("vendor",))

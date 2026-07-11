@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -15,7 +17,7 @@ from reproassert.candidate import ValidatedCandidate, validate_candidate_payload
 from reproassert.differential import DIFFERENTIAL_SCHEDULE, verify_differential_candidate
 from reproassert.errors import PolicyRejection
 from reproassert.sandbox import DockerRunResult
-from reproassert.source_attestation import attest_source_tree
+from reproassert.source_attestation import ExpectedGitSpecialEntry, attest_source_tree
 
 
 def _result(
@@ -120,9 +122,10 @@ def _capability(
     fixed: Path,
     *,
     dependencies_required: bool = False,
+    special_entries: tuple[ExpectedGitSpecialEntry, ...] = (),
 ) -> VerifiedV02EvaluatorCapability:
-    base_tree = attest_source_tree(base)
-    fixed_tree = attest_source_tree(fixed)
+    base_tree = attest_source_tree(base, expected_special_entries=special_entries)
+    fixed_tree = attest_source_tree(fixed, expected_special_entries=special_entries)
     return package_module.VerifiedV02EvaluatorCapability(
         package_module._CAPABILITY_ISSUER,
         case=V02CaseIdentity(
@@ -150,6 +153,7 @@ def _capability(
         source_context_algorithm="reproassert-v02-source-context-v1",
         source_context_policy_sha256="e" * 64,
         source_context_sha256="0" * 64,
+        source_special_entries=special_entries,
         hidden_fixed_root_tree_oid=fixed_tree.reconstructed_git_tree_oid,
         fixing_head_commit_sha="d" * 40,
         fixing_head_root_tree_oid="e" * 40,
@@ -203,6 +207,45 @@ def test_interleaves_three_base_failures_and_three_fixed_passes(tmp_path: Path) 
     ]
     assert all(call["dependency_volume"] is None for call in sandbox.calls)
     assert sandbox.cleaned
+
+
+def test_differential_staging_preserves_plan_bound_special_entries(tmp_path: Path) -> None:
+    base, fixed, candidate, _ = _workspaces(tmp_path)
+    target = "example_project.py"
+    target_bytes = target.encode()
+    digest = hashlib.sha1(f"blob {len(target_bytes)}\0".encode(), usedforsecurity=False)
+    digest.update(target_bytes)
+    specials = (
+        ExpectedGitSpecialEntry("module-link", "120000", digest.hexdigest(), target),
+        ExpectedGitSpecialEntry("vendor", "160000", "1" * 40),
+    )
+    for root in (base, fixed):
+        os.symlink(target, root / "module-link")
+        (root / "vendor").mkdir()
+    capability = _capability(base, fixed, special_entries=specials)
+    symptom = candidate.expected_symptom
+    executions = [_collection()]
+    executions.extend(
+        _result(
+            role,
+            exit_code=1 if role == "base" else 0,
+            message=symptom,
+            passed=role == "fixed",
+        )
+        for role in DIFFERENTIAL_SCHEDULE
+    )
+
+    result = verify_differential_candidate(
+        sandbox=_Sandbox(executions),  # type: ignore[arg-type]
+        base_source=base,
+        fixed_source=fixed,
+        relative_path="tests/reproassert/test_issue_9.py",
+        candidate=candidate,
+        evaluator_capability=capability,
+        run_id="case-9-special",
+    )
+
+    assert result.accepted
 
 
 def test_rejects_incidental_base_failure_that_still_fails_on_fix(tmp_path: Path) -> None:

@@ -124,8 +124,9 @@ remain deferred, and nobody has been contacted.**
 - Leak-audited dataset selection: **20/20 frozen**; prospective issue chronology remains unproven.
 - Prepared dependency and hidden-fix evaluator packages: **0/20 authentic scored case packages**.
   The provider-free dataset transaction has authentically materialized and freshly rederived 20/20
-  safe projections locally, and v0.2 exact-object source preparation is now supported. The remaining
-  source/dependency/hidden-fix package evidence and genuine reviewer assignments do not yet exist.
+  safe projections locally. Exact-object preparation and fresh nominal source issuance also passed
+  20/20 locally, including the frozen tracked-symlink and Gitlink cases. The remaining dependency,
+  hidden-fix package evidence, and genuine reviewer assignments do not yet exist.
   The issuer, runner, replay, controls, and schemas are implemented, but no paid campaign ran.
 - Exact-object source receipts: **20/20 accepted and independently reverified locally**; private
   receipts are not a public index and have not changed the frozen campaign prerequisite.

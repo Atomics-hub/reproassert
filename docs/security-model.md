@@ -129,6 +129,13 @@ multi-hop chains and must remain inside the source root; gitlinks become empty u
 directories and are never followed. The metadata-free workspace is rechecked and removed before its
 preparation receipt is written. This path still does not run a generator or make a campaign ready.
 
+The v0.2 semantic issuer carries that exact special-entry profile forward as nominal process-local
+authority. Later attestations use no-follow metadata reads, require identical symlink target/blob
+identity, require Gitlinks to stay empty on the same filesystem, and reconstruct the Git root with
+modes `120000` and `160000`. Evaluator patches are rejected if any path-bearing header or
+rename/copy field touches or descends through a plan-bound special entry. Submodules are never
+initialized or fetched; a case that needs their contents must fail as an unsupported setup.
+
 Source context generation reads regular text files without following final symlinks. It exposes at
 most 5,000 manifest names, 96 KiB of selected context, and 16 KiB from any one file. Names matching a
 secret-like heuristic remain visible in the manifest but their contents are skipped. This is a

@@ -62,10 +62,11 @@ chronology-honest dataset-snapshot selection rather than relabeling v0.1. The ne
    them from the denominator.
 
 The provider-free dataset transaction and v0.2 exact-object source commands are implemented. A
-fresh authentic local run materialized and independently rederived all 20 safe dataset projections
-with zero provider calls. That closes input preparation only: complete source/dependency/hidden-fix
-packages, genuine reviewer assignments, preregistration, and request/pricing authorization are still
-required before a scored run.
+fresh authentic local run materialized and independently rederived all 20 safe dataset projections;
+exact-object source preparation and nominal issuance also passed 20/20, with zero provider calls.
+That closes those input lanes only: dependency/hidden-fix case packages, genuine reviewer
+assignments, preregistration, and request/pricing authorization are still required before a scored
+run.
 
 Complete historical body revision capture remains an optional future upgrade to a stronger
 chronology claim. It is not required for the current explicitly `chronology_unproven` cohort.
