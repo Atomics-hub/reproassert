@@ -105,9 +105,7 @@ class _DockerEngine:
         self._docker = docker
 
     def load(self, archive: BinaryIO, *, timeout_seconds: float) -> None:
-        result = self._run(
-            ["image", "load"], timeout_seconds=timeout_seconds, stdin=archive
-        )
+        result = self._run(["image", "load"], timeout_seconds=timeout_seconds, stdin=archive)
         if result.returncode != 0:
             raise _reject("Docker could not load the verified parser image archive.")
 
