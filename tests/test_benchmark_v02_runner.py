@@ -599,6 +599,7 @@ def _exact_scored_barrier_fixture(
     *,
     selected_index: int,
     selected_candidate: bool = True,
+    authentic_selected_recovery: bool = False,
 ) -> tuple[
     runner._RunContext,
     Path,
@@ -606,16 +607,61 @@ def _exact_scored_barrier_fixture(
     exact_preregistration_module.VerifiedV02ExactPreregistration,
 ]:
     rows: list[dict[str, object]] = []
+    selected_context: issuer.VerifiedV02GeneratorSourceContext | None = None
+    selected_request: GenerationRequest | None = None
+    selected_projection_sha256: str | None = None
     for index in range(1, 21):
         case = _campaign_case(index)
         contract = v02_candidate_contract(case_id=case.id, issue_number=index)
+        source_context = SourceContext(("demo.py",), (), 0)
+        projection_sha256 = case.generator_projection_sha256
+        if authentic_selected_recovery and index == selected_index:
+            title = f"Issue {index}"
+            body = "Reported behavior should be reproduced."
+            snapshot = canonical_snapshot_content_bytes(title=title, body=body)
+            projection = generator_projection_bytes(
+                V02CaseIdentity(case.id, case.repo, case.issue_url, case.base_sha),
+                {
+                    "title": title,
+                    "body": body,
+                    "snapshot_sha256": hashlib.sha256(snapshot).hexdigest(),
+                },
+            )
+            projection_path = tmp_path / "exact-selected-projection.json"
+            projection_path.write_bytes(projection)
+            projection_path.chmod(0o600)
+            projection_sha256 = hashlib.sha256(projection).hexdigest()
+            identity = V02CaseIdentity(case.id, case.repo, case.issue_url, case.base_sha)
+            context_record = {
+                "algorithm": issuer.V02_SOURCE_CONTEXT_ALGORITHM,
+                "policy_sha256": issuer.V02_SOURCE_CONTEXT_POLICY_SHA256,
+                "case": vars(identity),
+                "source_evidence_sha256": f"{index + 400:064x}",
+                "source_tree_sha256": f"{index + 500:064x}",
+                "snapshot_sha256": hashlib.sha256(snapshot).hexdigest(),
+                "context": source_context.to_dict(),
+            }
+            context = object.__new__(issuer.VerifiedV02GeneratorSourceContext)
+            for name, value in {
+                "case": identity,
+                "source_evidence_sha256": f"{index + 400:064x}",
+                "source_tree_sha256": f"{index + 500:064x}",
+                "snapshot_sha256": hashlib.sha256(snapshot).hexdigest(),
+                "algorithm": issuer.V02_SOURCE_CONTEXT_ALGORITHM,
+                "policy_sha256": issuer.V02_SOURCE_CONTEXT_POLICY_SHA256,
+                "context_sha256": issuer._json_sha256(context_record),
+                "source_context": source_context,
+                "_issuer": issuer._CONTEXT_ISSUER,
+            }.items():
+                object.__setattr__(context, name, value)
+            selected_context = issuer.require_v02_generator_source_context(context)
         request = GenerationRequest(
             issue_url=case.issue_url,
             issue_number=index,
             issue_title=f"Issue {index}",
             issue_body="Reported behavior should be reproduced.",
             source_sha=case.base_sha,
-            source_context=SourceContext(("demo.py",), (), 0),
+            source_context=source_context,
             candidate_profile=contract.profile,
             required_test_function=(
                 contract.test_function if contract.profile == "sympy-native-v1" else None
@@ -623,6 +669,9 @@ def _exact_scored_barrier_fixture(
             attempt=1,
             feedback="",
         )
+        if authentic_selected_recovery and index == selected_index:
+            selected_request = request
+            selected_projection_sha256 = projection_sha256
         row: dict[str, object] = {
             "base_sha": case.base_sha,
             "candidate_profile": contract.profile,
@@ -634,7 +683,7 @@ def _exact_scored_barrier_fixture(
                 if index == 14
                 else "runtime_attested_evaluator_preflight_ready"
             ),
-            "generator_projection_sha256": case.generator_projection_sha256,
+            "generator_projection_sha256": projection_sha256,
             "instance_id": f"instance-{index}",
             "issue_url": case.issue_url,
             "mapping_selected_hunks_sha256": f"{index + 900:064x}",
@@ -678,14 +727,48 @@ def _exact_scored_barrier_fixture(
     ledger_path = tmp_path / "exact-scored-events.jsonl"
     selected: runner._RunContext | None = None
     for index, case in enumerate(loaded.cases, start=1):
-        run = _campaign_run(
-            tmp_path,
-            case=case,
-            preregistration_sha256=loaded.raw_sha256,
-            cohort_sha256=loaded.cohort_sha256,
-            ledger_path=ledger_path,
-            request_set_sha256=loaded.request_set_sha256,
-        )
+        if authentic_selected_recovery and index == selected_index:
+            assert selected_context is not None
+            assert selected_request is not None
+            assert selected_projection_sha256 is not None
+            case = replace(case, source_context_sha256=selected_context.context_sha256)
+            attempt_directory = tmp_path / f"campaign-attempt-{index:03d}"
+            attempt_directory.mkdir(mode=0o700)
+            context_record = runner._source_context_record(selected_context)
+            rendered_input_sha256 = runner._rendered_input_sha256(selected_request)
+            run = runner._RunContext(
+                ledger_path=ledger_path,
+                attempt_directory=attempt_directory,
+                policy=_policy(),
+                attempt_id=f"attempt_{index:03d}_{index:032x}",
+                case=case,
+                preregistration_sha256=loaded.raw_sha256,
+                cohort_sha256=loaded.cohort_sha256,
+                source_context=selected_context,
+                request=selected_request,
+                rendered_input_sha256=rendered_input_sha256,
+                runner_input_sha256=runner._runner_input_digest(
+                    preregistration_sha256=loaded.raw_sha256,
+                    preregistration_request_set_sha256=loaded.request_set_sha256,
+                    cohort_sha256=loaded.cohort_sha256,
+                    case_record=vars(case),
+                    generator_projection_sha256=selected_projection_sha256,
+                    context_record=context_record,
+                    rendered_input_sha256=rendered_input_sha256,
+                    configuration_sha256=_policy().configuration_sha256,
+                ),
+                preregistration_request_set_sha256=loaded.request_set_sha256,
+            )
+            _append_attempt_start(run)
+        else:
+            run = _campaign_run(
+                tmp_path,
+                case=case,
+                preregistration_sha256=loaded.raw_sha256,
+                cohort_sha256=loaded.cohort_sha256,
+                ledger_path=ledger_path,
+                request_set_sha256=loaded.request_set_sha256,
+            )
         _freeze_campaign_disposition(
             run,
             candidate_submitted=(selected_candidate if index == selected_index else True),
@@ -778,7 +861,9 @@ def test_exact_scored_entry_evaluates_pytest_and_sympy_after_exact_barrier(
     )
     monkeypatch.setattr(exact_scored, "hidden_case_artifacts", lambda _authority, _case: {})
     monkeypatch.setattr(exact_scored, "evaluate_instance_candidate", evaluate)
-    monkeypatch.setattr(exact_scored, "verify_instance_candidate_receipt", lambda _path: receipt)
+    monkeypatch.setattr(
+        exact_scored, "_verify_reusable_receipt", lambda _path, _run, _artifact: receipt
+    )
 
     kwargs = {
         "preregistration_path": preregistration_path,
@@ -841,6 +926,150 @@ def test_exact_scored_no_candidate_never_requires_hidden_or_evaluator(
     )
     assert result.evaluation_kind == "no_candidate"
     assert result.outcome == "no_output"
+
+
+def test_exact_scored_recovery_reconstructs_exact_authorized_input_without_provider(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run, preregistration_path, barrier, authority = _exact_scored_barrier_fixture(
+        tmp_path,
+        selected_index=1,
+        selected_candidate=False,
+        authentic_selected_recovery=True,
+    )
+    projection_path = tmp_path / "exact-selected-projection.json"
+    provider_calls = 0
+
+    def forbidden_provider(*_args: object, **_kwargs: object) -> bytes:
+        nonlocal provider_calls
+        provider_calls += 1
+        raise AssertionError("exact recovery must never call the provider")
+
+    monkeypatch.setattr(generator_module, "_post_openai_response", forbidden_provider)
+    reconstructed = runner._prepare_recovery_context(
+        preregistration_path=preregistration_path,
+        case_id=run.case.id,
+        generator_projection_path=projection_path,
+        generator_source_context=run.source_context,
+        ledger_path=run.ledger_path,
+        attempt_directory=run.attempt_directory,
+        attempt_id=run.attempt_id,
+        policy=run.policy,
+    )
+    assert reconstructed.runner_input_sha256 == run.runner_input_sha256
+    assert reconstructed.preregistration_request_set_sha256 == authority.request_set_sha256
+    assert barrier.execution_authorization_sha256 == run.policy.execution_authorization_sha256
+
+    kwargs = {
+        "preregistration_path": preregistration_path,
+        "exact_preregistration": authority,
+        "case_id": run.case.id,
+        "generator_projection_path": projection_path,
+        "generator_source_context": run.source_context,
+        "campaign_barrier": barrier,
+        "evaluator_capability": None,
+        "verified_hidden": None,
+        "manifest_path": tmp_path / "unused-manifest.json",
+        "expected_manifest_sha256": "b" * 64,
+        "gold_smoke_receipt_path": tmp_path / "unused-gold.json",
+        "gold_specs_path": tmp_path / "unused-specs.json",
+        "ledger_path": run.ledger_path,
+        "attempt_directory": run.attempt_directory,
+        "attempt_id": run.attempt_id,
+        "executed_at": "2026-07-11T00:00:00Z",
+        "tool_git_sha": "1" * 40,
+        "policy": run.policy,
+    }
+    first = exact_scored.evaluate_v02_exact_frozen_case(**kwargs)
+    event_count = len(runner.read_v02_scored_ledger(run.ledger_path).events)
+    replay = exact_scored.evaluate_v02_exact_frozen_case(**kwargs)
+    assert first.evaluation_kind == "no_candidate"
+    assert replay.terminal_event_sha256 == first.terminal_event_sha256
+    assert len(runner.read_v02_scored_ledger(run.ledger_path).events) == event_count
+    assert provider_calls == 0
+
+
+def test_exact_scored_reuses_durable_receipt_after_pre_result_crash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run, preregistration_path, barrier, authority = _exact_scored_barrier_fixture(
+        tmp_path,
+        selected_index=1,
+        authentic_selected_recovery=True,
+    )
+    receipt = SimpleNamespace(
+        path=run.attempt_directory / exact_scored.RECEIPT_FILENAME,
+        sha256="a" * 64,
+        case_id=run.case.id,
+        classification="verified_reproduction",
+        accepted=True,
+    )
+    capability = SimpleNamespace(
+        case_id=run.case.id,
+        evaluator_public_commitment_sha256=run.case.evaluator_commitment_sha256,
+        gold_smoke_classification="semantic_valid",
+        gold_smoke_reason="fails_on_base_passes_on_fixed",
+    )
+    evaluator_calls = 0
+    provider_calls = 0
+
+    def evaluate(**kwargs: object) -> Any:
+        nonlocal evaluator_calls
+        evaluator_calls += 1
+        cast(Path, kwargs["output_path"]).write_text("{}")
+        return receipt
+
+    def forbidden_provider(*_args: object, **_kwargs: object) -> bytes:
+        nonlocal provider_calls
+        provider_calls += 1
+        raise AssertionError("receipt recovery must not call the provider")
+
+    original_write_result = exact_scored._write_result
+    write_attempts = 0
+
+    def crash_once(*args: object, **kwargs: object) -> Any:
+        nonlocal write_attempts
+        write_attempts += 1
+        if write_attempts == 1:
+            raise RuntimeError("simulated crash after durable receipt")
+        return original_write_result(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(generator_module, "_post_openai_response", forbidden_provider)
+    monkeypatch.setattr(
+        exact_scored, "require_v02_exact_image_evaluator_capability", lambda value: value
+    )
+    monkeypatch.setattr(exact_scored, "hidden_case_artifacts", lambda _authority, _case: {})
+    monkeypatch.setattr(exact_scored, "evaluate_instance_candidate", evaluate)
+    monkeypatch.setattr(
+        exact_scored, "_verify_reusable_receipt", lambda _path, _run, _artifact: receipt
+    )
+    monkeypatch.setattr(exact_scored, "_write_result", crash_once)
+    kwargs = {
+        "preregistration_path": preregistration_path,
+        "exact_preregistration": authority,
+        "case_id": run.case.id,
+        "generator_projection_path": tmp_path / "exact-selected-projection.json",
+        "generator_source_context": run.source_context,
+        "campaign_barrier": barrier,
+        "evaluator_capability": cast(Any, capability),
+        "verified_hidden": cast(Any, object()),
+        "manifest_path": tmp_path / "unused-manifest.json",
+        "expected_manifest_sha256": "b" * 64,
+        "gold_smoke_receipt_path": tmp_path / "unused-gold.json",
+        "gold_specs_path": tmp_path / "unused-specs.json",
+        "ledger_path": run.ledger_path,
+        "attempt_directory": run.attempt_directory,
+        "attempt_id": run.attempt_id,
+        "executed_at": "2026-07-11T00:00:00Z",
+        "tool_git_sha": "1" * 40,
+        "policy": run.policy,
+    }
+    with pytest.raises(RuntimeError, match="simulated crash"):
+        exact_scored.evaluate_v02_exact_frozen_case(**kwargs)
+    result = exact_scored.evaluate_v02_exact_frozen_case(**kwargs)
+    assert result.evaluation_kind == "exact_image_receipt"
+    assert evaluator_calls == 1
+    assert provider_calls == 0
 
 
 def test_exact_scored_case014_preserves_offline_network_failure(

@@ -139,6 +139,17 @@ def test_approval_statement_binds_final_freeze_hash_and_exact_caps() -> None:
     assert "zero overage" in statement
 
 
+def test_exact_execution_authorities_are_verifier_issued_only() -> None:
+    with pytest.raises(TypeError, match="verifier-issued"):
+        execution_freeze.VerifiedV02ExecutionFreeze()
+    with pytest.raises(TypeError, match="verifier-issued"):
+        execution_freeze.VerifiedV02ExactImageAuthorization()
+    with pytest.raises(PolicyRejection, match="verifier-issued"):
+        execution_freeze.require_v02_exact_image_execution_freeze(SimpleNamespace())
+    with pytest.raises(PolicyRejection, match="verifier-issued"):
+        execution_freeze.require_v02_exact_image_authorization(SimpleNamespace())
+
+
 def test_prepare_and_authorize_exact_freeze_end_to_end_without_provider(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -324,6 +335,8 @@ def test_prepare_and_authorize_exact_freeze_end_to_end_without_provider(
     bound = runner._verify_execution_authorization_binding(
         execution_authorization_path=authorization_path,
         exact_execution_freeze_path=output_path,
+        exact_execution_freeze=verified,
+        exact_execution_authorization=authorization,
         campaign_freeze_path=placeholders["campaign-freeze.json"],
         preregistration_path=exact_path,
         case_id="rk-v0.2-001",

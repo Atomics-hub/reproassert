@@ -10,7 +10,7 @@ import stat
 import time
 import uuid
 from collections.abc import Callable, Mapping
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Protocol, cast
@@ -1489,6 +1489,8 @@ def generate_v02_scored_case(
     campaign_freeze_path: Path,
     execution_authorization_path: Path,
     exact_execution_freeze_path: Path | None = None,
+    exact_execution_freeze: object | None = None,
+    exact_execution_authorization: object | None = None,
     case_id: str,
     generator_projection_path: Path,
     generator_source_context: VerifiedV02GeneratorSourceContext,
@@ -1513,6 +1515,8 @@ def generate_v02_scored_case(
         exact_execution_freeze_path=(
             Path(exact_execution_freeze_path) if exact_execution_freeze_path is not None else None
         ),
+        exact_execution_freeze=exact_execution_freeze,
+        exact_execution_authorization=exact_execution_authorization,
         case_id=case_id,
         generator_projection_path=Path(generator_projection_path),
         generator_source_context=generator_source_context,
@@ -1601,6 +1605,8 @@ def _start_new_scored_attempt(
     campaign_freeze_path: Path,
     execution_authorization_path: Path,
     exact_execution_freeze_path: Path | None = None,
+    exact_execution_freeze: object | None = None,
+    exact_execution_authorization: object | None = None,
     case_id: str,
     generator_projection_path: Path,
     generator_source_context: VerifiedV02GeneratorSourceContext,
@@ -1618,6 +1624,7 @@ def _start_new_scored_attempt(
     case = _find_case(preregistration.cases, case_id)
     projection = _load_projection(generator_projection_path, case)
     context = require_v02_generator_source_context(generator_source_context)
+    case = _bind_scored_case_context(preregistration, case, context)
     request = _generation_request(case, projection, context)
     _validate_scored_context_request(
         preregistration, context, case, request, policy.requested_model
@@ -1626,6 +1633,8 @@ def _start_new_scored_attempt(
     execution_authorization = _verify_execution_authorization_binding(
         execution_authorization_path=execution_authorization_path,
         exact_execution_freeze_path=exact_execution_freeze_path,
+        exact_execution_freeze=exact_execution_freeze,
+        exact_execution_authorization=exact_execution_authorization,
         campaign_freeze_path=campaign_freeze_path,
         preregistration_path=preregistration_path,
         case_id=case_id,
@@ -1966,7 +1975,9 @@ def _generation_barrier_payload_from_events(
             start["campaign_id"] != policy.campaign_id
             or start_payload.get("preregistration_sha256") != preregistration.raw_sha256
             or start_payload.get("cohort_sha256") != cohort_sha256
-            or start_payload.get("case") != asdict(case)
+            or not _attempt_case_matches_preregistration(
+                start_payload.get("case"), case, preregistration
+            )
             or _sha256_json(start_payload.get("configuration")) != policy.configuration_sha256
         ):
             raise _reject(
@@ -2293,6 +2304,8 @@ def recover_v02_scored_case(
     campaign_freeze_path: Path,
     execution_authorization_path: Path,
     exact_execution_freeze_path: Path | None = None,
+    exact_execution_freeze: object | None = None,
+    exact_execution_authorization: object | None = None,
     case_id: str,
     generator_projection_path: Path,
     generator_source_context: VerifiedV02GeneratorSourceContext,
@@ -2319,6 +2332,8 @@ def recover_v02_scored_case(
         exact_execution_freeze_path=(
             Path(exact_execution_freeze_path) if exact_execution_freeze_path is not None else None
         ),
+        exact_execution_freeze=exact_execution_freeze,
+        exact_execution_authorization=exact_execution_authorization,
         case_id=case_id,
         generator_projection_path=Path(generator_projection_path),
         generator_source_context=generator_source_context,
@@ -2388,6 +2403,8 @@ def _prepare_recovery_context(
     campaign_freeze_path: Path | None = None,
     execution_authorization_path: Path | None = None,
     exact_execution_freeze_path: Path | None = None,
+    exact_execution_freeze: object | None = None,
+    exact_execution_authorization: object | None = None,
     case_id: str,
     generator_projection_path: Path,
     generator_source_context: VerifiedV02GeneratorSourceContext,
@@ -2413,6 +2430,7 @@ def _prepare_recovery_context(
     case = _find_case(preregistration.cases, case_id)
     projection = _load_projection(generator_projection_path, case)
     context = require_v02_generator_source_context(generator_source_context)
+    case = _bind_scored_case_context(preregistration, case, context)
     request = _generation_request(case, projection, context)
     _validate_scored_context_request(
         preregistration, context, case, request, policy.requested_model
@@ -2428,6 +2446,8 @@ def _prepare_recovery_context(
         execution_authorization = _verify_execution_authorization_binding(
             execution_authorization_path=execution_authorization_path,
             exact_execution_freeze_path=exact_execution_freeze_path,
+            exact_execution_freeze=exact_execution_freeze,
+            exact_execution_authorization=exact_execution_authorization,
             campaign_freeze_path=campaign_freeze_path,
             preregistration_path=preregistration_path,
             case_id=case_id,
@@ -2521,6 +2541,8 @@ def _verify_execution_authorization_binding(
     *,
     execution_authorization_path: Path,
     exact_execution_freeze_path: Path | None,
+    exact_execution_freeze: object | None,
+    exact_execution_authorization: object | None,
     campaign_freeze_path: Path,
     preregistration_path: Path,
     case_id: str,
@@ -2542,13 +2564,22 @@ def _verify_execution_authorization_binding(
             authorization_raw=_authorization_raw,
             authorization=authorization_probe,
             exact_execution_freeze_path=exact_execution_freeze_path,
+            exact_execution_freeze=exact_execution_freeze,
+            exact_execution_authorization=exact_execution_authorization,
             campaign_freeze_path=campaign_freeze_path,
             preregistration_path=preregistration_path,
             case_id=case_id,
             rendered_input_sha256=rendered_input_sha256,
             policy=policy,
         )
-    if exact_execution_freeze_path is not None:
+    if any(
+        value is not None
+        for value in (
+            exact_execution_freeze_path,
+            exact_execution_freeze,
+            exact_execution_authorization,
+        )
+    ):
         raise _reject(
             "v02_execution_authorization",
             "Legacy authorization rejects an exact execution-freeze path.",
@@ -2578,6 +2609,8 @@ def _verify_exact_execution_authorization_binding(
     authorization_raw: bytes,
     authorization: Mapping[str, object],
     exact_execution_freeze_path: Path | None,
+    exact_execution_freeze: object | None,
+    exact_execution_authorization: object | None,
     campaign_freeze_path: Path,
     preregistration_path: Path,
     case_id: str,
@@ -2591,6 +2624,22 @@ def _verify_exact_execution_authorization_binding(
             "v02_execution_authorization",
             "Exact authorization requires its immutable execution-freeze artifact.",
         )
+    from reproassert.benchmark_v02_execution_freeze import (
+        require_v02_exact_image_authorization,
+        require_v02_exact_image_execution_freeze,
+    )
+
+    verified_freeze = require_v02_exact_image_execution_freeze(exact_execution_freeze)
+    verified_authorization = require_v02_exact_image_authorization(exact_execution_authorization)
+    if (
+        verified_freeze.path != exact_execution_freeze_path
+        or verified_authorization.path != authorization_path
+        or verified_authorization.execution_freeze_sha256 != verified_freeze.sha256
+    ):
+        raise _reject(
+            "v02_execution_authorization",
+            "Exact execution paths differ from fresh verifier-issued authorities.",
+        )
     _freeze_raw, freeze = _load_canonical_object(
         exact_execution_freeze_path,
         limit=512 * 1024,
@@ -2599,6 +2648,11 @@ def _verify_exact_execution_authorization_binding(
     )
     auth_sha = hashlib.sha256(authorization_raw).hexdigest()
     freeze_sha = hashlib.sha256(_freeze_raw).hexdigest()
+    if auth_sha != verified_authorization.sha256 or freeze_sha != verified_freeze.sha256:
+        raise _reject(
+            "v02_execution_authorization",
+            "Exact execution bytes changed after authoritative verification.",
+        )
     expected_authorization_keys = {
         "algorithm",
         "authorization",
@@ -5418,6 +5472,29 @@ def _validate_scored_context_request(
             "v02_exact_preregistration",
             "Generated provider request differs from exact preregistration.",
         )
+
+
+def _bind_scored_case_context(
+    preregistration: ScoredV02Preregistration,
+    case: PreregisteredV02Case,
+    context: VerifiedV02GeneratorSourceContext,
+) -> PreregisteredV02Case:
+    if preregistration.format == "legacy-v1":
+        return case
+    return replace(case, source_context_sha256=context.context_sha256)
+
+
+def _attempt_case_matches_preregistration(
+    value: object,
+    case: PreregisteredV02Case,
+    preregistration: ScoredV02Preregistration,
+) -> bool:
+    if not isinstance(value, Mapping):
+        return False
+    expected = asdict(case)
+    if preregistration.format == "exact-image-v1":
+        expected["source_context_sha256"] = value.get("source_context_sha256")
+    return value == expected
 
 
 def _bind_capability(

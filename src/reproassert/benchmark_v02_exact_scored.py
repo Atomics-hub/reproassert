@@ -13,6 +13,7 @@ from typing import cast
 from reproassert import benchmark_v02_runner as runner
 from reproassert.benchmark_v02_candidate_evaluator import (
     CandidateArtifact,
+    CandidateEvaluationReceipt,
     ExecutorFactory,
     evaluate_instance_candidate,
     verify_instance_candidate_receipt,
@@ -96,6 +97,7 @@ def evaluate_v02_exact_frozen_case(
     )
     lock = runner._acquire_recovery_lock(run.attempt_directory)
     mutated = False
+    receipt_recoverable = False
     try:
         exact_sha, exact_case_commitment = _bind_exact_preregistration_view(
             preregistration_path=Path(preregistration_path),
@@ -113,7 +115,12 @@ def evaluate_v02_exact_frozen_case(
         )
         snapshot = runner.read_v02_scored_ledger(run.ledger_path)
         disposition = runner._attempt_generation_disposition(snapshot, run)
-        runner._preflight_frozen_evaluation(snapshot, run)
+        receipt_path = run.attempt_directory / RECEIPT_FILENAME
+        receipt_recovery = receipt_path.exists()
+        if receipt_recovery:
+            _preflight_receipt_recovery(snapshot, run)
+        else:
+            runner._preflight_frozen_evaluation(snapshot, run)
         if disposition["status"] == "no_candidate":
             mutated = True
             return _write_result(
@@ -151,7 +158,11 @@ def evaluate_v02_exact_frozen_case(
             raise _reject("Freshly verified hidden extraction authority is required.")
         hidden_case_artifacts(verified_hidden, run.case.id)
 
-        phase_at = runner._start_phase(run, "differential")
+        phase_at = (
+            _existing_differential_started_at(snapshot, run)
+            if receipt_recovery
+            else runner._start_phase(run, "differential")
+        )
         phase_started = time.monotonic()
         if run.case.id == "rk-v0.2-014":
             if (
@@ -184,54 +195,58 @@ def evaluate_v02_exact_frozen_case(
                 exact_case_commitment_sha256=exact_case_commitment,
             )
 
-        receipt_path = run.attempt_directory / RECEIPT_FILENAME
         artifact = CandidateArtifact(
             relative_path=runner._run_candidate_contract(run).relative_path,
             content=candidate.test_content.encode("utf-8"),
             test_function=candidate.test_function,
         )
-        receipt = evaluate_instance_candidate(
-            evaluator_capability=capability,
-            verified_hidden=verified_hidden,
-            gold_smoke_receipt_path=Path(gold_smoke_receipt_path),
-            gold_specs_path=Path(gold_specs_path),
-            manifest_path=Path(manifest_path),
-            expected_manifest_sha256=expected_manifest_sha256,
-            case_id=run.case.id,
-            candidate=artifact,
-            output_path=receipt_path,
-            executed_at=executed_at,
-            tool_git_sha=tool_git_sha,
-            executor_factory=executor_factory,
-        )
-        verified = verify_instance_candidate_receipt(receipt_path)
-        if verified != receipt or verified.case_id != run.case.id:
+        receipt = None
+        if not receipt_recovery:
+            receipt = evaluate_instance_candidate(
+                evaluator_capability=capability,
+                verified_hidden=verified_hidden,
+                gold_smoke_receipt_path=Path(gold_smoke_receipt_path),
+                gold_specs_path=Path(gold_specs_path),
+                manifest_path=Path(manifest_path),
+                expected_manifest_sha256=expected_manifest_sha256,
+                case_id=run.case.id,
+                candidate=artifact,
+                output_path=receipt_path,
+                executed_at=executed_at,
+                tool_git_sha=tool_git_sha,
+                executor_factory=executor_factory,
+            )
+        verified = _verify_reusable_receipt(receipt_path, run, artifact)
+        if receipt is not None and verified != receipt:
             raise _reject("Exact candidate receipt changed after evaluation.")
+        receipt_recoverable = True
         duration_ms = max(0, round((time.monotonic() - phase_started) * 1_000))
-        runner._finish_phase(
-            run,
-            phase="differential",
-            started_at=phase_at,
-            started_monotonic=phase_started,
-            status="succeeded",
-            classification_code=None,
-            evidence={
-                "accepted": verified.accepted,
-                "classification": verified.classification,
-                "exact_receipt_sha256": verified.sha256,
-                "network_mode": "none",
-            },
-        )
+        if not _differential_finished(snapshot, run):
+            runner._finish_phase(
+                run,
+                phase="differential",
+                started_at=phase_at,
+                started_monotonic=phase_started,
+                status="succeeded",
+                classification_code=None,
+                evidence={
+                    "accepted": verified.accepted,
+                    "classification": verified.classification,
+                    "exact_receipt_sha256": verified.sha256,
+                    "network_mode": "none",
+                },
+            )
         pricing = runner._require_pricing(run.policy)
-        runner._record_cost(
-            run,
-            category="sandbox_compute",
-            attribution="scored",
-            status="measured" if pricing.sandbox_microusd_per_second else "zero_verified",
-            amount=runner._sandbox_cost(pricing, duration_ms),
-            source_call_id=None,
-            evidence={"duration_ms": duration_ms, "exact_receipt_sha256": verified.sha256},
-        )
+        if not _has_sandbox_cost(snapshot, run):
+            runner._record_cost(
+                run,
+                category="sandbox_compute",
+                attribution="scored",
+                status="measured" if pricing.sandbox_microusd_per_second else "zero_verified",
+                amount=runner._sandbox_cost(pricing, duration_ms),
+                source_call_id=None,
+                evidence={"duration_ms": duration_ms, "exact_receipt_sha256": verified.sha256},
+            )
         runner._assert_total_within_reservation(run)
         return _write_result(
             run,
@@ -249,7 +264,7 @@ def evaluate_v02_exact_frozen_case(
             exact_case_commitment_sha256=exact_case_commitment,
         )
     except BaseException as exc:
-        if mutated:
+        if mutated and not receipt_recoverable:
             runner._append_evaluation_crash_if_open(run, exc)
         raise
     finally:
@@ -334,6 +349,91 @@ def verify_v02_exact_scored_result(path: Path) -> Mapping[str, object]:
     }:
         raise _reject("Exact scored result trust claims are invalid.")
     return value
+
+
+def _preflight_receipt_recovery(
+    snapshot: runner.V02LedgerSnapshot, run: runner._RunContext
+) -> None:
+    events = [event for event in snapshot.events if event["attempt_id"] == run.attempt_id]
+    terminal = False
+    for event in events:
+        if event["event_type"] in {"attempt_finished", "attempt_crashed"}:
+            terminal = True
+        elif event["event_type"] == "recovery_started":
+            terminal = False
+    if terminal:
+        raise _reject("Receipt recovery cannot continue from a terminal attempt.")
+    differential = [
+        event
+        for event in events
+        if event["event_type"] in {"phase_started", "phase_finished"}
+        and cast(Mapping[str, object], event["payload"])["phase"] == "differential"
+    ]
+    starts = [event for event in differential if event["event_type"] == "phase_started"]
+    finishes = [event for event in differential if event["event_type"] == "phase_finished"]
+    if len(starts) != 1 or len(finishes) > 1:
+        raise _reject("Receipt recovery requires one unambiguous differential phase.")
+    if any(
+        event["event_type"] in {"phase_started", "phase_finished"}
+        and cast(Mapping[str, object], event["payload"])["phase"] == "result_write"
+        for event in events
+    ):
+        raise _reject("Receipt recovery cannot cross an incomplete result-write boundary.")
+
+
+def _existing_differential_started_at(
+    snapshot: runner.V02LedgerSnapshot, run: runner._RunContext
+) -> str:
+    event = next(
+        event
+        for event in snapshot.events
+        if event["attempt_id"] == run.attempt_id
+        and event["event_type"] == "phase_started"
+        and cast(Mapping[str, object], event["payload"])["phase"] == "differential"
+    )
+    return cast(str, cast(Mapping[str, object], event["payload"])["started_at"])
+
+
+def _differential_finished(snapshot: runner.V02LedgerSnapshot, run: runner._RunContext) -> bool:
+    return any(
+        event["attempt_id"] == run.attempt_id
+        and event["event_type"] == "phase_finished"
+        and cast(Mapping[str, object], event["payload"])["phase"] == "differential"
+        for event in snapshot.events
+    )
+
+
+def _has_sandbox_cost(snapshot: runner.V02LedgerSnapshot, run: runner._RunContext) -> bool:
+    return any(
+        event["attempt_id"] == run.attempt_id
+        and event["event_type"] == "cost_recorded"
+        and cast(Mapping[str, object], event["payload"])["category"] == "sandbox_compute"
+        for event in snapshot.events
+    )
+
+
+def _verify_reusable_receipt(
+    path: Path, run: runner._RunContext, artifact: CandidateArtifact
+) -> CandidateEvaluationReceipt:
+    verified = verify_instance_candidate_receipt(path)
+    with open_regular_file(path) as stream:
+        raw = stream.read(MAX_BYTES + 1)
+    try:
+        value = json.loads(raw, object_pairs_hook=_reject_duplicates)
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError, RecursionError) as exc:
+        raise _reject("Reusable exact receipt is invalid JSON.") from exc
+    candidate = value.get("candidate") if isinstance(value, dict) else None
+    expected_target = f"{artifact.relative_path}::{artifact.test_function}"
+    if (
+        verified.case_id != run.case.id
+        or not isinstance(candidate, Mapping)
+        or candidate.get("sha256") != hashlib.sha256(artifact.content).hexdigest()
+        or candidate.get("bytes") != len(artifact.content)
+        or candidate.get("relative_path") != artifact.relative_path
+        or candidate.get("target") != expected_target
+    ):
+        raise _reject("Reusable exact receipt differs from the durable candidate.")
+    return verified
 
 
 def _write_result(
