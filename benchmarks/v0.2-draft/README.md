@@ -26,6 +26,36 @@ overlap of at least 40 stripped characters; 64 rows were excluded and the final 
 mechanically clean. [`selection-freeze.json`](selection-freeze.json) binds that plan to the parser
 image, boundary receipt, upstream witness, and explicit 0/20 result state.
 
+### Append-only v0.2.1 preparation successor
+
+The original parser image identity was frozen correctly but its exact image archive was not
+retained, so a fresh Docker build cannot reproduce that local image ID even when its parser output
+is byte-identical. The original selection freeze and boundary attestation remain immutable.
+[`preparation-freeze-v0.2.1.json`](preparation-freeze-v0.2.1.json) is an append-only operational
+successor for `linux/arm64`: it preserves the same 20-case cohort and parser-receipt commitment,
+binds the replacement exact image ID, and records that no provider call, result, or campaign
+readiness changed. New preparation commands default to the successor image; verification continues
+to accept the exact legacy image for historical receipts.
+
+The successor freeze binds the fresh public-safe
+[`dataset-parser-boundary-attestation-v0.2.1.json`](dataset-parser-boundary-attestation-v0.2.1.json):
+the exact replacement image rederived the unchanged parser receipt and output under the frozen
+no-network, read-only, capability-dropped policy. Private dataset and hidden-gold receipts must
+still freshly verify their exact stored bytes before authorizing case preparation. This correction
+does not change the honest public state of 0/20 scored runs.
+
+The successor freeze also binds the release archive name, exact 92,300,454-byte size, and SHA-256.
+After downloading that asset from the v0.2.1 release, install it without trusting a mutable tag:
+
+```console
+reproassert benchmark install-v02-parser-image \
+  reproassert-dataset-parser-0.2.1-linux-arm64.tar.gz \
+  --archive-sha256 7dc1c4e4d6bae1c57ba3dba65f29600437eac37e1f5a26f75e08c7867ede44fd
+```
+
+The installer loads only the verified bytes and then requires the frozen image ID and
+`linux/arm64` platform. A different archive, image ID, or architecture fails closed.
+
 The offline producer and validator now parse a frozen GitHub GraphQL capture format, require complete
 issue-creation/body and title-rename histories, select the last combined revision strictly before
 the fixing pull request's publication, rerun exact fixing-link redaction, and independently rederive

@@ -37,8 +37,17 @@ DATASET_PREPARATION_ALGORITHM = "reproassert-v02-private-dataset-preparation-v1"
 DATASET_PREPARATION_SCHEMA_VERSION = "1.0.0"
 DATASET_PREPARATION_DIRECTORY = "v02-dataset-preparation"
 DATASET_PREPARATION_FILENAME = "benchmark-v02-dataset-preparation.json"
-FROZEN_V02_DATASET_PARSER_IMAGE_ID = (
+LEGACY_V02_DATASET_PARSER_IMAGE_ID = (
     "sha256:0bf07669fd085b608e6859b90a486b3ede52d8cc409309410181ab32fbe1118f"
+)
+FROZEN_V021_DATASET_PARSER_IMAGE_ID = (
+    "sha256:fea2f964d148f59c18662a802a0ffa27aff9be5475d8111291ef4c94f9b48cdf"
+)
+# The public CLI follows the append-only successor freeze. Keep the historical name as an alias so
+# downstream callers move to v0.2.1 without breaking imports. Verifiers accept both exact IDs.
+FROZEN_V02_DATASET_PARSER_IMAGE_ID = FROZEN_V021_DATASET_PARSER_IMAGE_ID
+TRUSTED_V02_DATASET_PARSER_IMAGE_IDS = frozenset(
+    {LEGACY_V02_DATASET_PARSER_IMAGE_ID, FROZEN_V021_DATASET_PARSER_IMAGE_ID}
 )
 MAX_PREPARATION_BYTES = 256 * 1024
 _MAX_PLAN_BYTES = 256 * 1024
@@ -483,8 +492,8 @@ def _reject_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 def _image_id(value: object) -> str:
     if not isinstance(value, str) or _IMAGE_ID.fullmatch(value) is None:
         raise _reject("Dataset parser image ID is invalid.")
-    if value != FROZEN_V02_DATASET_PARSER_IMAGE_ID:
-        raise _reject("Dataset parser image differs from the frozen v0.2 trusted image.")
+    if value not in TRUSTED_V02_DATASET_PARSER_IMAGE_IDS:
+        raise _reject("Dataset parser image differs from the append-only trusted image set.")
     return value
 
 

@@ -45,6 +45,7 @@ from reproassert.benchmark_v02_object_source import (
     prepare_v02_object_source_case,
     verify_v02_object_source_receipt,
 )
+from reproassert.benchmark_v02_parser_image import install_v02_parser_image
 from reproassert.benchmark_v02_preparation import (
     FROZEN_V02_DATASET_PARSER_IMAGE_ID,
     prepare_v02_dataset_inputs,
@@ -304,6 +305,62 @@ def benchmark_verify_object_source(
                 "tree_sha256": workspace["tree_sha256"],
                 "verified": True,
                 "campaign_readiness_changed": False,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+@benchmark_group.command("install-v02-parser-image")
+@click.argument(
+    "archive",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+)
+@click.option(
+    "--archive-sha256",
+    required=True,
+    help="Exact lowercase SHA-256 published for the Docker archive.",
+)
+@click.option(
+    "--image-id",
+    default=FROZEN_V02_DATASET_PARSER_IMAGE_ID,
+    show_default=True,
+    help="Exact immutable image ID expected after loading.",
+)
+@click.option(
+    "--platform",
+    "expected_platform",
+    default="linux/arm64",
+    show_default=True,
+    type=click.Choice(["linux/amd64", "linux/arm64"]),
+)
+def benchmark_install_v02_parser_image(
+    archive: Path,
+    archive_sha256: str,
+    image_id: str,
+    expected_platform: str,
+) -> None:
+    """Fail closed while loading an exact published dataset-parser image."""
+
+    try:
+        installed = install_v02_parser_image(
+            archive,
+            expected_archive_sha256=archive_sha256,
+            expected_image_id=image_id,
+            expected_platform=expected_platform,
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(
+        json.dumps(
+            {
+                "archive": str(installed.archive_path),
+                "archive_bytes": installed.archive_bytes,
+                "archive_sha256": installed.archive_sha256,
+                "image_id": installed.image_id,
+                "platform": installed.platform,
+                "verified": True,
             },
             indent=2,
             sort_keys=True,

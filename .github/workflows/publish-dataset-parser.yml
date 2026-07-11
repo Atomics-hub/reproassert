@@ -1,0 +1,182 @@
+name: Publish dataset-parser archive
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact 40-character main-branch commit to build
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: dataset-parser-archive
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build exact linux/arm64 archive
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    outputs:
+      artifact_name: ${{ steps.metadata.outputs.artifact_name }}
+      image_id: ${{ steps.metadata.outputs.image_id }}
+    steps:
+      - name: Require the protected main workflow definition
+        run: |
+          if test "$GITHUB_REF" != refs/heads/main; then
+            echo "Run this workflow from main so an unreviewed workflow cannot publish evidence." >&2
+            exit 1
+          fi
+      - name: Validate the requested commit
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          if [[ ! "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "source_sha must be one full lowercase commit SHA." >&2
+            exit 1
+          fi
+      - name: Check out the exact requested source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ inputs.source_sha }}
+      - name: Require the requested commit to be on main
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          git merge-base --is-ancestor "$SOURCE_SHA" refs/remotes/origin/main || {
+            echo "Refusing a dataset-parser build from a commit outside main." >&2
+            exit 1
+          }
+      - name: Build the architecture-specific parser image
+        env:
+          IMAGE_TAG: reproassert-dataset-parser:0.2-linux-arm64
+        run: |
+          docker build \
+            --platform linux/arm64 \
+            --provenance=false \
+            --tag "$IMAGE_TAG" \
+            --file src/reproassert/assets/Dockerfile.dataset-parser \
+            src/reproassert/assets
+          test "$(docker image inspect "$IMAGE_TAG" --format '{{.Os}}/{{.Architecture}}')" = \
+            linux/arm64
+      - name: Export, checksum, and verify the exact image
+        id: metadata
+        env:
+          IMAGE_TAG: reproassert-dataset-parser:0.2-linux-arm64
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -o pipefail
+          output="$RUNNER_TEMP/dataset-parser"
+          mkdir -p "$output"
+          image_id="$(docker image inspect "$IMAGE_TAG" --format '{{.Id}}')"
+          short_sha="${SOURCE_SHA:0:12}"
+          archive="reproassert-dataset-parser-0.2-linux-arm64-${short_sha}.tar.gz"
+
+          docker image save "$IMAGE_TAG" | gzip --no-name --best > "$output/$archive"
+          archive_sha256="$(sha256sum "$output/$archive" | cut -d ' ' -f 1)"
+          dockerfile_sha256="$(sha256sum src/reproassert/assets/Dockerfile.dataset-parser | cut -d ' ' -f 1)"
+          requirements_sha256="$(sha256sum src/reproassert/assets/requirements-dataset-parser.lock | cut -d ' ' -f 1)"
+
+          SOURCE_SHA="$SOURCE_SHA" \
+          IMAGE_ID="$image_id" \
+          ARCHIVE="$archive" \
+          ARCHIVE_SHA256="$archive_sha256" \
+          DOCKERFILE_SHA256="$dockerfile_sha256" \
+          REQUIREMENTS_SHA256="$requirements_sha256" \
+            python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          manifest = {
+              "algorithm": "reproassert-dataset-parser-archive-v1",
+              "archive": os.environ["ARCHIVE"],
+              "archive_sha256": os.environ["ARCHIVE_SHA256"],
+              "dockerfile_sha256": os.environ["DOCKERFILE_SHA256"],
+              "format": "docker-image-save-gzip",
+              "image_id": os.environ["IMAGE_ID"],
+              "image_tag": "reproassert-dataset-parser:0.2-linux-arm64",
+              "platform": "linux/arm64",
+              "requirements_lock_sha256": os.environ["REQUIREMENTS_SHA256"],
+              "source_repository": (
+                  f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}"
+              ),
+              "source_sha": os.environ["SOURCE_SHA"],
+          }
+          path = Path(os.environ["RUNNER_TEMP"]) / "dataset-parser" / "manifest.json"
+          path.write_text(
+              json.dumps(manifest, sort_keys=True, separators=(",", ":")) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+          (
+            cd "$output"
+            sha256sum --binary "$archive" manifest.json > SHA256SUMS
+            sha256sum --check SHA256SUMS
+          )
+
+          docker image rm "$IMAGE_TAG"
+          gzip --decompress --stdout "$output/$archive" | docker image load
+          loaded_id="$(docker image inspect "$IMAGE_TAG" --format '{{.Id}}')"
+          loaded_platform="$(docker image inspect "$IMAGE_TAG" --format '{{.Os}}/{{.Architecture}}')"
+          test "$loaded_id" = "$image_id"
+          test "$loaded_platform" = linux/arm64
+
+          echo "artifact_name=dataset-parser-linux-arm64-${short_sha}" >> "$GITHUB_OUTPUT"
+          echo "image_id=$image_id" >> "$GITHUB_OUTPUT"
+          echo "archive_sha256=$archive_sha256" >> "$GITHUB_STEP_SUMMARY"
+          echo "image_id=$image_id" >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve the exact archive for attestation
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ steps.metadata.outputs.artifact_name }}
+          path: |
+            ${{ runner.temp }}/dataset-parser/*.tar.gz
+            ${{ runner.temp }}/dataset-parser/manifest.json
+            ${{ runner.temp }}/dataset-parser/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 7
+
+  attest:
+    name: Attest exact parser archive
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      artifact-metadata: write
+      attestations: write
+      contents: read
+      id-token: write
+    steps:
+      - name: Download inert build outputs without repository checkout
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ needs.build.outputs.artifact_name }}
+          path: dataset-parser
+      - name: Verify checksums before attestation
+        run: |
+          cd dataset-parser
+          test "$(find . -maxdepth 1 -type f -name '*.tar.gz' | wc -l)" -eq 1
+          test "$(find . -maxdepth 1 -type f | wc -l)" -eq 3
+          sha256sum --check SHA256SUMS
+      - name: Attest archive, manifest, and checksum provenance
+        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
+        with:
+          subject-path: |
+            dataset-parser/*.tar.gz
+            dataset-parser/manifest.json
+            dataset-parser/SHA256SUMS
+          show-summary: true
+      - name: Record exact image identity
+        env:
+          IMAGE_ID: ${{ needs.build.outputs.image_id }}
+        run: |
+          echo "Attested Docker image ID: $IMAGE_ID" >> "$GITHUB_STEP_SUMMARY"
