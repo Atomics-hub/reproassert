@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Atomics-hub/reproassert/blob/main/schemas/benchmark-v02-mapping-consensus-set.schema.json",
+  "title": "ReproAssert v0.2 sealed hunk-mapping consensus set",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["algorithm", "benchmark_version", "case_count", "cases", "mapping_preparation_receipt_sha256", "provider_calls", "schema_version", "seal_sha256", "sealed_at", "status"],
+  "properties": {
+    "algorithm": {"const": "reproassert-v02-hunk-mapping-consensus-v1"},
+    "benchmark_version": {"const": "0.2"},
+    "case_count": {"const": 20},
+    "cases": {"type": "array", "minItems": 20, "maxItems": 20, "items": {"type": "object"}},
+    "mapping_preparation_receipt_sha256": {"$ref": "#/$defs/sha256"},
+    "provider_calls": {"const": 0},
+    "schema_version": {"const": "1.0.0"},
+    "seal_sha256": {"$ref": "#/$defs/sha256"},
+    "sealed_at": {"type": "string", "format": "date-time", "pattern": "Z$"},
+    "status": {"const": "sealed_complete"}
+  },
+  "$defs": {"sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}
+}

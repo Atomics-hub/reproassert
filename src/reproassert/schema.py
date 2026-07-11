@@ -9,6 +9,12 @@ SCHEMA_FILENAMES = {
     "benchmark-source-index": "benchmark-source-index.schema.json",
     "benchmark-object-source-receipt": "benchmark-object-source-receipt.schema.json",
     "benchmark-v02-fix-mapping": "benchmark-v02-fix-mapping.schema.json",
+    "benchmark-v02-chronology-evidence": "benchmark-v02-chronology-evidence.schema.json",
+    "benchmark-v02-mapping-packet-set": "benchmark-v02-mapping-packet-set.schema.json",
+    "benchmark-v02-mapping-review-submission": (
+        "benchmark-v02-mapping-review-submission.schema.json"
+    ),
+    "benchmark-v02-mapping-consensus-set": ("benchmark-v02-mapping-consensus-set.schema.json"),
     "benchmark-v02-case-package": "benchmark-v02-case-package.schema.json",
     "benchmark-v02-preregistration": "benchmark-v02-preregistration.schema.json",
     "benchmark-v02-semantic-verification": ("benchmark-v02-semantic-verification.schema.json"),
@@ -24,6 +30,9 @@ SCHEMA_FILENAMES = {
     "benchmark-v02-execution-freeze": "benchmark-v02-execution-freeze.schema.json",
     "benchmark-v02-exact-image-authorization": (
         "benchmark-v02-exact-image-authorization.schema.json"
+    ),
+    "benchmark-v02-exact-image-capability-index": (
+        "benchmark-v02-exact-image-capability-index.schema.json"
     ),
     "benchmark-v02-execution-request-bindings": (
         "benchmark-v02-execution-request-bindings.schema.json"

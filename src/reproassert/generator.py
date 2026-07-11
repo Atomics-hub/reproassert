@@ -292,7 +292,7 @@ class OpenAIResponsesGenerator:
             },
         }
         encoded_request = json.dumps(
-            request_payload, ensure_ascii=True, separators=(",", ":")
+            request_payload, ensure_ascii=True, separators=(",", ":"), sort_keys=True
         ).encode("utf-8")
         if len(encoded_request) > MAX_OPENAI_REQUEST_BYTES:
             raise ReproAssertError(

@@ -35,6 +35,18 @@ def _relative_ref(root: Path, relative: str, value: object) -> dict[str, object]
     return result
 
 
+def _provider_request_fixture(
+    projection: dict[str, object], pricing: V02PricingSnapshot
+) -> tuple[dict[str, object], str, str]:
+    rendered = str(projection["case_id"])
+    payload: dict[str, object] = {"input": rendered, "model": pricing.requested_model}
+    return (
+        payload,
+        hashlib.sha256(rendered.encode()).hexdigest(),
+        hashlib.sha256(cases._canonical(payload)).hexdigest(),
+    )
+
+
 @pytest.fixture
 def prepared_tree(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     root = tmp_path / "private" / cases.CASES_PREPARATION_DIRECTORY
@@ -151,10 +163,7 @@ def prepared_tree(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, 
     monkeypatch.setattr(
         cases,
         "_render_provider_request",
-        lambda projection, source, pricing: (
-            {"input": projection["case_id"], "model": pricing.requested_model},
-            hashlib.sha256(str(projection["case_id"]).encode()).hexdigest(),
-        ),
+        lambda projection, source, pricing: _provider_request_fixture(projection, pricing),
     )
 
     package_rows: list[dict[str, object]] = []
@@ -168,7 +177,7 @@ def prepared_tree(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, 
         inventory_ref = _relative_ref(
             root, f"cases/{case_id}/dependency-inventory.json", cases._dependency_inventory(source)
         )
-        provider_request, rendered_sha = cases._render_provider_request(
+        provider_request, rendered_sha, outbound_sha = cases._render_provider_request(
             projection_values[case_id], cast(VerifiedGitObjectPlan, object()), pricing
         )
         request_ref = _relative_ref(
@@ -182,6 +191,7 @@ def prepared_tree(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, 
                 tool_git_sha="4" * 40,
                 provider_request=provider_request,
                 rendered_input_sha256=rendered_sha,
+                outbound_request_sha256=outbound_sha,
             ),
         )
         overlap_audit = cases._gold_overlap_audit(

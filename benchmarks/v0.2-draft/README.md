@@ -4,10 +4,12 @@ This directory contains the public selection freeze for the unrun v0.2 benchmark
 campaign result: model outputs remain 0/20 and maintainer validations remain zero.
 
 The v0.2 preparation contract replaces v0.1's unsubstantiated `pre_fix_source_snapshot` claim with
-the bounded `dataset_snapshot_at_pinned_commit` source. Every selected case is explicitly labeled
-`chronology_unproven` and `historical_public_contamination_exposed`. The supported ceiling is
-“generated against the exact buggy base with the historical fix hidden,” never “before anyone
-attempted a fix.” A stronger GraphQL-backed chronology mode remains optional future evidence.
+the bounded `dataset_snapshot_at_pinned_commit` source. The frozen plan conservatively labels every
+case `chronology_unproven`; a later hash-bound receipt now proves the narrower fact that public issue
+creation precedes fixing-artifact creation for 20/20. The later title/body snapshot remains
+`historical_public_contamination_exposed`. The supported ceiling is “generated against the exact
+buggy base with the historical fix hidden,” never “before anyone attempted a fix.” Full historical
+body-revision capture remains optional future evidence.
 
 The committed [`upstream-provenance.json`](upstream-provenance.json) is a public, oracle-safe
 projection from a real offline parse of the exact 500-row SWE-bench Verified Parquet artifact and

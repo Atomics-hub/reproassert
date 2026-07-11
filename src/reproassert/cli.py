@@ -42,6 +42,15 @@ from reproassert.benchmark_v02_campaign import (
     verify_v02_semantic_review_set,
 )
 from reproassert.benchmark_v02_cases import prepare_v02_cases, verify_v02_cases
+from reproassert.benchmark_v02_chronology import (
+    capture_v02_public_issue_responses,
+    prepare_v02_chronology_evidence,
+    verify_v02_chronology_evidence,
+)
+from reproassert.benchmark_v02_exact_capability import (
+    prepare_v02_exact_image_capability_index,
+    verify_v02_exact_image_capability_index,
+)
 from reproassert.benchmark_v02_execution_freeze import (
     authorize_v02_exact_image_execution,
     exact_approval_statement,
@@ -52,6 +61,12 @@ from reproassert.benchmark_v02_hidden import prepare_v02_hidden_gold, verify_v02
 from reproassert.benchmark_v02_instance_controller import (
     run_instance_gold_smoke,
     verify_instance_gold_smoke_receipt,
+)
+from reproassert.benchmark_v02_mapping_packets import (
+    prepare_v02_mapping_packets,
+    seal_v02_mapping_consensus,
+    verify_v02_mapping_consensus,
+    verify_v02_mapping_packets,
 )
 from reproassert.benchmark_v02_object_source import (
     prepare_v02_object_source_case,
@@ -560,6 +575,374 @@ def benchmark_verify_v02_hidden_gold(preparation_receipt: Path) -> None:
                 "case_count": prepared.case_count,
                 "preparation_receipt_sha256": prepared.receipt_sha256,
                 "provider_calls": 0,
+                "verified": True,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+@benchmark_group.command("prepare-v02-exact-capabilities")
+@click.option(
+    "--instance-runtime-manifest",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option("--expected-manifest-sha256", required=True)
+@click.option(
+    "--gold-smoke-receipt",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--hidden-extraction-receipt",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option("--prepared-at", required=True)
+@click.option("--tool-git-sha", required=True)
+@click.option("--output", type=click.Path(path_type=Path, dir_okay=False), required=True)
+def benchmark_prepare_v02_exact_capabilities(
+    instance_runtime_manifest: Path,
+    expected_manifest_sha256: str,
+    gold_smoke_receipt: Path,
+    hidden_extraction_receipt: Path,
+    prepared_at: str,
+    tool_git_sha: str,
+    output: Path,
+) -> None:
+    """Persist 20 exact-image commitments while keeping authority process-local."""
+
+    try:
+        _ensure_private_output_root(output.parent)
+        verified = prepare_v02_exact_image_capability_index(
+            manifest_path=instance_runtime_manifest,
+            expected_manifest_sha256=expected_manifest_sha256,
+            gold_smoke_receipt_path=gold_smoke_receipt,
+            hidden_extraction_receipt=hidden_extraction_receipt,
+            prepared_at=prepared_at,
+            tool_git_sha=tool_git_sha,
+            output_path=output,
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(json.dumps(asdict(verified), indent=2, sort_keys=True, default=str))
+
+
+@benchmark_group.command("verify-v02-exact-capabilities")
+@click.argument("index", type=click.Path(path_type=Path, exists=True, dir_okay=False))
+@click.option(
+    "--instance-runtime-manifest",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option("--expected-manifest-sha256", required=True)
+@click.option(
+    "--gold-smoke-receipt",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--hidden-extraction-receipt",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+def benchmark_verify_v02_exact_capabilities(
+    index: Path,
+    instance_runtime_manifest: Path,
+    expected_manifest_sha256: str,
+    gold_smoke_receipt: Path,
+    hidden_extraction_receipt: Path,
+) -> None:
+    """Rederive a redacted exact-image capability commitment index."""
+
+    try:
+        verified = verify_v02_exact_image_capability_index(
+            index,
+            manifest_path=instance_runtime_manifest,
+            expected_manifest_sha256=expected_manifest_sha256,
+            gold_smoke_receipt_path=gold_smoke_receipt,
+            hidden_extraction_receipt=hidden_extraction_receipt,
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    result = asdict(verified)
+    result["verified"] = True
+    click.echo(json.dumps(result, indent=2, sort_keys=True, default=str))
+
+
+@benchmark_group.command("capture-v02-chronology")
+@click.option(
+    "--cohort-plan",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--output-root",
+    type=click.Path(path_type=Path, file_okay=False),
+    required=True,
+)
+def benchmark_capture_v02_chronology(cohort_plan: Path, output_root: Path) -> None:
+    """Capture 20 public issue responses without credentials or model-provider access."""
+
+    try:
+        _ensure_private_output_root(output_root)
+        captured = capture_v02_public_issue_responses(
+            cohort_plan_path=cohort_plan, output_root=output_root
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(
+        json.dumps(
+            {
+                "case_count": 20,
+                "credentials_sent": False,
+                "issue_responses_root": str(captured),
+                "provider_calls": 0,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+@benchmark_group.command("prepare-v02-chronology")
+@click.option(
+    "--cohort-plan",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--hidden-extraction-receipt",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--issue-responses-root",
+    type=click.Path(path_type=Path, exists=True, file_okay=False),
+    required=True,
+)
+@click.option("--captured-at", required=True, help="UTC evidence capture timestamp.")
+@click.option("--tool-git-sha", required=True, help="Exact 40-hex controller revision.")
+@click.option("--output", type=click.Path(path_type=Path, dir_okay=False), required=True)
+def benchmark_prepare_v02_chronology(
+    cohort_plan: Path,
+    hidden_extraction_receipt: Path,
+    issue_responses_root: Path,
+    captured_at: str,
+    tool_git_sha: str,
+    output: Path,
+) -> None:
+    """Seal 20 chronology pairs from captured public responses and verified metadata."""
+
+    try:
+        _ensure_private_output_root(output.parent)
+        verified = prepare_v02_chronology_evidence(
+            cohort_plan_path=cohort_plan,
+            hidden_extraction_receipt=hidden_extraction_receipt,
+            issue_responses_root=issue_responses_root,
+            captured_at=captured_at,
+            tool_git_sha=tool_git_sha,
+            output_path=output,
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(
+        json.dumps(
+            {
+                "case_count": verified.case_count,
+                "issue_precedes_fix_count": verified.issue_precedes_fix_count,
+                "provider_calls": verified.provider_calls,
+                "receipt_sha256": verified.sha256,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+@benchmark_group.command("verify-v02-chronology")
+@click.argument("receipt", type=click.Path(path_type=Path, exists=True, dir_okay=False))
+@click.option(
+    "--cohort-plan",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--hidden-extraction-receipt",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--issue-responses-root",
+    type=click.Path(path_type=Path, exists=True, file_okay=False),
+    required=True,
+)
+def benchmark_verify_v02_chronology(
+    receipt: Path,
+    cohort_plan: Path,
+    hidden_extraction_receipt: Path,
+    issue_responses_root: Path,
+) -> None:
+    """Rederive one chronology receipt from its exact 20 source pairs."""
+
+    try:
+        verified = verify_v02_chronology_evidence(
+            receipt,
+            cohort_plan_path=cohort_plan,
+            hidden_extraction_receipt=hidden_extraction_receipt,
+            issue_responses_root=issue_responses_root,
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(
+        json.dumps(
+            {
+                "case_count": verified.case_count,
+                "issue_precedes_fix_count": verified.issue_precedes_fix_count,
+                "provider_calls": verified.provider_calls,
+                "receipt_sha256": verified.sha256,
+                "verified": True,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+@benchmark_group.command("prepare-v02-mapping-packets")
+@click.option(
+    "--hidden-extraction-receipt",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option("--prepared-at", required=True, help="UTC packet preparation timestamp.")
+@click.option("--tool-git-sha", required=True, help="Exact 40-hex controller revision.")
+@click.option(
+    "--output-root",
+    type=click.Path(path_type=Path, file_okay=False),
+    default=_default_v02_private_preparation_root,
+    show_default="private user state directory",
+)
+def benchmark_prepare_v02_mapping_packets(
+    hidden_extraction_receipt: Path,
+    prepared_at: str,
+    tool_git_sha: str,
+    output_root: Path,
+) -> None:
+    """Prepare 20 blank hunk-mapping packets; never infer reviewer decisions."""
+
+    try:
+        _ensure_private_output_root(output_root)
+        verified_hidden = verify_v02_hidden_gold(hidden_extraction_receipt)
+        prepared = prepare_v02_mapping_packets(
+            verified_hidden=verified_hidden,
+            output_root=output_root,
+            prepared_at=prepared_at,
+            tool_git_sha=tool_git_sha,
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(
+        json.dumps(
+            {
+                "case_count": prepared.case_count,
+                "preparation_receipt_sha256": prepared.receipt_sha256,
+                "provider_calls": 0,
+                "status": "prepared_review_required_provider_disabled",
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+@benchmark_group.command("verify-v02-mapping-packets")
+@click.argument("receipt", type=click.Path(path_type=Path, exists=True, dir_okay=False))
+def benchmark_verify_v02_mapping_packets(receipt: Path) -> None:
+    """Verify all 20 blank packets and their exact patch-algebra commitments."""
+
+    try:
+        prepared = verify_v02_mapping_packets(receipt)
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(
+        json.dumps(
+            {
+                "case_count": prepared.case_count,
+                "preparation_receipt_sha256": prepared.receipt_sha256,
+                "provider_calls": 0,
+                "verified": True,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+@benchmark_group.command("seal-v02-mapping-consensus")
+@click.option(
+    "--preparation-receipt",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--submissions-root",
+    type=click.Path(path_type=Path, exists=True, file_okay=False),
+    required=True,
+)
+@click.option("--sealed-at", required=True, help="UTC consensus seal timestamp.")
+@click.option("--output", type=click.Path(path_type=Path, dir_okay=False), required=True)
+def benchmark_seal_v02_mapping_consensus(
+    preparation_receipt: Path, submissions_root: Path, sealed_at: str, output: Path
+) -> None:
+    """Seal genuine two-reviewer agreement or a valid third-reviewer tie break."""
+
+    try:
+        _ensure_private_output_root(output.parent)
+        sealed = seal_v02_mapping_consensus(
+            preparation_path=preparation_receipt,
+            submissions_root=submissions_root,
+            output_path=output,
+            sealed_at=sealed_at,
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(
+        json.dumps(
+            {
+                "case_count": sealed.case_count,
+                "provider_calls": 0,
+                "seal_sha256": sealed.sha256,
+                "status": "sealed_complete",
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+@benchmark_group.command("verify-v02-mapping-consensus")
+@click.argument("seal", type=click.Path(path_type=Path, exists=True, dir_okay=False))
+@click.option(
+    "--preparation-receipt",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+def benchmark_verify_v02_mapping_consensus(seal: Path, preparation_receipt: Path) -> None:
+    """Verify a sealed mapping set still binds the exact 20-case preparation."""
+
+    try:
+        verified = verify_v02_mapping_consensus(seal, preparation_path=preparation_receipt)
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(
+        json.dumps(
+            {
+                "case_count": verified.case_count,
+                "provider_calls": 0,
+                "seal_sha256": verified.sha256,
                 "verified": True,
             },
             indent=2,

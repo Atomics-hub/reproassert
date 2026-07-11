@@ -13,6 +13,10 @@ from typing import Literal
 
 from defusedxml import ElementTree
 
+from reproassert.benchmark_v02_exact_capability import (
+    VerifiedV02ExactImageEvaluatorCapability,
+    require_v02_exact_image_evaluator_capability,
+)
 from reproassert.benchmark_v02_instance_executor import (
     InstancePytestResult,
     InstanceRuntimeExecutor,
@@ -140,6 +144,7 @@ def candidate_execution_profile(
 
 def evaluate_instance_candidate(
     *,
+    evaluator_capability: VerifiedV02ExactImageEvaluatorCapability,
     manifest_path: Path,
     expected_manifest_sha256: str,
     case_id: str,
@@ -157,7 +162,10 @@ def evaluate_instance_candidate(
     deterministic L1 causal signal only; semantic review and all remaining L2 controls are separate.
     """
 
+    capability = require_v02_exact_image_evaluator_capability(evaluator_capability)
     checked_case = _case_id(case_id)
+    if capability.case_id != checked_case:
+        raise _reject("Exact-image evaluator capability is for a different case.")
     manifest = load_instance_runtime_manifest(manifest_path)
     if manifest.sha256 != _digest(expected_manifest_sha256, "manifest commitment"):
         raise _reject("Instance runtime manifest differs from its explicit commitment.")
@@ -165,11 +173,20 @@ def evaluate_instance_candidate(
     if len(matches) != 1:
         raise _reject("Case does not bind exactly one frozen instance runtime.")
     runtime = matches[0]
+    if manifest.sha256 != capability.runtime_manifest_sha256 or runtime != capability.runtime:
+        raise _reject("Runtime manifest or case entry differs from the evaluator capability.")
     profile = candidate_execution_profile(runtime, case_id=checked_case, candidate=candidate)
     candidate_path = profile.staging_path
     candidate_target = f"{profile.staging_path}::{profile.required_function}"
     production_patch = _hidden_bytes(hidden.production_patch, "production patch")
     gold_patch = _hidden_bytes(hidden.gold_test_patch, "gold test patch")
+    if (
+        hashlib.sha256(production_patch).hexdigest() != capability.production_patch_sha256
+        or len(production_patch) != capability.production_patch_bytes
+        or hashlib.sha256(gold_patch).hexdigest() != capability.developer_tests_sha256
+        or len(gold_patch) != capability.developer_tests_bytes
+    ):
+        raise _reject("Private evaluator bytes differ from capability-bound commitments.")
     if (
         not isinstance(hidden.gold_targets, tuple)
         or not 1 <= len(hidden.gold_targets) <= 64
@@ -294,7 +311,10 @@ def evaluate_instance_candidate(
             "provider_calls": 0,
         },
         "executed_at": _timestamp(executed_at),
-        "inputs": {"instance_runtime_manifest_sha256": manifest.sha256},
+        "inputs": {
+            **capability.public_record(),
+            "evaluator_public_commitment_sha256": (capability.evaluator_public_commitment_sha256),
+        },
         "outcome": {
             "accepted": accepted,
             "base_consistency": f"{sum(r.exit_code == 1 for r in base_results)}/{BASE_RUNS}",
@@ -380,6 +400,7 @@ def verify_instance_candidate_receipt(path: Path) -> CandidateEvaluationReceipt:
         "provider_calls": 0,
     }:
         raise _reject("Candidate evaluation trust claims are invalid.")
+    _verify_capability_inputs(value.get("inputs"), case_id=case_id)
     outcome = value.get("outcome")
     controls = value.get("causal_controls")
     if not isinstance(outcome, dict) or not isinstance(controls, dict):
@@ -520,6 +541,95 @@ def verify_instance_candidate_receipt(path: Path) -> CandidateEvaluationReceipt:
         classification=str(outcome.get("classification")),
         accepted=accepted,
     )
+
+
+def _verify_capability_inputs(value: object, *, case_id: str) -> None:
+    if not isinstance(value, dict) or set(value) != {
+        "algorithm",
+        "case_id",
+        "evaluator_public_commitment_sha256",
+        "gold_smoke",
+        "hidden_inputs",
+        "runtime",
+        "runtime_manifest_sha256",
+    }:
+        raise _reject("Exact-image evaluator input binding is invalid.")
+    if (
+        value.get("algorithm") != "reproassert-v02-exact-image-evaluator-capability-v1"
+        or value.get("case_id") != case_id
+    ):
+        raise _reject("Exact-image evaluator input identity is invalid.")
+    commitment = _digest(
+        value.get("evaluator_public_commitment_sha256"), "evaluator public commitment"
+    )
+    unsigned = dict(value)
+    unsigned.pop("evaluator_public_commitment_sha256")
+    if commitment != hashlib.sha256(_canonical(unsigned)).hexdigest():
+        raise _reject("Exact-image evaluator public commitment is invalid.")
+    _digest(value.get("runtime_manifest_sha256"), "runtime manifest")
+    runtime = value.get("runtime")
+    if not isinstance(runtime, dict) or set(runtime) != {
+        "base_sha",
+        "base_tree_oid",
+        "case_id",
+        "image_digest",
+        "image_id",
+        "image_tag",
+        "instance_id",
+        "spec_sha256",
+        "test_command_profile",
+    }:
+        raise _reject("Exact case runtime binding is invalid.")
+    if runtime.get("case_id") != case_id:
+        raise _reject("Exact case runtime differs from the receipt case.")
+    for name in ("base_sha", "base_tree_oid"):
+        _git_sha(runtime.get(name))
+    _digest(runtime.get("spec_sha256"), "instance spec")
+    for name in ("image_digest", "image_id"):
+        image = runtime.get(name)
+        if not isinstance(image, str) or re.fullmatch(r"sha256:[0-9a-f]{64}", image) is None:
+            raise _reject("Exact image binding is invalid.")
+    if (
+        not isinstance(runtime.get("image_tag"), str)
+        or not isinstance(runtime.get("instance_id"), str)
+        or runtime.get("test_command_profile") not in {"pytest-v1", "sympy-bin-test-v1"}
+    ):
+        raise _reject("Exact runtime identity is invalid.")
+    gold = value.get("gold_smoke")
+    if not isinstance(gold, dict) or set(gold) != {
+        "case_classification",
+        "case_reason",
+        "receipt_commitment_sha256",
+        "receipt_sha256",
+    }:
+        raise _reject("Gold-smoke binding is invalid.")
+    _digest(gold.get("receipt_commitment_sha256"), "gold-smoke receipt commitment")
+    _digest(gold.get("receipt_sha256"), "gold-smoke receipt")
+    if case_id == "rk-v0.2-014":
+        expected_gold = ("infrastructure_failure", "network_dependency")
+    else:
+        expected_gold = ("semantic_valid", "fails_on_base_passes_on_fixed")
+    if (gold.get("case_classification"), gold.get("case_reason")) != expected_gold:
+        raise _reject("Gold-smoke case classification is invalid.")
+    hidden = value.get("hidden_inputs")
+    if not isinstance(hidden, dict) or set(hidden) != {
+        "developer_tests_bytes",
+        "developer_tests_sha256",
+        "hidden_extraction_receipt_sha256",
+        "production_patch_bytes",
+        "production_patch_sha256",
+    }:
+        raise _reject("Hidden evaluator commitments are invalid.")
+    for name in (
+        "developer_tests_sha256",
+        "hidden_extraction_receipt_sha256",
+        "production_patch_sha256",
+    ):
+        _digest(hidden.get(name), "hidden evaluator input")
+    for name in ("developer_tests_bytes", "production_patch_bytes"):
+        size = hidden.get(name)
+        if type(size) is not int or not 1 <= size <= MAX_HIDDEN_PATCH_BYTES:
+            raise _reject("Hidden evaluator input size is invalid.")
 
 
 def _classify_candidate(

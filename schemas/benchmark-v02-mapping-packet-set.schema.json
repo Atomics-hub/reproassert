@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Atomics-hub/reproassert/blob/main/schemas/benchmark-v02-mapping-packet-set.schema.json",
+  "title": "ReproAssert v0.2 provider-free hunk-mapping packet set",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["algorithm", "benchmark_version", "case_count", "cases", "claims", "hidden_extraction_receipt_sha256", "prepared_at", "receipt_sha256", "schema_version", "status", "tool"],
+  "properties": {
+    "algorithm": {"const": "reproassert-v02-hunk-mapping-packets-v1"},
+    "benchmark_version": {"const": "0.2"},
+    "case_count": {"const": 20},
+    "cases": {"type": "array", "minItems": 20, "maxItems": 20, "items": {"$ref": "#/$defs/case"}},
+    "claims": {"const": {"model_or_provider_invoked": false, "provider_calls": 0, "reviewer_identity_or_verdict_generated": false}},
+    "hidden_extraction_receipt_sha256": {"$ref": "#/$defs/sha256"},
+    "prepared_at": {"type": "string", "format": "date-time", "pattern": "Z$"},
+    "receipt_sha256": {"$ref": "#/$defs/sha256"},
+    "schema_version": {"const": "1.0.0"},
+    "status": {"const": "prepared_review_required_provider_disabled"},
+    "tool": {"type": "object", "additionalProperties": false, "required": ["git_sha", "name"], "properties": {"git_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"}, "name": {"const": "reproassert"}}}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "reference": {"type": "object", "additionalProperties": false, "required": ["bytes", "path", "sha256"], "properties": {"bytes": {"type": "integer", "minimum": 1}, "path": {"type": "string", "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"}, "sha256": {"$ref": "#/$defs/sha256"}}},
+    "case": {"type": "object", "additionalProperties": false, "required": ["case_id", "hunk_count", "packet", "patch_algebra_commitment_sha256", "production_patch_sha256", "status"], "properties": {"case_id": {"type": "string", "pattern": "^rk-v0\\.2-[0-9]{3}$"}, "hunk_count": {"type": "integer", "minimum": 1}, "packet": {"$ref": "#/$defs/reference"}, "patch_algebra_commitment_sha256": {"$ref": "#/$defs/sha256"}, "production_patch_sha256": {"$ref": "#/$defs/sha256"}, "status": {"const": "review_required"}}}
+  }
+}

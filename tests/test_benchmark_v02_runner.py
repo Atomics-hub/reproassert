@@ -2251,7 +2251,20 @@ def test_reservation_is_deterministic_and_under_reservation_is_rejected() -> Non
         source_context=SourceContext((), (), 0),
     )
     required = runner._required_reservation(policy, request)
+    rendered_bytes = len(runner._rendered_input_text(request).encode())
+    input_only_reservation = (
+        rendered_bytes
+        + runner.OPENAI_MAX_OUTPUT_TOKENS * 2
+        + policy.max_case_wall_ms * 3 // 1_000
+        + runner.MAX_TEST_BYTES
+        + 7
+    )
     assert required > 0
+    assert required > input_only_reservation
+    assert (
+        len(runner._canonical_openai_request_bytes(request, policy.requested_model))
+        > rendered_bytes
+    )
     assert required == runner._required_reservation(policy, request)
     under_reserved = replace(policy, reserved_worst_case_microusd=required - 1)
     assert required > under_reserved.reserved_worst_case_microusd

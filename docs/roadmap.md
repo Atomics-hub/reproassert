@@ -61,22 +61,23 @@ chronology-honest dataset-snapshot selection rather than relabeling v0.1. The ne
 6. record false reproductions, setup failures, flakiness, and infrastructure errors without hiding
    them from the denominator.
 
-The provider-free dataset transaction and v0.2 exact-object source commands are implemented. A
-fresh authentic local run materialized and independently rederived all 20 safe dataset projections;
-exact-object source preparation and nominal issuance also passed 20/20, with zero provider calls.
-That closes those input lanes only: dependency/hidden-fix case packages, genuine reviewer
-assignments, preregistration, and request/pricing authorization are still required before a scored
-run.
+The provider-free dataset transaction, exact-object source, chronology, exact-image capability, and
+hunk-mapping packet commands are implemented. Authentic local runs rederived all 20 projections,
+proved issue-before-fix ordering for 20/20, runtime-attested 20/20 exact images, and validated hidden
+gold on 19/20 while retaining case 014's network infrastructure failure. The 20 private mapping
+packets contain 32 committed hunks and zero fabricated reviews. Genuine mapping consensus,
+preregistration, and final request/pricing authorization are still required before a scored run.
 
-The exact-image execution-freeze controller and hard reservation audit are implemented. The
-previous preparation is intentionally not authorizable: its requests bind an older tool revision,
-and cases 004 and 005 exceed the approved USD 0.25 per-case reserve. Regenerate the preparation and
-preregistration with the bounded source-context policy at the merged controller SHA, rerun the
-complete gold smoke, then freeze the exact execution inputs. This is a zero-spend prerequisite, not
-a benchmark result.
+The exact-image execution-freeze controller and hard reservation audit are implemented. A successor
+preparation at merged SHA `1ec56e5` reduced cases 004/005 below the cap. The stronger full-outbound
+calculation—including instructions and schema overhead—reserves $2.838709 total with a $0.208513
+maximum case, still below the approved $5/$0.25 limits. Regenerate once more at this bridge's final
+merge SHA, bind genuine mapping consensus and preregistration, then freeze the exact inputs. This is
+a zero-spend prerequisite, not a benchmark result.
 
-Complete historical body revision capture remains an optional future upgrade to a stronger
-chronology claim. It is not required for the current explicitly `chronology_unproven` cohort.
+Complete historical body revision capture remains an optional future upgrade to a stronger content
+cleanliness claim. The current receipt proves creation order, not that the later dataset snapshot
+contains only text visible before the fix attempt.
 
 Continuation requires at least 6/20 semantic-valid cases, median warm runtime below 10 minutes, and attributable cost at or below roughly $1 per semantic-valid reproduction or a measured path there. Passing supports further validation only; it does not establish a population rate or state of the art.
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -7,6 +8,7 @@ import jsonschema
 import pytest
 
 import reproassert.benchmark_v02_candidate_evaluator as evaluator
+import reproassert.benchmark_v02_exact_capability as capability_module
 from reproassert.benchmark_v02_candidate_evaluator import (
     CandidateArtifact,
     HiddenEvaluatorInputs,
@@ -68,6 +70,44 @@ def _sympy_manifest(tmp_path: Path) -> tuple[Path, str]:
         )
     )
     return path, load_instance_runtime_manifest(path).sha256
+
+
+def _capability(
+    manifest_path: Path,
+    *,
+    case_id: str,
+    production_patch: bytes,
+    developer_tests: bytes,
+) -> capability_module.VerifiedV02ExactImageEvaluatorCapability:
+    """Issue a test-local nominal value without invoking Docker-backed hidden verification."""
+
+    manifest = load_instance_runtime_manifest(manifest_path)
+    runtime = next(entry for entry in manifest.entries if entry.case_id == case_id)
+    value = object.__new__(capability_module.VerifiedV02ExactImageEvaluatorCapability)
+    fields: dict[str, object] = {
+        "case_id": case_id,
+        "runtime_manifest_sha256": manifest.sha256,
+        "runtime": runtime,
+        "gold_smoke_receipt_sha256": "2" * 64,
+        "gold_smoke_receipt_commitment_sha256": "3" * 64,
+        "gold_smoke_classification": "semantic_valid",
+        "gold_smoke_reason": "fails_on_base_passes_on_fixed",
+        "hidden_extraction_receipt_sha256": "4" * 64,
+        "production_patch_sha256": hashlib.sha256(production_patch).hexdigest(),
+        "production_patch_bytes": len(production_patch),
+        "developer_tests_sha256": hashlib.sha256(developer_tests).hexdigest(),
+        "developer_tests_bytes": len(developer_tests),
+        "_issuer": capability_module._ISSUER,
+    }
+    for name, item in fields.items():
+        object.__setattr__(value, name, item)
+    object.__setattr__(value, "evaluator_public_commitment_sha256", "")
+    object.__setattr__(
+        value,
+        "evaluator_public_commitment_sha256",
+        hashlib.sha256(capability_module._canonical(value.public_record())).hexdigest(),
+    )
+    return value
 
 
 class FakeExecutor:
@@ -141,7 +181,14 @@ class FakeExecutor:
 
 def _run(tmp_path: Path, fake: FakeExecutor) -> evaluator.CandidateEvaluationReceipt:
     manifest, digest = _manifest(tmp_path)
+    capability = _capability(
+        manifest,
+        case_id="rk-v0.2-001",
+        production_patch=b"PRIVATE PRODUCTION FIX",
+        developer_tests=b"PRIVATE GOLD TESTS",
+    )
     return evaluator.evaluate_instance_candidate(
+        evaluator_capability=capability,
         manifest_path=manifest,
         expected_manifest_sha256=digest,
         case_id="rk-v0.2-001",
@@ -222,6 +269,12 @@ def test_rejects_syntax_and_manifest_mismatch_before_executor(tmp_path: Path) ->
         return FakeExecutor()
 
     arguments = dict(
+        evaluator_capability=_capability(
+            manifest,
+            case_id="rk-v0.2-001",
+            production_patch=b"fix",
+            developer_tests=b"gold",
+        ),
         manifest_path=manifest,
         expected_manifest_sha256=digest,
         case_id="rk-v0.2-001",
@@ -250,6 +303,45 @@ def test_verifier_rejects_tampered_acceptance(tmp_path: Path) -> None:
     result.path.write_bytes(evaluator._canonical(receipt) + b"\n")
     with pytest.raises(PolicyRejection, match="disagree"):
         evaluator.verify_instance_candidate_receipt(result.path)
+
+
+def test_verifier_rejects_tampered_exact_image_binding(tmp_path: Path) -> None:
+    result = _run(tmp_path, FakeExecutor())
+    receipt = json.loads(result.path.read_bytes())
+    receipt["inputs"]["runtime"]["image_id"] = f"sha256:{'0' * 64}"
+    receipt["receipt_sha256"] = evaluator._self_hash(receipt)
+    result.path.write_bytes(evaluator._canonical(receipt) + b"\n")
+    with pytest.raises(PolicyRejection, match="public commitment"):
+        evaluator.verify_instance_candidate_receipt(result.path)
+
+
+def test_evaluator_rejects_hidden_bytes_not_bound_by_capability(tmp_path: Path) -> None:
+    manifest, digest = _manifest(tmp_path)
+    authority = _capability(
+        manifest,
+        case_id="rk-v0.2-001",
+        production_patch=b"expected fix",
+        developer_tests=b"expected tests",
+    )
+    with pytest.raises(PolicyRejection, match="capability-bound commitments"):
+        evaluator.evaluate_instance_candidate(
+            evaluator_capability=authority,
+            manifest_path=manifest,
+            expected_manifest_sha256=digest,
+            case_id="rk-v0.2-001",
+            candidate=CandidateArtifact(
+                "tests/reproassert/test_generated.py",
+                b"def test_bug():\n    assert True\n",
+                "test_bug",
+            ),
+            hidden=HiddenEvaluatorInputs(
+                b"substituted fix", b"expected tests", ("tests/test_gold.py",)
+            ),
+            output_path=tmp_path / "must-not-exist.json",
+            executed_at="2026-07-11T01:02:03Z",
+            tool_git_sha="9" * 40,
+            executor_factory=lambda *_args: pytest.fail("executor must not be reached"),
+        )
 
 
 class FakeSympyExecutor(FakeExecutor):
@@ -310,19 +402,27 @@ def test_sympy_native_profile_executes_all_six_fresh_runs(tmp_path: Path) -> Non
         test_function="test_reproassert_issue_016",
     )
     output = tmp_path / "sympy-receipt.json"
+    production_patch = b"PRIVATE PRODUCTION FIX"
+    developer_tests = (
+        b"diff --git a/sympy/core/tests/test_basic.py b/sympy/core/tests/test_basic.py\n"
+        b"--- a/sympy/core/tests/test_basic.py\n"
+        b"+++ b/sympy/core/tests/test_basic.py\n"
+        b"@@ -1 +1 @@\n-old\n+new\n"
+    )
     result = evaluator.evaluate_instance_candidate(
+        evaluator_capability=_capability(
+            manifest,
+            case_id="rk-v0.2-016",
+            production_patch=production_patch,
+            developer_tests=developer_tests,
+        ),
         manifest_path=manifest,
         expected_manifest_sha256=digest,
         case_id="rk-v0.2-016",
         candidate=candidate,
         hidden=HiddenEvaluatorInputs(
-            production_patch=b"PRIVATE PRODUCTION FIX",
-            gold_test_patch=(
-                b"diff --git a/sympy/core/tests/test_basic.py b/sympy/core/tests/test_basic.py\n"
-                b"--- a/sympy/core/tests/test_basic.py\n"
-                b"+++ b/sympy/core/tests/test_basic.py\n"
-                b"@@ -1 +1 @@\n-old\n+new\n"
-            ),
+            production_patch=production_patch,
+            gold_test_patch=developer_tests,
             gold_targets=("test_gold",),
         ),
         output_path=output,

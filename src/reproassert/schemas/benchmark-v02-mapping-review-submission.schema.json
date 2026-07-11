@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Atomics-hub/reproassert/blob/main/schemas/benchmark-v02-mapping-review-submission.schema.json",
+  "title": "ReproAssert v0.2 independent hunk-mapping review submission",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["case_id", "declarations", "packet_sha256", "reviewer_id", "schema_version", "selected_hunk_ids", "submitted_at", "verdict"],
+  "properties": {
+    "case_id": {"type": "string", "pattern": "^rk-v0\\.2-[0-9]{3}$"},
+    "declarations": {
+      "const": {
+        "generator_access": "forbidden",
+        "independent_judgment": true,
+        "role": "mapping_reviewer",
+        "semantic_review_role": "forbidden"
+      }
+    },
+    "packet_sha256": {"$ref": "#/$defs/sha256"},
+    "reviewer_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{2,127}$"},
+    "schema_version": {"const": "1.0.0"},
+    "selected_hunk_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^rk-v0\\.2-[0-9]{3}:h[0-9]{3}:[0-9a-f]{16}$"}},
+    "submitted_at": {"type": "string", "format": "date-time", "pattern": "Z$"},
+    "verdict": {"enum": ["approved", "rejected"]}
+  },
+  "$defs": {"sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}
+}

@@ -14,7 +14,9 @@ containing its final immutable hash. Only the separate `authorize-v02-execution`
 that statement, and its timestamp must be strictly later than the prepared freeze.
 
 Before writing an authorization, the controller independently computes a worst-case reservation
-for every rendered request using the same conservative byte-as-token bound as the scored runner.
+for every complete canonical outbound request body using the same conservative byte-as-token bound
+as the scored runner. The committed body includes instructions, schema, model/config, and input;
+pricing only `provider_request.input` is insufficient and rejected.
 Every case must fit USD 0.25 and the sum must fit USD 5.00. The artifact records all 20
 reservations so the cap decision is inspectable. One authorization covers one campaign and one
 attempt per case.

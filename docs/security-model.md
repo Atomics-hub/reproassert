@@ -224,6 +224,15 @@ allowlist. See [ADR 0007](decisions/0007-dependency-preparation-remains-a-gated-
 
 ### Capability-gated hidden-fix evaluation
 
+The exact-image evaluator has a separate, nominal
+`VerifiedV02ExactImageEvaluatorCapability`; the older tree-based evaluator capability is not
+accepted as a substitute. Its issuer verifies the complete 20-case runtime manifest, the complete
+gold-smoke receipt (including case 014's recorded `network_dependency` infrastructure failure), and
+fresh hidden-extraction commitments before granting process-local authority for one case. Candidate
+receipts publish only SHA-256 and byte-count commitments for private patches. They bind the exact
+case spec, base tree, image tag/digest/ID, gold-smoke classification, and an evaluator-public
+commitment; private patch bytes and paths remain absent.
+
 The internal differential primitive accepts only a nominal evaluator capability whose digest binds
 the exact case, base/fixed trees, production/developer patch identities, evaluator commitment, and
 complete dependency evidence when required. It independently revalidates the candidate and both
