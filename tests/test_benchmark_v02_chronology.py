@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import http.client
 import json
 import os
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, ClassVar
 
 import jsonschema
 import pytest
@@ -219,6 +220,205 @@ def test_public_capture_uses_bounded_credential_free_paths(
     assert observed[-1] == "/repos/owner/repository-20/issues/20"
     assert len(tuple(captured.glob("*.json"))) == 20
     assert all(path.stat().st_mode & 0o777 == 0o600 for path in captured.glob("*.json"))
+
+
+def test_public_capture_rejects_identity_mismatch_and_removes_partial_tree(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _cohort, _hidden, _responses, cases = _fixtures(tmp_path, monkeypatch)
+    parent = tmp_path / "capture"
+    parent.mkdir(mode=0o700)
+
+    def transport(path: str) -> bytes:
+        position = int(path.rsplit("/", 1)[-1])
+        case = cases[position - 1]
+        return json.dumps(
+            {
+                "created_at": "2024-01-01T00:00:00Z",
+                "html_url": "https://github.com/attacker/wrong/issues/1",
+                "number": position,
+                "repository_url": f"https://api.github.com/repos/{case['repo']}",
+            }
+        ).encode()
+
+    with pytest.raises(PolicyRejection, match="response identity differs"):
+        chronology.capture_v02_public_issue_responses(
+            cohort_plan_path=tmp_path / "cohort.json",
+            output_root=parent,
+            transport=transport,
+        )
+
+    assert not (parent / "github-issue-responses").exists()
+
+
+def test_public_capture_rejects_existing_destination_and_nonbytes_transport(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _fixtures(tmp_path, monkeypatch)
+    parent = tmp_path / "capture"
+    parent.mkdir(mode=0o700)
+    destination = parent / "github-issue-responses"
+    destination.mkdir(mode=0o700)
+    with pytest.raises(PolicyRejection, match="Refusing to overwrite"):
+        chronology.capture_v02_public_issue_responses(
+            cohort_plan_path=tmp_path / "cohort.json", output_root=parent, transport=lambda _: b"{}"
+        )
+
+    destination.rmdir()
+    with pytest.raises(PolicyRejection, match="transport contract"):
+        chronology.capture_v02_public_issue_responses(
+            cohort_plan_path=tmp_path / "cohort.json",
+            output_root=parent,
+            transport=lambda _: "not bytes",  # type: ignore[return-value]
+        )
+    assert not destination.exists()
+
+
+class _FakeGitHubResponse:
+    def __init__(self, status: int, body: bytes) -> None:
+        self.status = status
+        self.body = body
+
+    def read(self, limit: int) -> bytes:
+        return self.body[:limit]
+
+
+class _FakeGitHubConnection:
+    instances: ClassVar[list[_FakeGitHubConnection]] = []
+    status = 200
+    body = b"{}"
+    failure: BaseException | None = None
+
+    def __init__(self, host: str, timeout: float) -> None:
+        self.host = host
+        self.timeout = timeout
+        self.closed = False
+        self.request_args: tuple[object, ...] | None = None
+        type(self).instances.append(self)
+
+    def request(self, *args: object, **kwargs: object) -> None:
+        self.request_args = (*args, kwargs)
+        if self.failure is not None:
+            raise self.failure
+
+    def getresponse(self) -> _FakeGitHubResponse:
+        return _FakeGitHubResponse(self.status, self.body)
+
+    def close(self) -> None:
+        self.closed = True
+
+
+@pytest.mark.parametrize(
+    ("status", "body", "failure", "message"),
+    [
+        (403, b"{}", None, "HTTP 403"),
+        (200, b"x" * (chronology.MAX_RESPONSE_BYTES + 1), None, "size limit"),
+        (200, b"{}", OSError("network denied"), "bounded transport"),
+        (200, b"{}", http.client.HTTPException("bad response"), "bounded transport"),
+    ],
+)
+def test_bounded_github_transport_fails_closed_and_always_closes(
+    monkeypatch: pytest.MonkeyPatch,
+    status: int,
+    body: bytes,
+    failure: BaseException | None,
+    message: str,
+) -> None:
+    _FakeGitHubConnection.instances.clear()
+    _FakeGitHubConnection.status = status
+    _FakeGitHubConnection.body = body
+    _FakeGitHubConnection.failure = failure
+    monkeypatch.setattr(chronology.http.client, "HTTPSConnection", _FakeGitHubConnection)
+
+    with pytest.raises(PolicyRejection, match=message):
+        chronology._fetch_public_github_json("/repos/owner/repository/issues/1")
+
+    connection = _FakeGitHubConnection.instances[0]
+    assert connection.host == "api.github.com"
+    assert connection.timeout == 20.0
+    assert connection.closed is True
+
+
+@pytest.mark.parametrize("path", ["/users/owner", "/repos/o/r/issues/1\rInjected: yes", ""])
+def test_bounded_github_transport_rejects_non_allowlisted_paths(path: str) -> None:
+    with pytest.raises(PolicyRejection, match="API path is invalid"):
+        chronology._fetch_public_github_json(path)
+
+
+@pytest.mark.parametrize(
+    ("raw", "message"),
+    [
+        (b'{"b":1,"a":2}\n', "not canonical"),
+        (b'{"a":1,"a":2}\n', "invalid JSON"),
+        (b"[]\n", "must be a JSON object"),
+        (b'{"a":1}', "not canonical"),
+    ],
+)
+def test_chronology_receipt_decoder_rejects_ambiguous_or_noncanonical_json(
+    raw: bytes, message: str
+) -> None:
+    with pytest.raises(PolicyRejection, match=message):
+        chronology._decode_canonical(raw, "chronology receipt")
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        ("response_identity", "response identity differs"),
+        ("metadata_commitment", "metadata commitment differs"),
+        ("metadata_identity", "metadata identity differs"),
+        ("capture_predates_fix", "capture predates"),
+        ("future_capture", "future-dated"),
+    ],
+)
+def test_chronology_derivation_rejects_unbound_or_impossible_evidence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mutation: str,
+    message: str,
+) -> None:
+    cohort, hidden, responses, _cases = _fixtures(tmp_path, monkeypatch)
+    captured_at = "2026-01-01T00:00:00Z"
+    if mutation == "response_identity":
+        response_path = responses / "rk-v0.2-001.json"
+        response = json.loads(response_path.read_text())
+        response["number"] = 999
+        _write_json(response_path, response)
+    elif mutation == "metadata_commitment":
+        (tmp_path / "metadata/rk-v0.2-001.json").write_bytes(b"{}\n")
+    elif mutation == "metadata_identity":
+        metadata_path = tmp_path / "metadata/rk-v0.2-001.json"
+        metadata = json.loads(metadata_path.read_text())
+        metadata["repo"] = "attacker/wrong"
+        metadata_raw = _write_json(metadata_path, metadata)
+
+        def artifacts(_authority: object, case_id: str) -> dict[str, dict[str, object]]:
+            path = tmp_path / "metadata" / f"{case_id}.json"
+            raw = path.read_bytes()
+            return {
+                "metadata": {
+                    "bytes": len(raw),
+                    "path": path,
+                    "sha256": chronology.hashlib.sha256(raw).hexdigest(),
+                }
+            }
+
+        assert metadata_raw
+        monkeypatch.setattr(chronology, "hidden_case_artifacts", artifacts)
+    elif mutation == "capture_predates_fix":
+        captured_at = "2024-06-01T00:00:00Z"
+    else:
+        captured_at = "2099-01-01T00:00:00Z"
+
+    with pytest.raises(PolicyRejection, match=message):
+        chronology.prepare_v02_chronology_evidence(
+            cohort_plan_path=cohort,
+            hidden_extraction_receipt=hidden,
+            issue_responses_root=responses,
+            captured_at=captured_at,
+            tool_git_sha="a" * 40,
+            output_path=tmp_path / "rejected-chronology.json",
+        )
 
 
 def test_chronology_cli_reports_provider_free_capture_prepare_and_verify(
