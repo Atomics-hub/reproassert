@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import cast
@@ -30,10 +30,13 @@ _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _GIT_SHA = re.compile(r"[0-9a-f]{40}\Z")
 _TIMESTAMP = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?Z\Z")
 _SMOKE_IDS = frozenset(EXPECTED_SMOKE_CASE_IDS)
+_ISSUER = object()
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, init=False)
 class VerifiedV02ExactPreregistration:
+    """Process-local authority issued only by fresh evidence rederivation."""
+
     path: Path
     sha256: str
     cohort_sha256: str
@@ -41,7 +44,11 @@ class VerifiedV02ExactPreregistration:
     case_count: int
     evaluator_preflight_ready_count: int
     infrastructure_failure_count: int
+    _issuer: object = field(repr=False, compare=False)
     provider_calls: int = 0
+
+    def __init__(self, *_args: object, **_kwargs: object) -> None:
+        raise TypeError("VerifiedV02ExactPreregistration is verifier-issued only")
 
 
 def prepare_v02_exact_preregistration(
@@ -169,15 +176,29 @@ def verify_v02_exact_preregistration(
     unsigned.pop("preregistration_sha256")
     if unsigned != expected:
         raise _reject("Exact-image preregistration differs from freshly verified evidence.")
-    return VerifiedV02ExactPreregistration(
-        path=output,
-        sha256=hashlib.sha256(raw).hexdigest(),
-        cohort_sha256=cast(str, record["cohort_sha256"]),
-        request_set_sha256=cast(str, record["request_set_sha256"]),
-        case_count=20,
-        evaluator_preflight_ready_count=19,
-        infrastructure_failure_count=1,
-    )
+    verified = object.__new__(VerifiedV02ExactPreregistration)
+    values: dict[str, object] = {
+        "path": output,
+        "sha256": hashlib.sha256(raw).hexdigest(),
+        "cohort_sha256": cast(str, record["cohort_sha256"]),
+        "request_set_sha256": cast(str, record["request_set_sha256"]),
+        "case_count": 20,
+        "evaluator_preflight_ready_count": 19,
+        "infrastructure_failure_count": 1,
+        "provider_calls": 0,
+        "_issuer": _ISSUER,
+    }
+    for name, value in values.items():
+        object.__setattr__(verified, name, value)
+    return verified
+
+
+def require_v02_exact_preregistration(value: object) -> VerifiedV02ExactPreregistration:
+    """Require a fresh verifier-issued exact preregistration authority."""
+
+    if type(value) is not VerifiedV02ExactPreregistration or value._issuer is not _ISSUER:
+        raise _reject("Fresh verifier-issued exact-image preregistration is required.")
+    return value
 
 
 def _derive_record(

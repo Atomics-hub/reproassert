@@ -10,6 +10,10 @@ import jsonschema
 import pytest
 
 import reproassert.benchmark_v02_execution_freeze as execution_freeze
+from reproassert import benchmark_v02_campaign as campaign_module
+from reproassert import benchmark_v02_exact_preregistration as exact_preregistration
+from reproassert import benchmark_v02_runner as runner
+from reproassert.benchmark_v02_candidate_contract import v02_candidate_contract
 from reproassert.benchmark_v02_execution_freeze import (
     MAX_CASE_MICROUSD,
     _preparation_requests,
@@ -17,6 +21,7 @@ from reproassert.benchmark_v02_execution_freeze import (
     exact_approval_statement,
 )
 from reproassert.benchmark_v02_runner import V02PricingSnapshot
+from reproassert.benchmark_v02_scored_preregistration import load_v02_scored_preregistration
 from reproassert.errors import PolicyRejection
 
 
@@ -156,10 +161,67 @@ def test_prepare_and_authorize_exact_freeze_end_to_end_without_provider(
     )
     preparation_path = tmp_path / "preparation.json"
     preparation_path.write_bytes(_canonical(preparation))
+    exact_rows: list[dict[str, object]] = []
+    for position in range(1, 21):
+        case_id = f"rk-v0.2-{position:03d}"
+        request = json.loads((tmp_path / f"cases/{case_id}/request-envelope.json").read_text())
+        contract = v02_candidate_contract(case_id=case_id, issue_number=position)
+        row: dict[str, object] = {
+            "base_sha": f"{position:040x}",
+            "candidate_profile": contract.profile,
+            "case_id": case_id,
+            "difficulty": "lt_15m" if position <= 14 else "15m_to_1h",
+            "evaluator_commitment_sha256": f"{position + 100:064x}",
+            "evaluator_status": (
+                "runtime_attested_gold_smoke_infrastructure_failure"
+                if position == 14
+                else "runtime_attested_evaluator_preflight_ready"
+            ),
+            "generator_projection_sha256": f"{position + 200:064x}",
+            "instance_id": f"instance-{position}",
+            "issue_url": f"https://github.com/owner/repo/issues/{position}",
+            "mapping_selected_hunks_sha256": f"{position + 400:064x}",
+            "outbound_request_sha256": request["outbound_request_sha256"],
+            "rendered_input_sha256": request["rendered_input_sha256"],
+            "repo": "owner/repo",
+            "request_envelope_sha256": f"{position + 500:064x}",
+            "smoke": position in {4, 6, 10, 11, 18},
+            "source_projection_commitment_sha256": f"{position + 300:064x}",
+            "test_command_profile": (
+                "sympy-bin-test-v1" if contract.profile == "sympy-native-v1" else "pytest-v1"
+            ),
+        }
+        row["case_commitment_sha256"] = runner._sha256_json(row)
+        exact_rows.append(row)
+    exact_record: dict[str, object] = {
+        "algorithm": exact_preregistration.ALGORITHM,
+        "benchmark_version": "0.2",
+        "case_count": 20,
+        "case_set_sha256": runner._sha256_json(
+            {
+                "algorithm": "reproassert-v02-exact-preregistered-case-set-v1",
+                "case_commitments": [row["case_commitment_sha256"] for row in exact_rows],
+            }
+        ),
+        "cases": exact_rows,
+        "claims": {},
+        "cohort_sha256": "2" * 64,
+        "evidence": {},
+        "frozen_at": "2026-07-11T07:30:00Z",
+        "policy": {},
+        "request_set_sha256": "7" * 64,
+        "schema_version": "1.0.0",
+        "status": "frozen_preinference_exact_image",
+        "tool_git_sha": tool_sha,
+    }
+    exact_record["preregistration_sha256"] = exact_preregistration._self_hash(exact_record)
+    exact_path = tmp_path / "preregistration.json"
+    exact_path.write_bytes(exact_preregistration._canonical(exact_record) + b"\n")
+    loaded_exact = load_v02_scored_preregistration(exact_path)
     campaign = SimpleNamespace(
         campaign_id="campaign-v02-test",
         case_ids=case_ids,
-        preregistration_sha256="1" * 64,
+        preregistration_sha256=loaded_exact.raw_sha256,
         cohort_sha256="2" * 64,
         raw_sha256="3" * 64,
         decoded={"prepared_at": "2026-07-11T07:00:00Z"},
@@ -186,11 +248,11 @@ def test_prepare_and_authorize_exact_freeze_end_to_end_without_provider(
         name: tmp_path / name
         for name in (
             "campaign-freeze.json",
-            "preregistration.json",
             "runtime.json",
             "gold-smoke.json",
         )
     }
+    placeholders["preregistration.json"] = exact_path
     output_path = tmp_path / "execution-freeze.json"
 
     verified = execution_freeze.prepare_v02_exact_image_execution_freeze(
@@ -215,6 +277,7 @@ def test_prepare_and_authorize_exact_freeze_end_to_end_without_provider(
 
     approval_path = tmp_path / "approval.txt"
     approval_path.write_text(exact_approval_statement(verified.sha256) + "\n")
+    authorization_path = tmp_path / "authorization.json"
     authorization = execution_freeze.authorize_v02_exact_image_execution(
         execution_freeze_path=output_path,
         campaign_freeze_path=placeholders["campaign-freeze.json"],
@@ -225,13 +288,50 @@ def test_prepare_and_authorize_exact_freeze_end_to_end_without_provider(
         approval_file=approval_path,
         approval_ref="user:test-fixture",
         authorized_at="2026-07-11T08:01:00Z",
-        output_path=tmp_path / "authorization.json",
+        output_path=authorization_path,
     )
 
     assert authorization.execution_freeze_sha256 == verified.sha256
     assert authorization.campaign_id == campaign.campaign_id
     assert authorization.authorized_at == "2026-07-11T08:01:00Z"
     assert authorization.provider_calls == 0
+
+    monkeypatch.setattr(campaign_module, "verify_v02_campaign_freeze", lambda *_: campaign)
+    approval_text = exact_approval_statement(verified.sha256)
+    reservations = freeze_record["execution"]["reservations"]
+    policy = runner.V02ScoredRunPolicy(
+        campaign_id=campaign.campaign_id,
+        campaign_freeze_sha256=campaign.raw_sha256,
+        execution_authorization_sha256=authorization.sha256,
+        authorization_text_sha256=hashlib.sha256(approval_text.encode()).hexdigest(),
+        authorized_at=authorization.authorized_at,
+        request_set_sha256=verified.request_set_sha256,
+        tool_git_sha=tool_sha,
+        authorization_status="explicit_user_approval",
+        authorization_ref="user:test-fixture",
+        generator_mode="trusted_builtin_provider_adapter",
+        provider="openai",
+        requested_model=_pricing().requested_model,
+        pricing=_pricing(),
+        reserved_worst_case_microusd=max(
+            cast(int, item["worst_case_microusd"]) for item in reservations
+        ),
+        max_case_attributable_microusd=250_000,
+        max_campaign_attributable_microusd=5_000_000,
+        max_case_wall_ms=600_000,
+        provider_timeout_seconds=120.0,
+    )
+    bound = runner._verify_execution_authorization_binding(
+        execution_authorization_path=authorization_path,
+        exact_execution_freeze_path=output_path,
+        campaign_freeze_path=placeholders["campaign-freeze.json"],
+        preregistration_path=exact_path,
+        case_id="rk-v0.2-001",
+        rendered_input_sha256=cast(str, exact_rows[0]["rendered_input_sha256"]),
+        policy=policy,
+    )
+    assert bound.raw_sha256 == authorization.sha256
+    assert bound.request_sha256("rk-v0.2-001") == exact_rows[0]["rendered_input_sha256"]
 
     verification_paths = {
         "campaign_freeze_path": placeholders["campaign-freeze.json"],

@@ -25,8 +25,11 @@ from reproassert.benchmark_v02_package import (
     PreregisteredV02Case,
     V02CaseIdentity,
     VerifiedV02EvaluatorCapability,
-    load_v02_preregistration,
     require_v02_evaluator_capability,
+)
+from reproassert.benchmark_v02_scored_preregistration import (
+    ScoredV02Preregistration,
+    load_v02_scored_preregistration,
 )
 from reproassert.candidate import (
     MAX_TEST_BYTES,
@@ -586,7 +589,7 @@ def load_v02_request_bindings(path: Path, preregistration_path: Path) -> Mapping
             "v02_execution_authorization",
             "Execution request-binding fields or version are not exact.",
         )
-    preregistration = load_v02_preregistration(Path(preregistration_path))
+    preregistration = load_v02_scored_preregistration(Path(preregistration_path))
     cohort_sha256 = cast(str, preregistration.decoded["cohort_sha256"])
     if (
         value.get("preregistration_sha256") != preregistration.raw_sha256
@@ -659,7 +662,7 @@ def write_v02_execution_authorization(
     from reproassert.benchmark_v02_campaign import verify_v02_campaign_freeze
 
     freeze = verify_v02_campaign_freeze(campaign_freeze_path, preregistration_path)
-    preregistration = load_v02_preregistration(Path(preregistration_path))
+    preregistration = load_v02_scored_preregistration(Path(preregistration_path))
     if not isinstance(tool_git_sha, str) or _GIT_SHA.fullmatch(tool_git_sha) is None:
         raise _reject("v02_execution_authorization", "Tool Git SHA is invalid.")
     freeze_tool = freeze.decoded.get("tool")
@@ -791,7 +794,7 @@ def verify_v02_execution_authorization(
     raw, record = _load_execution_authorization(Path(path))
     _validate_execution_authorization_record(record)
     freeze = verify_v02_campaign_freeze(campaign_freeze_path, preregistration_path)
-    preregistration = load_v02_preregistration(Path(preregistration_path))
+    preregistration = load_v02_scored_preregistration(Path(preregistration_path))
     campaign = cast(Mapping[str, object], record["campaign"])
     if campaign != {
         "campaign_id": freeze.campaign_id,
@@ -978,6 +981,7 @@ def _load_canonical_object(
     limit: int,
     label: str,
     code: str = "v02_execution_authorization",
+    allow_trailing_newline: bool = False,
 ) -> tuple[bytes, dict[str, object]]:
     with open_regular_file(path) as stream:
         raw = stream.read(limit + 1)
@@ -997,7 +1001,10 @@ def _load_canonical_object(
             code,
             f"{label.capitalize()} is not strict JSON.",
         ) from exc
-    if not isinstance(value, dict) or _canonical_json(value) != raw:
+    canonical = _canonical_json(value) if isinstance(value, dict) else b""
+    if not isinstance(value, dict) or (
+        canonical != raw and (not allow_trailing_newline or canonical + b"\n" != raw)
+    ):
         raise _reject(
             code,
             f"{label.capitalize()} is not one canonical JSON object.",
@@ -1367,6 +1374,7 @@ class _RunContext:
     request: GenerationRequest
     rendered_input_sha256: str
     runner_input_sha256: str
+    preregistration_request_set_sha256: str | None = None
 
 
 class _EventContext(Protocol):
@@ -1480,6 +1488,7 @@ def generate_v02_scored_case(
     preregistration_path: Path,
     campaign_freeze_path: Path,
     execution_authorization_path: Path,
+    exact_execution_freeze_path: Path | None = None,
     case_id: str,
     generator_projection_path: Path,
     generator_source_context: VerifiedV02GeneratorSourceContext,
@@ -1501,6 +1510,9 @@ def generate_v02_scored_case(
         preregistration_path=Path(preregistration_path),
         campaign_freeze_path=Path(campaign_freeze_path),
         execution_authorization_path=Path(execution_authorization_path),
+        exact_execution_freeze_path=(
+            Path(exact_execution_freeze_path) if exact_execution_freeze_path is not None else None
+        ),
         case_id=case_id,
         generator_projection_path=Path(generator_projection_path),
         generator_source_context=generator_source_context,
@@ -1588,6 +1600,7 @@ def _start_new_scored_attempt(
     preregistration_path: Path,
     campaign_freeze_path: Path,
     execution_authorization_path: Path,
+    exact_execution_freeze_path: Path | None = None,
     case_id: str,
     generator_projection_path: Path,
     generator_source_context: VerifiedV02GeneratorSourceContext,
@@ -1601,15 +1614,18 @@ def _start_new_scored_attempt(
         case_id=case_id,
         policy=policy,
     )
-    preregistration = load_v02_preregistration(preregistration_path)
+    preregistration = load_v02_scored_preregistration(preregistration_path)
     case = _find_case(preregistration.cases, case_id)
     projection = _load_projection(generator_projection_path, case)
     context = require_v02_generator_source_context(generator_source_context)
-    _validate_generator_context(context, case)
     request = _generation_request(case, projection, context)
+    _validate_scored_context_request(
+        preregistration, context, case, request, policy.requested_model
+    )
     rendered_input_sha256 = _rendered_input_sha256(request)
     execution_authorization = _verify_execution_authorization_binding(
         execution_authorization_path=execution_authorization_path,
+        exact_execution_freeze_path=exact_execution_freeze_path,
         campaign_freeze_path=campaign_freeze_path,
         preregistration_path=preregistration_path,
         case_id=case_id,
@@ -1639,6 +1655,7 @@ def _start_new_scored_attempt(
     context_record = _source_context_record(context)
     runner_input_sha256 = _runner_input_digest(
         preregistration_sha256=preregistration.raw_sha256,
+        preregistration_request_set_sha256=preregistration.request_set_sha256,
         cohort_sha256=cohort_sha256,
         case_record=asdict(case),
         generator_projection_sha256=projection.sha256,
@@ -1653,6 +1670,7 @@ def _start_new_scored_attempt(
         attempt_id=f"attempt_{uuid.uuid4().hex}",
         case=case,
         preregistration_sha256=preregistration.raw_sha256,
+        preregistration_request_set_sha256=preregistration.request_set_sha256,
         cohort_sha256=cohort_sha256,
         source_context=context,
         request=request,
@@ -1748,7 +1766,7 @@ def freeze_v02_campaign_generation_barrier(
     """
 
     policy.require_executable()
-    preregistration = load_v02_preregistration(Path(preregistration_path))
+    preregistration = load_v02_scored_preregistration(Path(preregistration_path))
     ledger = Path(os.path.abspath(os.fspath(ledger_path)))
     _require_private_parent(ledger)
     snapshot = read_v02_scored_ledger(ledger)
@@ -1812,7 +1830,7 @@ def require_v02_campaign_generation_barrier(
     barrier = value
     if barrier._issuer is not _BARRIER_ISSUER:
         raise _reject("v02_generation_barrier", "Generation barrier issuer is invalid.")
-    preregistration = load_v02_preregistration(Path(preregistration_path))
+    preregistration = load_v02_scored_preregistration(Path(preregistration_path))
     snapshot = read_v02_scored_ledger(Path(ledger_path))
     observed = _barrier_from_snapshot(snapshot, preregistration, policy)
     if observed is None or barrier != observed:
@@ -2274,6 +2292,7 @@ def recover_v02_scored_case(
     preregistration_path: Path,
     campaign_freeze_path: Path,
     execution_authorization_path: Path,
+    exact_execution_freeze_path: Path | None = None,
     case_id: str,
     generator_projection_path: Path,
     generator_source_context: VerifiedV02GeneratorSourceContext,
@@ -2297,6 +2316,9 @@ def recover_v02_scored_case(
         preregistration_path=Path(preregistration_path),
         campaign_freeze_path=Path(campaign_freeze_path),
         execution_authorization_path=Path(execution_authorization_path),
+        exact_execution_freeze_path=(
+            Path(exact_execution_freeze_path) if exact_execution_freeze_path is not None else None
+        ),
         case_id=case_id,
         generator_projection_path=Path(generator_projection_path),
         generator_source_context=generator_source_context,
@@ -2365,6 +2387,7 @@ def _prepare_recovery_context(
     preregistration_path: Path,
     campaign_freeze_path: Path | None = None,
     execution_authorization_path: Path | None = None,
+    exact_execution_freeze_path: Path | None = None,
     case_id: str,
     generator_projection_path: Path,
     generator_source_context: VerifiedV02GeneratorSourceContext,
@@ -2386,12 +2409,14 @@ def _prepare_recovery_context(
         if campaign_freeze_path is not None
         else None
     )
-    preregistration = load_v02_preregistration(preregistration_path)
+    preregistration = load_v02_scored_preregistration(preregistration_path)
     case = _find_case(preregistration.cases, case_id)
     projection = _load_projection(generator_projection_path, case)
     context = require_v02_generator_source_context(generator_source_context)
-    _validate_generator_context(context, case)
     request = _generation_request(case, projection, context)
+    _validate_scored_context_request(
+        preregistration, context, case, request, policy.requested_model
+    )
     rendered_input_sha256 = _rendered_input_sha256(request)
     execution_authorization: VerifiedV02ExecutionAuthorization | None = None
     if (campaign_freeze_path is None) != (execution_authorization_path is None):
@@ -2402,6 +2427,7 @@ def _prepare_recovery_context(
     if campaign_freeze_path is not None and execution_authorization_path is not None:
         execution_authorization = _verify_execution_authorization_binding(
             execution_authorization_path=execution_authorization_path,
+            exact_execution_freeze_path=exact_execution_freeze_path,
             campaign_freeze_path=campaign_freeze_path,
             preregistration_path=preregistration_path,
             case_id=case_id,
@@ -2426,6 +2452,7 @@ def _prepare_recovery_context(
     context_record = _source_context_record(context)
     runner_input_sha256 = _runner_input_digest(
         preregistration_sha256=preregistration.raw_sha256,
+        preregistration_request_set_sha256=preregistration.request_set_sha256,
         cohort_sha256=cohort_sha256,
         case_record=asdict(case),
         generator_projection_sha256=projection.sha256,
@@ -2440,6 +2467,7 @@ def _prepare_recovery_context(
         attempt_id=attempt_id,
         case=case,
         preregistration_sha256=preregistration.raw_sha256,
+        preregistration_request_set_sha256=preregistration.request_set_sha256,
         cohort_sha256=cohort_sha256,
         source_context=context,
         request=request,
@@ -2492,12 +2520,39 @@ def _verify_campaign_freeze_binding(
 def _verify_execution_authorization_binding(
     *,
     execution_authorization_path: Path,
+    exact_execution_freeze_path: Path | None,
     campaign_freeze_path: Path,
     preregistration_path: Path,
     case_id: str,
     rendered_input_sha256: str,
     policy: V02ScoredRunPolicy,
 ) -> VerifiedV02ExecutionAuthorization:
+    _authorization_raw, authorization_probe = _load_canonical_object(
+        execution_authorization_path,
+        limit=MAX_EXECUTION_AUTHORIZATION_BYTES,
+        label="execution authorization",
+        allow_trailing_newline=True,
+    )
+    if (
+        authorization_probe.get("algorithm")
+        == "reproassert-v02-exact-image-execution-authorization-v1"
+    ):
+        return _verify_exact_execution_authorization_binding(
+            authorization_path=execution_authorization_path,
+            authorization_raw=_authorization_raw,
+            authorization=authorization_probe,
+            exact_execution_freeze_path=exact_execution_freeze_path,
+            campaign_freeze_path=campaign_freeze_path,
+            preregistration_path=preregistration_path,
+            case_id=case_id,
+            rendered_input_sha256=rendered_input_sha256,
+            policy=policy,
+        )
+    if exact_execution_freeze_path is not None:
+        raise _reject(
+            "v02_execution_authorization",
+            "Legacy authorization rejects an exact execution-freeze path.",
+        )
     authorization = verify_v02_execution_authorization(
         execution_authorization_path,
         campaign_freeze_path=campaign_freeze_path,
@@ -2517,6 +2572,240 @@ def _verify_execution_authorization_binding(
     return authorization
 
 
+def _verify_exact_execution_authorization_binding(
+    *,
+    authorization_path: Path,
+    authorization_raw: bytes,
+    authorization: Mapping[str, object],
+    exact_execution_freeze_path: Path | None,
+    campaign_freeze_path: Path,
+    preregistration_path: Path,
+    case_id: str,
+    rendered_input_sha256: str,
+    policy: V02ScoredRunPolicy,
+) -> VerifiedV02ExecutionAuthorization:
+    """Structurally bind exact post-freeze approval to the exact scored request set."""
+
+    if exact_execution_freeze_path is None:
+        raise _reject(
+            "v02_execution_authorization",
+            "Exact authorization requires its immutable execution-freeze artifact.",
+        )
+    _freeze_raw, freeze = _load_canonical_object(
+        exact_execution_freeze_path,
+        limit=512 * 1024,
+        label="exact execution freeze",
+        allow_trailing_newline=True,
+    )
+    auth_sha = hashlib.sha256(authorization_raw).hexdigest()
+    freeze_sha = hashlib.sha256(_freeze_raw).hexdigest()
+    expected_authorization_keys = {
+        "algorithm",
+        "authorization",
+        "benchmark_version",
+        "campaign_id",
+        "claims",
+        "execution_authorization_sha256",
+        "execution_freeze_sha256",
+        "limits",
+        "provider",
+        "request_set_sha256",
+        "requested_model",
+        "schema_version",
+        "status",
+    }
+    expected_freeze_keys = {
+        "algorithm",
+        "benchmark_version",
+        "campaign",
+        "claims",
+        "controller_git_sha",
+        "evidence",
+        "execution",
+        "execution_freeze_sha256",
+        "prepared_at",
+        "pricing_snapshot",
+        "pricing_snapshot_sha256",
+        "provider",
+        "request_set",
+        "schema_version",
+        "status",
+    }
+    if (
+        set(authorization) != expected_authorization_keys
+        or set(freeze) != expected_freeze_keys
+        or authorization.get("algorithm")
+        != "reproassert-v02-exact-image-execution-authorization-v1"
+        or freeze.get("algorithm") != "reproassert-v02-exact-image-execution-freeze-v1"
+        or authorization.get("benchmark_version") != "0.2"
+        or freeze.get("benchmark_version") != "0.2"
+        or authorization.get("schema_version") != "1.0.0"
+        or freeze.get("schema_version") != "1.0.0"
+        or authorization.get("status") != "authorized_exact_freeze_provider_not_started"
+        or freeze.get("status") != "prepared_exact_inputs_provider_not_authorized"
+        or authorization.get("execution_authorization_sha256")
+        != _self_hash_field(authorization, "execution_authorization_sha256")
+        or freeze.get("execution_freeze_sha256")
+        != _self_hash_field(freeze, "execution_freeze_sha256")
+        or authorization.get("execution_freeze_sha256") != freeze_sha
+    ):
+        raise _reject("v02_execution_authorization", "Exact authorization hash chain is invalid.")
+    preregistration = load_v02_scored_preregistration(preregistration_path)
+    if preregistration.format != "exact-image-v1":
+        raise _reject(
+            "v02_execution_authorization",
+            "Exact authorization requires the exact scored preregistration schema.",
+        )
+    from reproassert.benchmark_v02_campaign import verify_v02_campaign_freeze
+
+    campaign = verify_v02_campaign_freeze(campaign_freeze_path, preregistration_path)
+    request_set = cast(Mapping[str, object], freeze.get("request_set"))
+    freeze_campaign = cast(Mapping[str, object], freeze.get("campaign"))
+    request_values = request_set.get("requests")
+    exact_rows = {cast(str, row["case_id"]): row for row in preregistration.exact_rows}
+    expected_rows = [
+        {
+            "case_id": case.id,
+            "outbound_request_sha256": cast(str, exact_rows[case.id]["outbound_request_sha256"]),
+        }
+        for case in preregistration.cases
+    ]
+    if (
+        request_values != expected_rows
+        or authorization.get("request_set_sha256") != request_set.get("request_set_sha256")
+        or freeze_campaign.get("preregistration_sha256") != preregistration.raw_sha256
+        or freeze_campaign.get("cohort_sha256") != preregistration.cohort_sha256
+        or authorization.get("campaign_id") != campaign.campaign_id
+        or freeze_campaign.get("campaign_id") != campaign.campaign_id
+    ):
+        raise _reject(
+            "v02_execution_authorization", "Exact authorization request or campaign set differs."
+        )
+    row = preregistration.exact_row(case_id)
+    if row is None or row.get("rendered_input_sha256") != rendered_input_sha256:
+        raise _reject("v02_execution_authorization", "Exact authorized rendered request differs.")
+    pricing_record = freeze.get("pricing_snapshot")
+    pricing = _pricing_from_record(cast(Mapping[str, object], pricing_record))
+    approval = cast(Mapping[str, object], authorization.get("authorization"))
+    execution = cast(Mapping[str, object], freeze.get("execution"))
+    reservations = cast(list[Mapping[str, object]], execution.get("reservations"))
+    selected_reservation = max(cast(int, item["worst_case_microusd"]) for item in reservations)
+    authorized_at = _timestamp(approval.get("authorized_at"), "exact authorization time")
+    prepared_at = _timestamp(freeze.get("prepared_at"), "exact execution freeze time")
+    approval_text = cast(str, approval.get("approval_statement"))
+    approval_sha256 = hashlib.sha256(approval_text.encode()).hexdigest()
+    expected_statement = (
+        f"I authorize ReproAssert execution freeze {freeze_sha} with a hard USD 5.00 total cap "
+        "and hard USD 0.25 per-case cap, with zero overage."
+    )
+    if (
+        approval.get("kind") != "explicit_post_freeze_user_approval"
+        or approval_text != expected_statement
+        or approval.get("approval_statement_sha256") != approval_sha256
+        or datetime.fromisoformat(authorized_at[:-1] + "+00:00")
+        <= datetime.fromisoformat(prepared_at[:-1] + "+00:00")
+        or datetime.fromisoformat(authorized_at[:-1] + "+00:00") > datetime.now(timezone.utc)
+        or authorization.get("claims")
+        != {
+            "credentials_read": False,
+            "provider_calls": 0,
+            "provider_invoked_by_this_command": False,
+        }
+        or authorization.get("limits")
+        != {
+            "max_campaign_attributable_microusd": 5_000_000,
+            "max_case_attributable_microusd": 250_000,
+            "overage_permitted": False,
+        }
+        or freeze.get("claims")
+        != {
+            "credentials_read": False,
+            "hidden_data_included": False,
+            "provider_calls": 0,
+            "provider_invoked_by_this_command": False,
+        }
+        or execution.get("overage_permitted") is not False
+    ):
+        raise _reject("v02_execution_authorization", "Exact authorization approval is invalid.")
+    expected = {
+        "campaign_id": campaign.campaign_id,
+        "campaign_freeze_sha256": campaign.raw_sha256,
+        "execution_authorization_sha256": auth_sha,
+        "authorization_text_sha256": approval_sha256,
+        "authorized_at": authorized_at,
+        "request_set_sha256": authorization.get("request_set_sha256"),
+        "tool_git_sha": freeze.get("controller_git_sha"),
+        "authorization_status": "explicit_user_approval",
+        "authorization_ref": approval.get("approval_ref"),
+        "generator_mode": "trusted_builtin_provider_adapter",
+        "provider": authorization.get("provider"),
+        "requested_model": authorization.get("requested_model"),
+        "pricing": pricing.record(),
+        "reserved_worst_case_microusd": selected_reservation,
+        "max_case_attributable_microusd": execution.get("max_case_attributable_microusd"),
+        "max_campaign_attributable_microusd": execution.get("max_campaign_attributable_microusd"),
+        "max_case_wall_ms": execution.get("max_case_wall_ms"),
+        "provider_timeout_ms": execution.get("provider_timeout_ms"),
+    }
+    policy_projection = {
+        "campaign_id": policy.campaign_id,
+        "campaign_freeze_sha256": policy.campaign_freeze_sha256,
+        "execution_authorization_sha256": policy.execution_authorization_sha256,
+        "authorization_text_sha256": policy.authorization_text_sha256,
+        "authorized_at": policy.authorized_at,
+        "request_set_sha256": policy.request_set_sha256,
+        "tool_git_sha": policy.tool_git_sha,
+        "authorization_status": policy.authorization_status,
+        "authorization_ref": policy.authorization_ref,
+        "generator_mode": policy.generator_mode,
+        "provider": policy.provider,
+        "requested_model": policy.requested_model,
+        "pricing": pricing.record() if policy.pricing == pricing else None,
+        "reserved_worst_case_microusd": policy.reserved_worst_case_microusd,
+        "max_case_attributable_microusd": policy.max_case_attributable_microusd,
+        "max_campaign_attributable_microusd": policy.max_campaign_attributable_microusd,
+        "max_case_wall_ms": policy.max_case_wall_ms,
+        "provider_timeout_ms": round(policy.provider_timeout_seconds * 1_000),
+    }
+    if policy_projection != expected:
+        raise _reject("v02_execution_authorization", "Run policy differs from exact approval.")
+    requests = tuple(
+        (case.id, cast(str, preregistration.exact_row(case.id)["rendered_input_sha256"]))  # type: ignore[index]
+        for case in preregistration.cases
+    )
+    return VerifiedV02ExecutionAuthorization(
+        _issuer=_EXECUTION_AUTHORIZATION_ISSUER,
+        path=authorization_path,
+        raw_sha256=auth_sha,
+        campaign_id=campaign.campaign_id,
+        campaign_freeze_sha256=campaign.raw_sha256,
+        preregistration_sha256=preregistration.raw_sha256,
+        cohort_sha256=preregistration.cohort_sha256,
+        tool_git_sha=cast(str, freeze.get("controller_git_sha")),
+        authorized_at=authorized_at,
+        authorization_ref=cast(str, approval.get("approval_ref")),
+        authorization_text=approval_text,
+        authorization_text_sha256=approval_sha256,
+        provider="openai",
+        requested_model=cast(str, authorization.get("requested_model")),
+        adapter_config_sha256=_openai_adapter_config_sha256(authorization.get("requested_model")),
+        request_set_sha256=cast(str, authorization.get("request_set_sha256")),
+        requests=requests,
+        pricing=pricing,
+        reserved_worst_case_microusd=selected_reservation,
+        max_case_attributable_microusd=cast(int, execution.get("max_case_attributable_microusd")),
+        max_campaign_attributable_microusd=cast(
+            int, execution.get("max_campaign_attributable_microusd")
+        ),
+        max_case_wall_ms=cast(int, execution.get("max_case_wall_ms")),
+        provider_timeout_ms=cast(int, execution.get("provider_timeout_ms")),
+    )
+
+
+def _self_hash_field(record: Mapping[str, object], field: str) -> str:
+    return _sha256_json({key: value for key, value in record.items() if key != field})
+
+
 def _source_context_record(context: VerifiedV02GeneratorSourceContext) -> dict[str, object]:
     return {
         "algorithm": context.algorithm,
@@ -2528,6 +2817,7 @@ def _source_context_record(context: VerifiedV02GeneratorSourceContext) -> dict[s
 def _runner_input_digest(
     *,
     preregistration_sha256: str,
+    preregistration_request_set_sha256: str | None = None,
     cohort_sha256: str,
     case_record: Mapping[str, object],
     generator_projection_sha256: str,
@@ -2535,18 +2825,19 @@ def _runner_input_digest(
     rendered_input_sha256: str,
     configuration_sha256: str,
 ) -> str:
-    return _sha256_json(
-        {
-            "algorithm": "reproassert-v02-runner-input-v1",
-            "preregistration_sha256": preregistration_sha256,
-            "cohort_sha256": cohort_sha256,
-            "case": dict(case_record),
-            "generator_projection_sha256": generator_projection_sha256,
-            "source_context": dict(context_record),
-            "rendered_input_sha256": rendered_input_sha256,
-            "configuration_sha256": configuration_sha256,
-        }
-    )
+    record = {
+        "algorithm": "reproassert-v02-runner-input-v1",
+        "preregistration_sha256": preregistration_sha256,
+        "cohort_sha256": cohort_sha256,
+        "case": dict(case_record),
+        "generator_projection_sha256": generator_projection_sha256,
+        "source_context": dict(context_record),
+        "rendered_input_sha256": rendered_input_sha256,
+        "configuration_sha256": configuration_sha256,
+    }
+    if preregistration_request_set_sha256 is not None:
+        record["preregistration_request_set_sha256"] = preregistration_request_set_sha256
+    return _sha256_json(record)
 
 
 def _validate_recovery_attempt_freeze(
@@ -5098,6 +5389,34 @@ def _validate_generator_context(
     if context.context_sha256 != case.source_context_sha256:
         raise _reject(
             "v02_source_context", "Generator context digest differs from preregistration."
+        )
+
+
+def _validate_scored_context_request(
+    preregistration: ScoredV02Preregistration,
+    context: VerifiedV02GeneratorSourceContext,
+    case: PreregisteredV02Case,
+    request: GenerationRequest,
+    model: str | None,
+) -> None:
+    if preregistration.format == "legacy-v1":
+        _validate_generator_context(context, case)
+        return
+    if context.case != V02CaseIdentity(case.id, case.repo, case.issue_url, case.base_sha):
+        raise _reject("v02_source_context", "Generator context case differs from exact freeze.")
+    row = preregistration.exact_row(case.id)
+    if row is None:
+        raise _reject("v02_exact_preregistration", "Exact scored case row is missing.")
+    contract = v02_candidate_contract(case_id=case.id, issue_number=request.issue_number)
+    if (
+        row.get("candidate_profile") != contract.profile
+        or row.get("rendered_input_sha256") != _rendered_input_sha256(request)
+        or model is None
+        or row.get("outbound_request_sha256") != _outbound_request_sha256(request, model)
+    ):
+        raise _reject(
+            "v02_exact_preregistration",
+            "Generated provider request differs from exact preregistration.",
         )
 
 

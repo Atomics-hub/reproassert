@@ -11,6 +11,7 @@ import pytest
 from jsonschema import Draft202012Validator, FormatChecker
 
 import reproassert.benchmark_v02_exact_preregistration as exact
+from reproassert.benchmark_v02_scored_preregistration import load_v02_scored_preregistration
 from reproassert.errors import PolicyRejection
 
 TOOL_SHA = "a" * 40
@@ -295,6 +296,12 @@ def test_exact_preregistration_round_trip_schema_and_profiles(
         exact.verify_v02_exact_preregistration(verified.path, **_verify_kwargs(values)).sha256
         == verified.sha256
     )
+    scored = load_v02_scored_preregistration(verified.path)
+    assert scored.format == "exact-image-v1"
+    assert scored.raw_sha256 == verified.sha256
+    assert scored.request_set_sha256 == verified.request_set_sha256
+    assert len(scored.cases) == 20
+    assert scored.exact_row("rk-v0.2-016")["candidate_profile"] == "sympy-native-v1"  # type: ignore[index]
 
 
 def test_verifier_rederives_evidence_after_self_hash_tamper(

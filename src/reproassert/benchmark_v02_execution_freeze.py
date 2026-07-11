@@ -16,10 +16,13 @@ from reproassert.benchmark_v02_campaign import verify_v02_campaign_freeze
 from reproassert.benchmark_v02_cases import verify_v02_cases
 from reproassert.benchmark_v02_instance_controller import verify_instance_gold_smoke_receipt
 from reproassert.benchmark_v02_instance_runtime import load_instance_runtime_manifest
-from reproassert.benchmark_v02_package import EXPECTED_CASE_COUNT, load_v02_preregistration
+from reproassert.benchmark_v02_package import EXPECTED_CASE_COUNT
 from reproassert.benchmark_v02_runner import (
     V02PricingSnapshot,
     _pricing_from_record,
+)
+from reproassert.benchmark_v02_scored_preregistration import (
+    load_v02_scored_preregistration as load_v02_preregistration,
 )
 from reproassert.candidate import MAX_TEST_BYTES
 from reproassert.context import V02_SOURCE_CONTEXT_POLICY_SHA256

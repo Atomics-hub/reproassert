@@ -17,9 +17,9 @@ from reproassert.benchmark_v02_package import (
     BENCHMARK_VERSION,
     EXPECTED_CASE_COUNT,
     PreregisteredV02Case,
-    load_v02_preregistration,
 )
 from reproassert.benchmark_v02_runner import V02LedgerSnapshot, read_v02_scored_ledger
+from reproassert.benchmark_v02_scored_preregistration import load_v02_scored_preregistration
 from reproassert.errors import PolicyRejection
 from reproassert.intake import parse_issue_url
 from reproassert.safeio import require_private_directory
@@ -485,7 +485,7 @@ def verify_v02_campaign_output_structure(
     """Structurally verify two outputs; this does not re-open their source evidence bundle."""
 
     freeze = verify_v02_campaign_freeze(campaign_freeze_path, preregistration_path)
-    preregistration = load_v02_preregistration(Path(preregistration_path))
+    preregistration = load_v02_scored_preregistration(Path(preregistration_path))
     private_raw, private = _load_canonical_json(
         Path(private_finalization_path), "private campaign finalization"
     )
@@ -730,7 +730,7 @@ def prepare_v02_campaign_freeze(
 ) -> Path:
     """Write a public preparation-only campaign freeze with no provider authorization."""
 
-    preregistration = load_v02_preregistration(Path(preregistration_path))
+    preregistration = load_v02_scored_preregistration(Path(preregistration_path))
     _identifier(campaign_id, "campaign ID")
     _timestamp(prepared_at, "campaign preparation time")
     _identifier(tool_name, "tool name")
@@ -801,7 +801,7 @@ def verify_v02_campaign_freeze(
         raise _reject("v02_campaign_freeze", "Campaign freeze version or status is invalid.")
     campaign_id = _identifier(record["campaign_id"], "campaign ID")
     _timestamp(record["prepared_at"], "campaign preparation time")
-    preregistration = load_v02_preregistration(Path(preregistration_path))
+    preregistration = load_v02_scored_preregistration(Path(preregistration_path))
     cohort_sha256 = _digest_value(preregistration.decoded.get("cohort_sha256"), "cohort")
     if (
         record["preregistration_sha256"] != preregistration.raw_sha256
@@ -933,7 +933,7 @@ def finalize_v02_campaign(
     """Fail closed, cross-check 20 private attempts, then unseal one bounded aggregate."""
 
     freeze = verify_v02_campaign_freeze(campaign_freeze_path, preregistration_path)
-    preregistration = load_v02_preregistration(Path(preregistration_path))
+    preregistration = load_v02_scored_preregistration(Path(preregistration_path))
     _timestamp(finalized_at, "campaign finalization time")
     _identifier(tool_name, "tool name")
     _bounded_text(tool_version, "tool version", 1, 64)
