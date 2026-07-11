@@ -5,8 +5,10 @@ from pathlib import Path
 
 import jsonschema
 import pytest
+from click.testing import CliRunner
 
 import reproassert.benchmark_v02_exact_controls as controls
+from reproassert import cli
 from reproassert.benchmark_v02_candidate_evaluator import (
     CandidateArtifact,
     CandidateExecutionProfile,
@@ -290,3 +292,10 @@ def test_receipt_verifier_rejects_forged_l2_and_schema_accepts_honest_inconclusi
     path.write_bytes(controls._canonical(record) + b"\n")
     with pytest.raises(PolicyRejection, match="claims disagree"):
         controls.verify_exact_image_causal_control_receipt(path)
+
+
+def test_cli_exposes_provider_free_exact_control_execution_and_verification() -> None:
+    result = CliRunner().invoke(cli.main, ["benchmark", "--help"])
+    assert result.exit_code == 0
+    assert "execute-v02-exact-causal-controls" in result.output
+    assert "verify-v02-exact-causal-controls" in result.output

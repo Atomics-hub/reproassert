@@ -96,6 +96,25 @@ reproassert benchmark verify-v02-exact-preregistration \
 
 The output is a successor contract, not a benchmark result or spend authorization.
 
+## Executed exact-image causal controls
+
+After one candidate has an accepted exact-image evaluation receipt, execute the preregistered
+necessity and sufficiency controls with:
+
+```bash
+reproassert benchmark execute-v02-exact-causal-controls --help
+reproassert benchmark verify-v02-exact-causal-controls \
+  "$PRIVATE_ROOT/rk-v0.2-001/exact-causal-controls.json"
+```
+
+The execution command reissues evaluator authority from the runtime manifest, hidden extraction,
+gold-smoke receipt, and gold specs; binds the approved mapping consensus and candidate receipt; and
+runs `full_fix`, `fix_minus_selected`, and `base_plus_selected` three times each in fresh
+network-disabled contexts. When every production hunk is selected, `fix_minus_selected` executes
+the true buggy base rather than making a one-hunk fix ineligible by construction. Unsafe,
+inseparable, or noncommutative partitions remain explicitly inconclusive and can never assert L2.
+The command does not invoke a model or provider.
+
 Version 0.1 evaluates whether ReproAssert can turn a historical GitHub issue into a verified failing pytest reproduction before applying the known human fix. The protocol is frozen before scored runs and separates generation from hidden-fix evaluation. Its historical issue-snapshot limitation is recorded in the [v0.1 provenance erratum](../benchmarks/v0.1/ERRATA.md).
 
 Hardening note (2026-07-10): before any live-model smoke or scored attempt, the executable contract

@@ -41,6 +41,7 @@ from reproassert.benchmark_v02_campaign import (
     verify_v02_causal_control_set,
     verify_v02_semantic_review_set,
 )
+from reproassert.benchmark_v02_candidate_evaluator import CandidateArtifact
 from reproassert.benchmark_v02_cases import prepare_v02_cases, verify_v02_cases
 from reproassert.benchmark_v02_chronology import (
     capture_v02_public_issue_responses,
@@ -48,8 +49,13 @@ from reproassert.benchmark_v02_chronology import (
     verify_v02_chronology_evidence,
 )
 from reproassert.benchmark_v02_exact_capability import (
+    issue_verified_v02_exact_image_evaluator_capability,
     prepare_v02_exact_image_capability_index,
     verify_v02_exact_image_capability_index,
+)
+from reproassert.benchmark_v02_exact_controls import (
+    run_exact_image_causal_controls,
+    verify_exact_image_causal_control_receipt,
 )
 from reproassert.benchmark_v02_exact_preregistration import (
     prepare_v02_exact_preregistration,
@@ -673,6 +679,121 @@ def benchmark_verify_v02_exact_capabilities(
             gold_smoke_receipt_path=gold_smoke_receipt,
             hidden_extraction_receipt=hidden_extraction_receipt,
         )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    result = asdict(verified)
+    result["verified"] = True
+    click.echo(json.dumps(result, indent=2, sort_keys=True, default=str))
+
+
+@benchmark_group.command("execute-v02-exact-causal-controls")
+@click.option("--case-id", required=True)
+@click.option(
+    "--instance-runtime-manifest",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option("--expected-manifest-sha256", required=True)
+@click.option(
+    "--gold-smoke-receipt",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--gold-specs",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--hidden-extraction-receipt",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--mapping-preparation",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--mapping-consensus",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--candidate-evaluation-receipt",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--candidate-file",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option("--candidate-relative-path", required=True)
+@click.option("--candidate-test-function", required=True)
+@click.option("--executed-at", required=True)
+@click.option("--tool-git-sha", required=True)
+@click.option("--output", type=click.Path(path_type=Path, dir_okay=False), required=True)
+def benchmark_run_v02_exact_causal_controls(
+    case_id: str,
+    instance_runtime_manifest: Path,
+    expected_manifest_sha256: str,
+    gold_smoke_receipt: Path,
+    gold_specs: Path,
+    hidden_extraction_receipt: Path,
+    mapping_preparation: Path,
+    mapping_consensus: Path,
+    candidate_evaluation_receipt: Path,
+    candidate_file: Path,
+    candidate_relative_path: str,
+    candidate_test_function: str,
+    executed_at: str,
+    tool_git_sha: str,
+    output: Path,
+) -> None:
+    """Execute the three exact-image causal controls; never invoke a provider."""
+
+    try:
+        _ensure_private_output_root(output.parent)
+        hidden = verify_v02_hidden_gold(hidden_extraction_receipt)
+        capability = issue_verified_v02_exact_image_evaluator_capability(
+            manifest_path=instance_runtime_manifest,
+            expected_manifest_sha256=expected_manifest_sha256,
+            gold_smoke_receipt_path=gold_smoke_receipt,
+            verified_hidden=hidden,
+            case_id=case_id,
+        )
+        verified = run_exact_image_causal_controls(
+            evaluator_capability=capability,
+            verified_hidden=hidden,
+            manifest_path=instance_runtime_manifest,
+            expected_manifest_sha256=expected_manifest_sha256,
+            gold_smoke_receipt_path=gold_smoke_receipt,
+            gold_specs_path=gold_specs,
+            mapping_consensus_path=mapping_consensus,
+            mapping_preparation_path=mapping_preparation,
+            candidate_evaluation_receipt_path=candidate_evaluation_receipt,
+            candidate=CandidateArtifact(
+                relative_path=candidate_relative_path,
+                content=candidate_file.read_bytes(),
+                test_function=candidate_test_function,
+            ),
+            output_path=output,
+            executed_at=executed_at,
+            tool_git_sha=tool_git_sha,
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(json.dumps(asdict(verified), indent=2, sort_keys=True, default=str))
+
+
+@benchmark_group.command("verify-v02-exact-causal-controls")
+@click.argument("receipt", type=click.Path(path_type=Path, exists=True, dir_okay=False))
+def benchmark_verify_v02_exact_causal_controls(receipt: Path) -> None:
+    """Verify one redacted exact-image causal-control receipt."""
+
+    try:
+        verified = verify_exact_image_causal_control_receipt(receipt)
     except (ReproAssertError, OSError, ValueError) as exc:
         _fail(exc)
     result = asdict(verified)
