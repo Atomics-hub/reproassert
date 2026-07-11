@@ -11,6 +11,7 @@ from pathlib import Path
 from reproassert.errors import PolicyRejection
 
 MAX_MANIFEST_FILES = 5_000
+MAX_RENDERED_MANIFEST_BYTES = 128 * 1024
 MAX_CONTEXT_BYTES = 96 * 1024
 MAX_FILE_BYTES = 16 * 1024
 V02_SOURCE_CONTEXT_ALGORITHM = "reproassert-v02-source-context-v1"
@@ -34,6 +35,7 @@ _V02_SOURCE_CONTEXT_POLICY = {
     "algorithm": V02_SOURCE_CONTEXT_ALGORITHM,
     "builder": "reproassert.context.build_source_context",
     "max_manifest_files": MAX_MANIFEST_FILES,
+    "max_rendered_manifest_bytes": MAX_RENDERED_MANIFEST_BYTES,
     "max_context_bytes": MAX_CONTEXT_BYTES,
     "max_file_bytes": MAX_FILE_BYTES,
     "text_suffixes": sorted(_TEXT_SUFFIXES),
@@ -142,7 +144,38 @@ def build_source_context(root: Path, *, issue_title: str, issue_body: str) -> So
             )
         )
 
-    return SourceContext(tuple(manifest), tuple(selected), used)
+    rendered_manifest = _bounded_rendered_manifest(
+        manifest,
+        required_paths={item.path for item in selected},
+    )
+    return SourceContext(rendered_manifest, tuple(selected), used)
+
+
+def _bounded_rendered_manifest(manifest: list[str], *, required_paths: set[str]) -> tuple[str, ...]:
+    """Keep selected files discoverable while bounding prompt-only path inventory bytes."""
+
+    encoded_paths = {
+        path: json.dumps(path, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        for path in manifest
+    }
+    kept = sorted(required_paths)
+    size = 2 + sum(len(encoded_paths[path]) for path in kept) + max(0, len(kept) - 1)
+    if size > MAX_RENDERED_MANIFEST_BYTES:
+        raise PolicyRejection(
+            "source_manifest_budget",
+            "Selected source paths exceed the rendered manifest byte budget.",
+        )
+    kept_set = set(kept)
+    for path in sorted(manifest):
+        if path in kept_set:
+            continue
+        added = len(encoded_paths[path]) + (1 if kept else 0)
+        if size + added > MAX_RENDERED_MANIFEST_BYTES:
+            continue
+        kept.append(path)
+        kept_set.add(path)
+        size += added
+    return tuple(sorted(kept))
 
 
 def _read_bounded(path: Path, limit: int) -> bytes:

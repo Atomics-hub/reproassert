@@ -96,7 +96,10 @@ def candidate_function(issue_number: int) -> str:
 
 
 def validate_candidate_payload(
-    payload: Mapping[str, Any], *, issue_number: int
+    payload: Mapping[str, Any],
+    *,
+    issue_number: int,
+    required_test_function: str | None = None,
 ) -> ValidatedCandidate:
     required = {"test_content", "expected_symptom", "rationale"}
     if set(payload) != required:
@@ -138,7 +141,11 @@ def validate_candidate_payload(
         single_line=False,
     )
 
-    test_function = candidate_function(issue_number)
+    test_function = required_test_function or candidate_function(issue_number)
+    if not test_function.isidentifier() or not test_function.startswith("test_"):
+        raise PolicyRejection(
+            "candidate_test_function", "Required candidate function is not a safe test identifier."
+        )
     _validate_python(content, test_function, expected)
     return ValidatedCandidate(content, test_function, expected, rationale)
 

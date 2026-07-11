@@ -21,6 +21,10 @@ SCHEMA_FILENAMES = {
     "benchmark-v02-campaign-finalization": ("benchmark-v02-campaign-finalization.schema.json"),
     "benchmark-v02-public-aggregate": "benchmark-v02-public-aggregate.schema.json",
     "benchmark-v02-execution-authorization": ("benchmark-v02-execution-authorization.schema.json"),
+    "benchmark-v02-execution-freeze": "benchmark-v02-execution-freeze.schema.json",
+    "benchmark-v02-exact-image-authorization": (
+        "benchmark-v02-exact-image-authorization.schema.json"
+    ),
     "benchmark-v02-execution-request-bindings": (
         "benchmark-v02-execution-request-bindings.schema.json"
     ),
@@ -35,6 +39,9 @@ SCHEMA_FILENAMES = {
     "benchmark-v02-cases-preparation": "benchmark-v02-cases-preparation.schema.json",
     "benchmark-v02-hidden-extraction": "benchmark-v02-hidden-extraction.schema.json",
     "benchmark-v02-instance-gold-smoke": "benchmark-v02-instance-gold-smoke.schema.json",
+    "benchmark-v02-instance-candidate-evaluation": (
+        "benchmark-v02-instance-candidate-evaluation.schema.json"
+    ),
     "benchmark-v02-selection-freeze": "benchmark-v02-selection-freeze.schema.json",
     "benchmark-v021-preparation-freeze": "benchmark-v021-preparation-freeze.schema.json",
     "benchmark-v02-replay-bundle": "benchmark-v02-replay-bundle.schema.json",

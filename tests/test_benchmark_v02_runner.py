@@ -158,6 +158,51 @@ def _candidate(issue_number: int = 1) -> ValidatedCandidate:
     )
 
 
+def test_generation_request_uses_native_sympy_profile_for_frozen_cases() -> None:
+    case = _case(16)
+    projection = runner._Projection(
+        title="SymPy regression", body="Reported behavior is incorrect.", sha256="1" * 64
+    )
+    context = SimpleNamespace(source_context=SourceContext(("sympy/core/add.py",), (), 0))
+
+    request = runner._generation_request(case, projection, cast(Any, context))
+
+    assert request.candidate_profile == "sympy-native-v1"
+    assert request.required_test_function == "test_reproassert_issue_016"
+    assert request.to_dict()["candidate_contract"]["pytest_import_allowed"] is False
+
+
+def test_adapter_config_binds_pytest_and_sympy_instruction_profiles() -> None:
+    digest = runner._openai_adapter_config_sha256("gpt-test")
+    pytest_payload = runner._openai_request_payload(
+        GenerationRequest(
+            issue_url="https://github.com/o/r/issues/1",
+            issue_number=1,
+            issue_title="x",
+            issue_body="x",
+            source_sha="0" * 40,
+            source_context=SourceContext((), (), 0),
+        ),
+        "gpt-test",
+    )
+    sympy_payload = runner._openai_request_payload(
+        GenerationRequest(
+            issue_url="https://github.com/o/r/issues/1",
+            issue_number=1,
+            issue_title="x",
+            issue_body="x",
+            source_sha="0" * 40,
+            source_context=SourceContext((), (), 0),
+            candidate_profile="sympy-native-v1",
+            required_test_function="test_reproassert_issue_016",
+        ),
+        "gpt-test",
+    )
+
+    assert len(digest) == 64
+    assert pytest_payload["instructions"] != sympy_payload["instructions"]
+
+
 def _run(tmp_path: Path, *, case: PreregisteredV02Case | None = None) -> runner._RunContext:
     frozen = case or _case()
     policy = _policy()

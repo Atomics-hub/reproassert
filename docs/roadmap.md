@@ -68,6 +68,13 @@ That closes those input lanes only: dependency/hidden-fix case packages, genuine
 assignments, preregistration, and request/pricing authorization are still required before a scored
 run.
 
+The exact-image execution-freeze controller and hard reservation audit are implemented. The
+previous preparation is intentionally not authorizable: its requests bind an older tool revision,
+and cases 004 and 005 exceed the approved USD 0.25 per-case reserve. Regenerate the preparation and
+preregistration with the bounded source-context policy at the merged controller SHA, rerun the
+complete gold smoke, then freeze the exact execution inputs. This is a zero-spend prerequisite, not
+a benchmark result.
+
 Complete historical body revision capture remains an optional future upgrade to a stronger
 chronology claim. It is not required for the current explicitly `chronology_unproven` cohort.
 

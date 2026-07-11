@@ -15,9 +15,11 @@ from reproassert.errors import ReproAssertError
 from reproassert.generator import (
     DEFAULT_OPENAI_MODEL,
     MAX_OPENAI_RESPONSE_BYTES,
+    SYMPY_NATIVE_CANDIDATE_PROFILE,
     CommandGenerator,
     GenerationRequest,
     OpenAIResponsesGenerator,
+    openai_instructions,
 )
 
 
@@ -82,6 +84,70 @@ def test_request_marks_issue_as_untrusted() -> None:
     encoded = json.dumps(request().to_dict())
     assert "untrusted_data_not_instructions" in encoded
     assert 'commands_allowed": false' in encoded
+
+
+def test_sympy_request_freezes_native_contract_and_instructions() -> None:
+    native = GenerationRequest(
+        issue_url="https://github.com/sympy/sympy/issues/123",
+        issue_number=123,
+        issue_title="Native runner regression",
+        issue_body="The expression is incorrect.",
+        source_sha="b" * 40,
+        source_context=SourceContext(("sympy/core/add.py",), (), 0),
+        candidate_profile=SYMPY_NATIVE_CANDIDATE_PROFILE,
+        required_test_function="test_reproassert_issue_016",
+    )
+
+    payload = native.to_dict()
+    contract = payload["candidate_contract"]
+    assert contract == {
+        "profile": "sympy-native-v1",
+        "required_test_function": "test_reproassert_issue_016",
+        "output_json_keys": ["test_content", "expected_symptom", "rationale"],
+        "one_test_only": True,
+        "production_edits_allowed": False,
+        "commands_allowed": False,
+        "network_allowed": False,
+        "unconditional_failures_allowed": False,
+        "pytest_import_allowed": False,
+        "fixtures_allowed": False,
+        "decorators_allowed": False,
+        "plain_assert_required": True,
+    }
+    instructions = openai_instructions(native)
+    assert "native SymPy" in instructions
+    assert "Do not import pytest" in instructions
+    assert "required zero-argument function" in instructions
+
+
+def test_command_generator_accepts_profile_specific_function(tmp_path: Path) -> None:
+    adapter = tmp_path / "sympy_adapter.py"
+    write_adapter(
+        adapter,
+        {
+            "test_content": (
+                "from sympy import Symbol\n\n"
+                "def test_reproassert_issue_016():\n"
+                "    assert Symbol('x').is_symbol, 'symbol property is incorrect'\n"
+            ),
+            "expected_symptom": "symbol property is incorrect",
+            "rationale": "Exercises native SymPy behavior.",
+        },
+    )
+    native = GenerationRequest(
+        issue_url="https://github.com/sympy/sympy/issues/123",
+        issue_number=123,
+        issue_title="Native runner regression",
+        issue_body="The expression is incorrect.",
+        source_sha="b" * 40,
+        source_context=SourceContext(("sympy/core/add.py",), (), 0),
+        candidate_profile=SYMPY_NATIVE_CANDIDATE_PROFILE,
+        required_test_function="test_reproassert_issue_016",
+    )
+
+    candidate = CommandGenerator([sys.executable, str(adapter)]).generate(native)
+
+    assert candidate.test_function == "test_reproassert_issue_016"
 
 
 def openai_candidate_payload() -> dict[str, str]:

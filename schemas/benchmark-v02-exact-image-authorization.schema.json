@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Atomics-hub/reproassert/blob/main/schemas/benchmark-v02-exact-image-authorization.schema.json",
+  "title": "ReproAssert v0.2 exact-image post-freeze authorization",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["algorithm", "authorization", "benchmark_version", "campaign_id", "claims", "execution_authorization_sha256", "execution_freeze_sha256", "limits", "provider", "request_set_sha256", "requested_model", "schema_version", "status"],
+  "properties": {
+    "algorithm": {"const": "reproassert-v02-exact-image-execution-authorization-v1"},
+    "authorization": {"type": "object", "additionalProperties": false, "required": ["approval_ref", "approval_statement", "approval_statement_sha256", "authorized_at", "kind"], "properties": {"approval_ref": {"type": "string", "minLength": 3, "maxLength": 200}, "approval_statement": {"type": "string", "pattern": "^I authorize ReproAssert execution freeze [0-9a-f]{64} with a hard USD 5\\.00 total cap and hard USD 0\\.25 per-case cap, with zero overage\\.$"}, "approval_statement_sha256": {"$ref": "#/$defs/sha256"}, "authorized_at": {"$ref": "#/$defs/timestamp"}, "kind": {"const": "explicit_post_freeze_user_approval"}}},
+    "benchmark_version": {"const": "0.2"},
+    "campaign_id": {"$ref": "#/$defs/identifier"},
+    "claims": {"const": {"credentials_read": false, "provider_calls": 0, "provider_invoked_by_this_command": false}},
+    "execution_authorization_sha256": {"$ref": "#/$defs/sha256"},
+    "execution_freeze_sha256": {"$ref": "#/$defs/sha256"},
+    "limits": {"const": {"max_campaign_attributable_microusd": 5000000, "max_case_attributable_microusd": 250000, "overage_permitted": false}},
+    "provider": {"const": "openai"},
+    "request_set_sha256": {"$ref": "#/$defs/sha256"},
+    "requested_model": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"},
+    "schema_version": {"const": "1.0.0"},
+    "status": {"const": "authorized_exact_freeze_provider_not_started"}
+  },
+  "$defs": {"sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "identifier": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{2,127}$"}, "timestamp": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?Z$"}}
+}

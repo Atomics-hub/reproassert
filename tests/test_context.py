@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
-from reproassert.context import build_source_context
+from reproassert.context import MAX_RENDERED_MANIFEST_BYTES, build_source_context
 
 
 def test_context_is_bounded_ranked_and_skips_secrets(tmp_path: Path) -> None:
@@ -65,3 +66,26 @@ def test_context_excludes_sensitive_components_at_any_path_depth(tmp_path: Path)
     assert set(safe_files) <= set(selected)
     selected_content = "\n".join(selected.values())
     assert all(sentinel.strip() not in selected_content for sentinel in sensitive_files.values())
+
+
+def test_rendered_manifest_is_byte_bounded_and_keeps_selected_files(tmp_path: Path) -> None:
+    for number in range(2_500):
+        path = tmp_path / f"package_{number:04d}" / ("long_module_name_" * 3 + f"{number}.dat")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"VALUE_{number} = {number}\n")
+    selected_path = tmp_path / "zz_issue_target.py"
+    selected_path.write_text("def reproduce_manifest_budget_bug():\n    return True\n")
+
+    context = build_source_context(
+        tmp_path,
+        issue_title="manifest budget bug",
+        issue_body="reproduce_manifest_budget_bug in zz_issue_target",
+    )
+
+    encoded_manifest = json.dumps(
+        list(context.manifest), ensure_ascii=False, separators=(",", ":")
+    ).encode("utf-8")
+    assert len(encoded_manifest) <= MAX_RENDERED_MANIFEST_BYTES
+    assert "zz_issue_target.py" in context.manifest
+    assert {item.path for item in context.files} <= set(context.manifest)
+    assert len(context.manifest) < 2_501
