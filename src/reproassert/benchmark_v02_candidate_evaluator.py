@@ -18,6 +18,7 @@ from reproassert.benchmark_v02_instance_executor import (
     InstanceRuntimeExecutor,
 )
 from reproassert.benchmark_v02_instance_runtime import (
+    InstanceRuntime,
     InstanceRuntimeManifest,
     load_instance_runtime_manifest,
 )
@@ -46,6 +47,7 @@ _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _GIT_SHA = re.compile(r"[0-9a-f]{40}\Z")
 _TIMESTAMP = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?Z\Z")
 _TEST_FUNCTION = re.compile(r"test_[A-Za-z_][A-Za-z0-9_]{0,199}\Z")
+_SYMPY_TEST_PATH = re.compile(r"sympy(?:/[A-Za-z0-9_]+)+/tests/test_[A-Za-z0-9_]+\.py\Z")
 _INFRASTRUCTURE_MARKERS = (
     "modulenotfounderror",
     "importerror while importing test module",
@@ -90,7 +92,50 @@ class CandidateEvaluationReceipt:
     accepted: bool
 
 
+@dataclass(frozen=True)
+class CandidateExecutionProfile:
+    """Frozen generation/execution contract for one runtime family and case."""
+
+    profile_id: Literal["pytest-v1", "sympy-native-v1"]
+    staging_path: str
+    required_function: str
+    command_profile: Literal["pytest-v1", "sympy-bin-test-v1"]
+
+    def record(self) -> dict[str, object]:
+        return {
+            "command_profile": self.command_profile,
+            "profile_id": self.profile_id,
+            "required_function": self.required_function,
+            "staging_path": self.staging_path,
+            "staging_path_sha256": hashlib.sha256(self.staging_path.encode()).hexdigest(),
+        }
+
+    @property
+    def sha256(self) -> str:
+        return _sha256_json(self.record())
+
+
 ExecutorFactory = Callable[[InstanceRuntimeManifest, str, SandboxPolicy], InstanceRuntimeExecutor]
+
+
+def candidate_execution_profile(
+    runtime: InstanceRuntime, *, case_id: str, candidate: CandidateArtifact
+) -> CandidateExecutionProfile:
+    """Resolve the only candidate path/function/runner contract permitted for this runtime."""
+
+    checked_case = _case_id(case_id)
+    if runtime.case_id != checked_case:
+        raise _reject("Candidate profile case differs from the frozen runtime.")
+    if runtime.test_command_profile == "pytest-v1":
+        path, function = _pytest_candidate_contract(candidate)
+        return CandidateExecutionProfile("pytest-v1", path, function, "pytest-v1")
+    if runtime.test_command_profile == "sympy-bin-test-v1":
+        suffix = checked_case.rsplit("-", 1)[1]
+        path = f"sympy/reproassert/tests/test_issue_{suffix}.py"
+        function = f"test_reproassert_issue_{suffix}"
+        _sympy_candidate_contract(candidate, required_path=path, required_function=function)
+        return CandidateExecutionProfile("sympy-native-v1", path, function, "sympy-bin-test-v1")
+    raise _reject("Frozen candidate command profile is unsupported.")
 
 
 def evaluate_instance_candidate(
@@ -120,10 +165,9 @@ def evaluate_instance_candidate(
     if len(matches) != 1:
         raise _reject("Case does not bind exactly one frozen instance runtime.")
     runtime = matches[0]
-    if runtime.test_command_profile != "pytest-v1":
-        raise _reject("The candidate evaluator currently accepts only frozen pytest-v1 cases.")
-
-    candidate_path, candidate_target = _candidate_contract(candidate)
+    profile = candidate_execution_profile(runtime, case_id=checked_case, candidate=candidate)
+    candidate_path = profile.staging_path
+    candidate_target = f"{profile.staging_path}::{profile.required_function}"
     production_patch = _hidden_bytes(hidden.production_patch, "production patch")
     gold_patch = _hidden_bytes(hidden.gold_test_patch, "gold test patch")
     if (
@@ -146,18 +190,32 @@ def evaluate_instance_candidate(
         executor.apply_patch(workspace="base", patch=gold_patch)
         executor.apply_patch(workspace="fixed", patch=gold_patch)
 
-        gold_base_collect = executor.run_test_command(
-            workspace="base", targets=hidden.gold_targets, collect_only=True
-        )
-        gold_fixed_collect = executor.run_test_command(
-            workspace="fixed", targets=hidden.gold_targets, collect_only=True
-        )
-        phases["gold_base_collect"] = _evidence(gold_base_collect)
-        phases["gold_fixed_collect"] = _evidence(gold_fixed_collect)
-        _require_clean_collection(gold_base_collect, gold_fixed_collect, "hidden gold")
-
-        gold_base = executor.run_test_command(workspace="base", targets=hidden.gold_targets)
-        gold_fixed = executor.run_test_command(workspace="fixed", targets=hidden.gold_targets)
+        if profile.profile_id == "pytest-v1":
+            gold_base_collect = executor.run_test_command(
+                workspace="base", targets=hidden.gold_targets, collect_only=True
+            )
+            gold_fixed_collect = executor.run_test_command(
+                workspace="fixed", targets=hidden.gold_targets, collect_only=True
+            )
+            phases["gold_base_collect"] = _evidence(gold_base_collect)
+            phases["gold_fixed_collect"] = _evidence(gold_fixed_collect)
+            _require_clean_collection(gold_base_collect, gold_fixed_collect, "hidden gold")
+            gold_base = executor.run_test_command(workspace="base", targets=hidden.gold_targets)
+            gold_fixed = executor.run_test_command(workspace="fixed", targets=hidden.gold_targets)
+        else:
+            phases["gold_base_collect"] = None
+            phases["gold_fixed_collect"] = None
+            gold_path, gold_function = _derive_sympy_gold_contract(gold_patch, hidden.gold_targets)
+            gold_base = executor.run_test_command(
+                workspace="base",
+                sympy_test_file=gold_path,
+                sympy_test_identifier=gold_function,
+            )
+            gold_fixed = executor.run_test_command(
+                workspace="fixed",
+                sympy_test_file=gold_path,
+                sympy_test_identifier=gold_function,
+            )
         phases["gold_base"] = _evidence(gold_base)
         phases["gold_fixed"] = _evidence(gold_fixed)
         _require_gold_pair(gold_base, gold_fixed)
@@ -173,17 +231,26 @@ def evaluate_instance_candidate(
             executor.acquire()
             executor.prepare_workspaces(fixed_patch=production_patch)
             executor.stage_candidate(relative_path=candidate_path, content=candidate.content)
-            collect = executor.run_pytest(
-                workspace=workspace,
-                targets=(candidate_target,),
-                collect_only=True,
-            )
-            _require_clean_collection(collect, collect, "candidate")
-            result = executor.run_pytest(workspace=workspace, targets=(candidate_target,))
-            fingerprint = _candidate_fingerprint_or_none(result)
+            if profile.profile_id == "pytest-v1":
+                collect = executor.run_pytest(
+                    workspace=workspace,
+                    targets=(candidate_target,),
+                    collect_only=True,
+                )
+                _require_clean_collection(collect, collect, "candidate")
+                result = executor.run_pytest(workspace=workspace, targets=(candidate_target,))
+                collection_evidence: object = _evidence(collect)
+            else:
+                collection_evidence = None
+                result = executor.run_test_command(
+                    workspace=workspace,
+                    sympy_test_file=profile.staging_path,
+                    sympy_test_identifier=profile.required_function,
+                )
+            fingerprint = _candidate_fingerprint_or_none(result, profile=profile)
             candidate_runs.append(
                 {
-                    "collection": _evidence(collect),
+                    "collection": collection_evidence,
                     "failure_fingerprint_sha256": fingerprint,
                     "result": _evidence(result),
                     "workspace": workspace,
@@ -210,6 +277,7 @@ def evaluate_instance_candidate(
             "sha256": candidate_sha256,
             "target": candidate_target,
         },
+        "candidate_profile": {**profile.record(), "profile_sha256": profile.sha256},
         "causal_controls": {
             "candidate_on_fixed": "pass" if accepted else "fail",
             "l2_causal_controls_passed": False,
@@ -226,14 +294,6 @@ def evaluate_instance_candidate(
             "provider_calls": 0,
         },
         "executed_at": _timestamp(executed_at),
-        "hidden_inputs": {
-            "gold_target_count": len(hidden.gold_targets),
-            "gold_targets_sha256": _sha256_json(list(hidden.gold_targets)),
-            "gold_test_patch_bytes": len(gold_patch),
-            "gold_test_patch_sha256": hashlib.sha256(gold_patch).hexdigest(),
-            "production_patch_bytes": len(production_patch),
-            "production_patch_sha256": hashlib.sha256(production_patch).hexdigest(),
-        },
         "inputs": {"instance_runtime_manifest_sha256": manifest.sha256},
         "outcome": {
             "accepted": accepted,
@@ -289,10 +349,10 @@ def verify_instance_candidate_receipt(path: Path) -> CandidateEvaluationReceipt:
         "benchmark_version",
         "case_id",
         "candidate",
+        "candidate_profile",
         "causal_controls",
         "claims",
         "executed_at",
-        "hidden_inputs",
         "inputs",
         "outcome",
         "phases",
@@ -344,13 +404,57 @@ def verify_instance_candidate_receipt(path: Path) -> CandidateEvaluationReceipt:
     ) != ("pass" if accepted else "fail"):
         raise _reject("Candidate causal-control outcome is invalid.")
     candidate = value.get("candidate")
-    hidden = value.get("hidden_inputs")
-    if not isinstance(candidate, dict) or not isinstance(hidden, dict):
+    profile = value.get("candidate_profile")
+    if not isinstance(candidate, dict) or not isinstance(profile, dict):
         raise _reject("Candidate evaluation commitments are invalid.")
     _digest(candidate.get("sha256"), "candidate")
-    _digest(hidden.get("gold_targets_sha256"), "gold targets")
-    _digest(hidden.get("gold_test_patch_sha256"), "gold test patch")
-    _digest(hidden.get("production_patch_sha256"), "production patch")
+    if set(profile) != {
+        "command_profile",
+        "profile_id",
+        "profile_sha256",
+        "required_function",
+        "staging_path",
+        "staging_path_sha256",
+    }:
+        raise _reject("Candidate execution profile is invalid.")
+    profile_sha256 = _digest(profile.get("profile_sha256"), "candidate profile")
+    unsigned_profile = dict(profile)
+    unsigned_profile.pop("profile_sha256")
+    if profile_sha256 != _sha256_json(unsigned_profile):
+        raise _reject("Candidate execution profile commitment is invalid.")
+    profile_id = profile.get("profile_id")
+    if profile_id not in {"pytest-v1", "sympy-native-v1"}:
+        raise _reject("Candidate execution profile ID is invalid.")
+    if candidate.get("relative_path") != profile.get("staging_path"):
+        raise _reject("Candidate path differs from its execution profile.")
+    staging_path = profile.get("staging_path")
+    required_function = profile.get("required_function")
+    if not isinstance(staging_path, str) or not isinstance(required_function, str):
+        raise _reject("Candidate execution profile values are invalid.")
+    if candidate.get("target") != f"{staging_path}::{required_function}":
+        raise _reject("Candidate target differs from its execution profile.")
+    if profile.get("staging_path_sha256") != hashlib.sha256(staging_path.encode()).hexdigest():
+        raise _reject("Candidate staging-path commitment is invalid.")
+    if profile_id == "pytest-v1":
+        if (
+            profile.get("command_profile") != "pytest-v1"
+            or not staging_path.startswith("tests/reproassert/test_")
+            or _TEST_FUNCTION.fullmatch(required_function) is None
+        ):
+            raise _reject("Pytest candidate execution profile is invalid.")
+    else:
+        suffix = case_id.rsplit("-", 1)[1]
+        if profile != {
+            "command_profile": "sympy-bin-test-v1",
+            "profile_id": "sympy-native-v1",
+            "profile_sha256": profile_sha256,
+            "required_function": f"test_reproassert_issue_{suffix}",
+            "staging_path": f"sympy/reproassert/tests/test_issue_{suffix}.py",
+            "staging_path_sha256": hashlib.sha256(
+                f"sympy/reproassert/tests/test_issue_{suffix}.py".encode()
+            ).hexdigest(),
+        }:
+            raise _reject("SymPy candidate execution profile is invalid.")
     policy = value.get("policy")
     if policy != {
         "base_runs": BASE_RUNS,
@@ -374,13 +478,13 @@ def verify_instance_candidate_receipt(path: Path) -> CandidateEvaluationReceipt:
         "candidate_runs",
     }:
         raise _reject("Candidate evaluation phases are invalid.")
-    for name in (
-        "gold_base_collect",
-        "gold_fixed_collect",
-        "gold_base",
-        "gold_fixed",
-    ):
+    for name in ("gold_base", "gold_fixed"):
         _verify_evidence(phases[name])
+    for name in ("gold_base_collect", "gold_fixed_collect"):
+        if profile_id == "pytest-v1":
+            _verify_evidence(phases[name])
+        elif phases[name] is not None:
+            raise _reject("SymPy native receipt cannot claim pytest collection evidence.")
     runs = phases["candidate_runs"]
     if not isinstance(runs, list) or len(runs) != len(RUN_ORDER):
         raise _reject("Candidate repeat evidence is invalid.")
@@ -395,7 +499,10 @@ def verify_instance_candidate_receipt(path: Path) -> CandidateEvaluationReceipt:
             "workspace",
         }:
             raise _reject("Candidate run evidence is invalid.")
-        _verify_evidence(run["collection"])
+        if profile_id == "pytest-v1":
+            _verify_evidence(run["collection"])
+        elif run["collection"] is not None:
+            raise _reject("SymPy native run cannot claim pytest collection evidence.")
         _verify_evidence(run["result"])
         fingerprint = run["failure_fingerprint_sha256"]
         if run["workspace"] == "base":
@@ -477,7 +584,7 @@ def _require_gold_pair(base: InstancePytestResult, fixed: InstancePytestResult) 
         raise _reject("Hidden gold tests do not attest the frozen buggy/fixed pair.")
 
 
-def _candidate_contract(candidate: CandidateArtifact) -> tuple[str, str]:
+def _pytest_candidate_contract(candidate: CandidateArtifact) -> tuple[str, str]:
     if not isinstance(candidate.content, bytes) or not (
         1 <= len(candidate.content) <= MAX_CANDIDATE_BYTES
     ):
@@ -493,14 +600,110 @@ def _candidate_contract(candidate: CandidateArtifact) -> tuple[str, str]:
         or any(part in {"", ".", ".."} for part in path.parts)
         or path.suffix != ".py"
         or not path.name.startswith("test_")
-        or (path.parts[0] not in {"tests", "test"} and len(path.parts) != 1)
+        or path.parts[:2] != ("tests", "reproassert")
     ):
-        raise _reject("Candidate path must be a safe pytest test_*.py path.")
+        raise _reject("Pytest candidate path must be a safe tests/reproassert/test_*.py path.")
     function = candidate.test_function
     if not isinstance(function, str) or _TEST_FUNCTION.fullmatch(function) is None:
         raise _reject("Candidate must name exactly one valid pytest test function.")
     text = path.as_posix()
-    return text, f"{text}::{function}"
+    return text, function
+
+
+def _sympy_candidate_contract(
+    candidate: CandidateArtifact, *, required_path: str, required_function: str
+) -> None:
+    if candidate.relative_path != required_path or candidate.test_function != required_function:
+        raise _reject("SymPy candidate path and function must equal the frozen native profile.")
+    if not isinstance(candidate.content, bytes) or not (
+        1 <= len(candidate.content) <= MAX_CANDIDATE_BYTES
+    ):
+        raise _reject("Candidate content is empty or exceeds the byte limit.")
+    try:
+        source = candidate.content.decode("utf-8")
+        tree = ast.parse(source)
+    except (UnicodeDecodeError, SyntaxError, ValueError) as exc:
+        raise _reject("SymPy candidate must be valid UTF-8 Python syntax.") from exc
+    functions = [node for node in tree.body if isinstance(node, ast.FunctionDef)]
+    if len(functions) != 1 or functions[0].name != required_function:
+        raise _reject("SymPy native candidate must define exactly its required test function.")
+    function = functions[0]
+    if (
+        function.decorator_list
+        or function.args.posonlyargs
+        or function.args.args
+        or function.args.kwonlyargs
+        or function.args.vararg is not None
+        or function.args.kwarg is not None
+    ):
+        raise _reject("SymPy native candidate rejects decorators and fixture arguments.")
+    for node in tree.body:
+        if isinstance(node, ast.Import):
+            if any(
+                (alias.name != "sympy" and not alias.name.startswith("sympy."))
+                or "pytest" in alias.name.split(".")
+                for alias in node.names
+            ):
+                raise _reject("SymPy native candidate imports must come only from SymPy.")
+        elif isinstance(node, ast.ImportFrom):
+            if (
+                node.level != 0
+                or node.module is None
+                or not (node.module == "sympy" or node.module.startswith("sympy."))
+                or "pytest" in node.module.split(".")
+            ):
+                raise _reject("SymPy native candidate imports must come only from SymPy.")
+        elif node is not function:
+            raise _reject("SymPy native candidate forbids module-level execution and fixtures.")
+    forbidden_nodes = (
+        ast.AsyncFunctionDef,
+        ast.Await,
+        ast.ClassDef,
+        ast.Global,
+        ast.Lambda,
+        ast.Nonlocal,
+        ast.Try,
+        ast.With,
+        ast.Yield,
+        ast.YieldFrom,
+    )
+    forbidden_calls = {"__import__", "compile", "eval", "exec", "open"}
+    for walked in ast.walk(function):
+        if isinstance(walked, forbidden_nodes):
+            raise _reject("SymPy native candidate contains an unsupported construct.")
+        if isinstance(walked, (ast.Import, ast.ImportFrom)):
+            raise _reject("SymPy native candidate imports must remain at module scope.")
+        if isinstance(walked, ast.FunctionDef) and walked is not function:
+            raise _reject("SymPy native candidate cannot define nested functions or fixtures.")
+        if isinstance(walked, ast.Name) and walked.id == "pytest":
+            raise _reject("SymPy native candidate cannot use pytest APIs or fixtures.")
+        if (
+            isinstance(walked, ast.Call)
+            and isinstance(walked.func, ast.Name)
+            and walked.func.id in forbidden_calls
+        ):
+            raise _reject("SymPy native candidate contains an unsafe dynamic call.")
+    if not any(isinstance(node, ast.Assert) for node in ast.walk(function)):
+        raise _reject("SymPy native candidate must contain at least one plain assert.")
+
+
+def _derive_sympy_gold_contract(
+    developer_patch: bytes, fail_to_pass: tuple[str, ...]
+) -> tuple[str, str]:
+    if len(fail_to_pass) != 1 or _TEST_FUNCTION.fullmatch(fail_to_pass[0]) is None:
+        raise _reject("SymPy gold requires exactly one safe bare test identifier.")
+    try:
+        lines = developer_patch.decode("utf-8").splitlines()
+    except UnicodeDecodeError as exc:
+        raise _reject("SymPy gold patch is not valid UTF-8.") from exc
+    paths = {
+        line[6:]
+        for line in lines
+        if line.startswith("+++ b/") and _SYMPY_TEST_PATH.fullmatch(line[6:]) is not None
+    }
+    if len(paths) != 1:
+        raise _reject("SymPy gold patch must bind exactly one native test file.")
+    return next(iter(paths)), fail_to_pass[0]
 
 
 def _hidden_bytes(value: bytes, label: str) -> bytes:
@@ -552,7 +755,9 @@ def _junit_fingerprint(result: InstancePytestResult, *, expected_failure: bool) 
     return hashlib.sha256(normalized.encode()).hexdigest()
 
 
-def _candidate_fingerprint_or_none(result: InstancePytestResult) -> str | None:
+def _candidate_fingerprint_or_none(
+    result: InstancePytestResult, *, profile: CandidateExecutionProfile
+) -> str | None:
     if (
         result.timed_out
         or result.oom_killed
@@ -561,7 +766,18 @@ def _candidate_fingerprint_or_none(result: InstancePytestResult) -> str | None:
         or result.exit_code not in {0, 1}
     ):
         return None
-    return _junit_fingerprint(result, expected_failure=result.exit_code == 1)
+    if profile.profile_id == "pytest-v1":
+        return _junit_fingerprint(result, expected_failure=result.exit_code == 1)
+    if result.exit_code == 0:
+        return None
+    if profile.required_function not in result.output:
+        raise _reject("SymPy native output does not identify the required test function.")
+    normalized = re.sub(r"0x[0-9a-fA-F]+", "0xADDR", result.output)
+    normalized = re.sub(r"\b[0-9]+(?:\.[0-9]+)?(?:ms|s| seconds?)\b", "DURATION", normalized)
+    normalized = re.sub(r"[ \t]+", " ", normalized).strip()
+    if not normalized:
+        raise _reject("SymPy native base failure has no attributable output.")
+    return hashlib.sha256(normalized.encode()).hexdigest()
 
 
 def _verify_evidence(value: object) -> None:

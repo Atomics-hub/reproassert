@@ -5,8 +5,8 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "algorithm", "benchmark_version", "case_id", "candidate", "causal_controls",
-    "claims", "executed_at", "hidden_inputs", "inputs", "outcome", "phases", "policy",
+    "algorithm", "benchmark_version", "case_id", "candidate", "candidate_profile", "causal_controls",
+    "claims", "executed_at", "inputs", "outcome", "phases", "policy",
     "receipt_sha256", "schema_version", "tool_git_sha"
   ],
   "properties": {
@@ -22,6 +22,18 @@
         "relative_path": { "type": "string", "minLength": 8, "maxLength": 300 },
         "sha256": { "$ref": "#/$defs/sha256" },
         "target": { "type": "string", "minLength": 8, "maxLength": 502 }
+      }
+    },
+    "candidate_profile": {
+      "type": "object", "additionalProperties": false,
+      "required": ["command_profile", "profile_id", "profile_sha256", "required_function", "staging_path", "staging_path_sha256"],
+      "properties": {
+        "command_profile": { "enum": ["pytest-v1", "sympy-bin-test-v1"] },
+        "profile_id": { "enum": ["pytest-v1", "sympy-native-v1"] },
+        "profile_sha256": { "$ref": "#/$defs/sha256" },
+        "required_function": { "type": "string", "pattern": "^test_[A-Za-z_][A-Za-z0-9_]{0,199}$" },
+        "staging_path": { "type": "string", "minLength": 8, "maxLength": 300 },
+        "staging_path_sha256": { "$ref": "#/$defs/sha256" }
       }
     },
     "causal_controls": {
@@ -45,18 +57,6 @@
       }
     },
     "executed_at": { "$ref": "#/$defs/timestamp" },
-    "hidden_inputs": {
-      "type": "object", "additionalProperties": false,
-      "required": ["gold_target_count", "gold_targets_sha256", "gold_test_patch_bytes", "gold_test_patch_sha256", "production_patch_bytes", "production_patch_sha256"],
-      "properties": {
-        "gold_target_count": { "type": "integer", "minimum": 1, "maximum": 64 },
-        "gold_targets_sha256": { "$ref": "#/$defs/sha256" },
-        "gold_test_patch_bytes": { "type": "integer", "minimum": 1, "maximum": 2097152 },
-        "gold_test_patch_sha256": { "$ref": "#/$defs/sha256" },
-        "production_patch_bytes": { "type": "integer", "minimum": 1, "maximum": 2097152 },
-        "production_patch_sha256": { "$ref": "#/$defs/sha256" }
-      }
-    },
     "inputs": {
       "type": "object", "additionalProperties": false,
       "required": ["instance_runtime_manifest_sha256"],
@@ -77,8 +77,8 @@
       "type": "object", "additionalProperties": false,
       "required": ["gold_base_collect", "gold_fixed_collect", "gold_base", "gold_fixed", "candidate_runs"],
       "properties": {
-        "gold_base_collect": { "$ref": "#/$defs/evidence" },
-        "gold_fixed_collect": { "$ref": "#/$defs/evidence" },
+        "gold_base_collect": { "oneOf": [{ "$ref": "#/$defs/evidence" }, { "type": "null" }] },
+        "gold_fixed_collect": { "oneOf": [{ "$ref": "#/$defs/evidence" }, { "type": "null" }] },
         "gold_base": { "$ref": "#/$defs/evidence" },
         "gold_fixed": { "$ref": "#/$defs/evidence" },
         "candidate_runs": {
@@ -127,7 +127,7 @@
       "type": "object", "additionalProperties": false,
       "required": ["collection", "failure_fingerprint_sha256", "result", "workspace"],
       "properties": {
-        "collection": { "$ref": "#/$defs/evidence" },
+        "collection": { "oneOf": [{ "$ref": "#/$defs/evidence" }, { "type": "null" }] },
         "failure_fingerprint_sha256": { "oneOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }] },
         "result": { "$ref": "#/$defs/evidence" },
         "workspace": { "const": "base" }
@@ -137,7 +137,7 @@
       "type": "object", "additionalProperties": false,
       "required": ["collection", "failure_fingerprint_sha256", "result", "workspace"],
       "properties": {
-        "collection": { "$ref": "#/$defs/evidence" },
+        "collection": { "oneOf": [{ "$ref": "#/$defs/evidence" }, { "type": "null" }] },
         "failure_fingerprint_sha256": { "oneOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }] },
         "result": { "$ref": "#/$defs/evidence" },
         "workspace": { "const": "fixed" }
