@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Atomics-hub/reproassert/blob/main/schemas/benchmark-v02-hidden-extraction.schema.json",
+  "title": "ReproAssert evaluator-private v0.2 hidden extraction receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["algorithm", "artifacts", "artifacts_sha256", "benchmark_version", "case_count", "claims", "container_attestation", "inputs", "prepared_at", "receipt_sha256", "schema_version", "status"],
+  "properties": {
+    "algorithm": {"const": "reproassert-v02-private-hidden-extraction-v1"},
+    "benchmark_version": {"const": "0.2"},
+    "artifacts": {
+      "type": "array", "minItems": 20, "maxItems": 20,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["case_id", "developer_tests_bytes", "developer_tests_sha256", "metadata_bytes", "metadata_sha256", "production_patch_bytes", "production_patch_sha256"],
+        "properties": {
+          "case_id": {"type": "string", "pattern": "^rk-v0\\.2-[0-9]{3}$"},
+          "developer_tests_bytes": {"type": "integer", "minimum": 1, "maximum": 1048576},
+          "developer_tests_sha256": {"$ref": "#/$defs/sha256"},
+          "metadata_bytes": {"type": "integer", "minimum": 1, "maximum": 8192},
+          "metadata_sha256": {"$ref": "#/$defs/sha256"},
+          "production_patch_bytes": {"type": "integer", "minimum": 1, "maximum": 1048576},
+          "production_patch_sha256": {"$ref": "#/$defs/sha256"}
+        }
+      }
+    },
+    "artifacts_sha256": {"$ref": "#/$defs/sha256"},
+    "case_count": {"const": 20},
+    "claims": {
+      "const": {"generator_visible": false, "hidden_bytes_emitted_to_stdout": false, "model_or_provider_invoked": false, "provider_calls": 0}
+    },
+    "container_attestation": {"$ref": "#/$defs/reference"},
+    "inputs": {
+      "type": "object", "additionalProperties": false,
+      "required": ["cohort_plan", "request", "source_dataset", "worker"],
+      "properties": {
+        "cohort_plan": {"$ref": "#/$defs/reference"},
+        "request": {"$ref": "#/$defs/reference"},
+        "source_dataset": {"$ref": "#/$defs/reference"},
+        "worker": {"$ref": "#/$defs/reference"}
+      }
+    },
+    "prepared_at": {"type": "string", "pattern": "^20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"},
+    "receipt_sha256": {"$ref": "#/$defs/sha256"},
+    "schema_version": {"const": "1.0.0"},
+    "status": {"const": "evaluator_private_prepared_no_provider"}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "reference": {
+      "type": "object", "additionalProperties": false, "required": ["bytes", "path", "sha256"],
+      "properties": {"bytes": {"type": "integer", "minimum": 1}, "path": {"type": "string", "minLength": 1, "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"}, "sha256": {"$ref": "#/$defs/sha256"}}
+    }
+  }
+}
