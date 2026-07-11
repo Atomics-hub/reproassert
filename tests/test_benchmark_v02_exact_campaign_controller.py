@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import os
+import threading
+import uuid
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -20,9 +24,14 @@ def _config(tmp_path: Path) -> controller.ExactCampaignConfig:
     progress_root = tmp_path / "progress"
     progress_root.mkdir(mode=0o700)
     placeholder = tmp_path / "placeholder"
+    placeholder.write_text("placeholder")
+    authorization = tmp_path / "execution-authorization.json"
+    authorization.write_text('{"campaign_id":"campaign_test"}\n')
+    preregistration = tmp_path / "exact-preregistration.json"
+    preregistration.write_text("exact-preregistration\n")
     paths = controller.ExactCampaignPaths(
         campaign_freeze=placeholder,
-        exact_preregistration=placeholder,
+        exact_preregistration=preregistration,
         cases_preparation=placeholder,
         cohort_plan=placeholder,
         chronology=placeholder,
@@ -36,7 +45,7 @@ def _config(tmp_path: Path) -> controller.ExactCampaignConfig:
         gold_smoke_receipt=placeholder,
         gold_specs=placeholder,
         execution_freeze=placeholder,
-        execution_authorization=placeholder,
+        execution_authorization=authorization,
         ledger=tmp_path / "ledger.jsonl",
         attempts_root=attempts,
         progress=progress_root / "progress.json",
@@ -66,9 +75,18 @@ class _FakeRuntime:
         self.events: list[str] = []
         self.provider_calls = 0
 
-    def preflight(self, _config: object) -> tuple[object, object, object, Any]:
+    def preflight(
+        self, config: controller.ExactCampaignConfig
+    ) -> tuple[object, object, object, Any]:
         self.events.append("preflight")
-        return object(), object(), object(), object()
+        preregistration = SimpleNamespace(
+            sha256=hashlib.sha256(config.paths.exact_preregistration.read_bytes()).hexdigest()
+        )
+        freeze = SimpleNamespace(campaign_id="campaign_test")
+        authorization = SimpleNamespace(
+            sha256=hashlib.sha256(config.paths.execution_authorization.read_bytes()).hexdigest()
+        )
+        return preregistration, freeze, authorization, freeze
 
     def source_context(self, case: controller.ExactCampaignCase) -> object:
         self.events.append(f"source:{case.case_id}")
@@ -244,7 +262,7 @@ def test_preflight_failure_never_reaches_generation_or_provider(
         runtime.events.append("preflight")
         raise PolicyRejection("test", "fresh authorization verification failed")
 
-    runtime.preflight = reject  # type: ignore[method-assign]
+    runtime.preflight = reject  # type: ignore[assignment]
     with pytest.raises(PolicyRejection, match="authorization verification"):
         controller._run_with_runtime(config, runtime)
 
@@ -289,3 +307,96 @@ def test_cli_exposes_exact_campaign_controller() -> None:
     result = CliRunner().invoke(main, ["benchmark", "run-v02-exact-campaign", "--help"])
     assert result.exit_code == 0
     assert "safely resume" in result.output
+
+
+def test_concurrent_loser_never_mutates_progress(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = _config(tmp_path)
+    attempts: dict[str, dict[str, object]] = {}
+    owner = _FakeRuntime(attempts)
+    loser = _FakeRuntime(attempts)
+    entered = threading.Event()
+    release = threading.Event()
+    original_source = owner.source_context
+
+    def blocking_source(case: controller.ExactCampaignCase) -> object:
+        if case.case_id == "rk-v0.2-001":
+            entered.set()
+            assert release.wait(timeout=5)
+        return original_source(case)
+
+    owner.source_context = blocking_source  # type: ignore[method-assign]
+    monkeypatch.setattr(controller, "_attempts", lambda _path: dict(attempts))
+    monkeypatch.setattr(
+        controller,
+        "_audit_caps",
+        lambda _path, allow_missing=False: {"campaign_microusd": 0, "case_microusd": {}},
+    )
+    owner_errors: list[BaseException] = []
+
+    def run_owner() -> None:
+        try:
+            controller._run_with_runtime(config, owner)
+        except BaseException as exc:  # pragma: no cover - asserted below
+            owner_errors.append(exc)
+
+    thread = threading.Thread(target=run_owner)
+    thread.start()
+    assert entered.wait(timeout=5)
+    before = config.paths.progress.read_bytes()
+    with pytest.raises(PolicyRejection, match="owns the lock"):
+        controller._run_with_runtime(config, loser)
+    assert config.paths.progress.read_bytes() == before
+    assert loser.events == []
+    release.set()
+    thread.join(timeout=10)
+    assert not thread.is_alive()
+    assert owner_errors == []
+    assert json.loads(config.paths.progress.read_text())["status"] == "complete"
+
+
+@pytest.mark.parametrize("mutation", ["identity", "case_row"])
+def test_resume_rejects_tampered_progress_without_overwrite(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mutation: str
+) -> None:
+    config = _config(tmp_path)
+    attempts: dict[str, dict[str, object]] = {}
+    runtime = _FakeRuntime(attempts)
+    monkeypatch.setattr(controller, "_attempts", lambda _path: dict(attempts))
+    monkeypatch.setattr(
+        controller,
+        "_audit_caps",
+        lambda _path, allow_missing=False: {"campaign_microusd": 0, "case_microusd": {}},
+    )
+    controller._run_with_runtime(config, runtime)
+    progress = json.loads(config.paths.progress.read_text())
+    if mutation == "identity":
+        progress["identity"]["config_sha256"] = "d" * 64
+        match = "identity differs"
+    else:
+        progress["cases"]["rk-v0.2-001"]["status"] = "invented"
+        match = "progress row"
+    tampered = json.dumps(progress, sort_keys=True, separators=(",", ":")).encode() + b"\n"
+    config.paths.progress.write_bytes(tampered)
+
+    with pytest.raises(PolicyRejection, match=match):
+        controller._run_with_runtime(config, _FakeRuntime(attempts))
+    assert config.paths.progress.read_bytes() == tampered
+
+
+def test_progress_temp_creation_is_exclusive(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "state"
+    root.mkdir(mode=0o700)
+    path = root / "progress.json"
+    monkeypatch.setattr(os, "getpid", lambda: 123)
+    monkeypatch.setattr(uuid, "uuid4", lambda: SimpleNamespace(hex="fixed"))
+    collision = root / ".progress.json.123.fixed.tmp"
+    collision.write_text("do-not-truncate")
+
+    with pytest.raises(FileExistsError):
+        controller._write_progress(path, {"status": "running"})
+    assert collision.read_text() == "do-not-truncate"
+    assert not path.exists()
