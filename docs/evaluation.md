@@ -40,6 +40,42 @@ Submission files live at `<submissions-root>/<case-id>/*.json`. Each binds the e
 declares mapping-only/no-generator/no-semantic-review roles, and must be timestamped strictly after
 packet preparation and no later than sealing. Missing reviews fail closed.
 
+### Human reviewer handoff
+
+Export separate private bundles for the two genuine mapping reviewers only after their identities
+and the future semantic-review roster are known:
+
+```bash
+reproassert benchmark prepare-v02-mapping-review-handoff \
+  --mapping-preparation "$PRIVATE_ROOT/v02-mapping-packets/benchmark-v02-mapping-packet-set.json" \
+  --primary-reviewer-id REAL_MAPPING_REVIEWER_A \
+  --primary-reviewer-id REAL_MAPPING_REVIEWER_B \
+  --semantic-reviewer-id REAL_SEMANTIC_REVIEWER_A \
+  --semantic-reviewer-id REAL_SEMANTIC_REVIEWER_B \
+  --prepared-at 2026-07-11T10:00:00Z \
+  --tool-git-sha "$REPROASSERT_GIT_SHA" \
+  --output-root "$PRIVATE_ROOT"
+```
+
+Each reviewer receives a readable README and 20 case directories containing only the hunk
+inventory, the production patch needed for mapping, and an incomplete bound submission template.
+Developer tests, hidden-extraction identity, verdicts, selected hunks, and submission times are not
+exported or generated. Reviewers work independently and must fill those fields themselves.
+
+An optional `--tiebreak-reviewer-id` predeclares a third separate mapping reviewer. That reviewer
+must submit only if the first two completed decisions disagree; the consensus sealer rejects an
+unnecessary third review. Mapping and semantic reviewer IDs must be disjoint, and placeholders fail
+closed. Collect completed primary submissions as `01.json` and `02.json`; when genuinely required,
+collect the tie break as `03.json` so consensus ordering is explicit.
+
+Verify unchanged handoff bytes before distribution or collection:
+
+```bash
+reproassert benchmark verify-v02-mapping-review-handoff \
+  "$PRIVATE_ROOT/v02-mapping-review-handoff/benchmark-v02-mapping-review-handoff.json" \
+  --mapping-preparation "$PRIVATE_ROOT/v02-mapping-packets/benchmark-v02-mapping-packet-set.json"
+```
+
 ## Exact-image successor preregistration
 
 After all 20 mapping decisions are genuinely approved, freeze the successor with

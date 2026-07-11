@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Atomics-hub/reproassert/blob/main/schemas/benchmark-v02-mapping-review-handoff.schema.json",
+  "title": "ReproAssert v0.2 private human mapping-review handoff",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["algorithm", "benchmark_version", "case_count", "claims", "mapping_preparation_file_sha256", "mapping_preparation_receipt_sha256", "prepared_at", "receipt_sha256", "reviewers", "role_plan", "schema_version", "status", "tool_git_sha"],
+  "properties": {
+    "algorithm": {"const": "reproassert-v02-mapping-review-handoff-v1"},
+    "benchmark_version": {"const": "0.2"},
+    "case_count": {"const": 20},
+    "claims": {"const": {"hidden_artifacts_included": ["production_patch"], "model_or_provider_invoked": false, "provider_calls": 0, "reviewer_identity_generated": false, "submission_time_or_verdict_generated": false}},
+    "mapping_preparation_file_sha256": {"$ref": "#/$defs/sha256"},
+    "mapping_preparation_receipt_sha256": {"$ref": "#/$defs/sha256"},
+    "prepared_at": {"$ref": "#/$defs/timestamp"},
+    "receipt_sha256": {"$ref": "#/$defs/sha256"},
+    "reviewers": {"type": "array", "minItems": 2, "maxItems": 3, "items": {"$ref": "#/$defs/reviewer"}},
+    "role_plan": {
+      "type": "object", "additionalProperties": false,
+      "required": ["mapping_reviewer_ids", "semantic_reviewer_ids", "separation_verified", "tiebreak_policy"],
+      "properties": {
+        "mapping_reviewer_ids": {"type": "array", "minItems": 2, "maxItems": 3, "uniqueItems": true, "items": {"$ref": "#/$defs/id"}},
+        "semantic_reviewer_ids": {"type": "array", "minItems": 2, "maxItems": 3, "uniqueItems": true, "items": {"$ref": "#/$defs/id"}},
+        "separation_verified": {"const": true},
+        "tiebreak_policy": {"enum": ["predeclared_submit_only_after_primary_disagreement", "not_predeclared_prepare_later_only_after_primary_disagreement"]}
+      }
+    },
+    "schema_version": {"const": "1.0.0"},
+    "status": {"const": "human_review_handoff_prepared_submissions_blank"},
+    "tool_git_sha": {"$ref": "#/$defs/git_sha"}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "git_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "timestamp": {"type": "string", "format": "date-time", "pattern": "Z$"},
+    "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{2,127}$"},
+    "reference": {"type": "object", "additionalProperties": false, "required": ["bytes", "path", "sha256"], "properties": {"bytes": {"type": "integer", "minimum": 1}, "path": {"type": "string", "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"}, "sha256": {"$ref": "#/$defs/sha256"}}},
+    "case": {"type": "object", "additionalProperties": false, "required": ["case_id", "review_packet", "submission_template"], "properties": {"case_id": {"type": "string", "pattern": "^rk-v0\\.2-[0-9]{3}$"}, "review_packet": {"$ref": "#/$defs/reference"}, "submission_template": {"$ref": "#/$defs/reference"}}},
+    "reviewer": {"type": "object", "additionalProperties": false, "required": ["assignment", "bundle_directory", "cases", "readme", "reviewer_id"], "properties": {"assignment": {"enum": ["primary_1", "primary_2", "conditional_tiebreak"]}, "bundle_directory": {"type": "string", "pattern": "^reviewer-[0-9]{2}-[0-9a-f]{12}$"}, "cases": {"type": "array", "minItems": 20, "maxItems": 20, "items": {"$ref": "#/$defs/case"}}, "readme": {"$ref": "#/$defs/reference"}, "reviewer_id": {"$ref": "#/$defs/id"}}}
+  }
+}

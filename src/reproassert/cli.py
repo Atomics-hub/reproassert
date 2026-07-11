@@ -66,6 +66,10 @@ from reproassert.benchmark_v02_instance_controller import (
     run_instance_gold_smoke,
     verify_instance_gold_smoke_receipt,
 )
+from reproassert.benchmark_v02_mapping_handoff import (
+    prepare_v02_mapping_review_handoff,
+    verify_v02_mapping_review_handoff,
+)
 from reproassert.benchmark_v02_mapping_packets import (
     prepare_v02_mapping_packets,
     seal_v02_mapping_consensus,
@@ -1030,6 +1034,86 @@ def benchmark_verify_v02_mapping_packets(receipt: Path) -> None:
             sort_keys=True,
         )
     )
+
+
+@benchmark_group.command("prepare-v02-mapping-review-handoff")
+@click.option(
+    "--mapping-preparation",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--primary-reviewer-id",
+    multiple=True,
+    required=True,
+    help="Exactly two genuine mapping reviewer IDs, in primary order.",
+)
+@click.option(
+    "--semantic-reviewer-id",
+    multiple=True,
+    required=True,
+    help="Two or three genuine future semantic reviewer IDs; must be disjoint.",
+)
+@click.option(
+    "--tiebreak-reviewer-id",
+    help="Optional genuine mapping tie-break reviewer; submit only after disagreement.",
+)
+@click.option("--prepared-at", required=True, help="Caller-supplied UTC handoff time.")
+@click.option("--tool-git-sha", required=True)
+@click.option(
+    "--output-root",
+    type=click.Path(path_type=Path, file_okay=False),
+    default=_default_v02_private_preparation_root,
+    show_default="private user state directory",
+)
+def benchmark_prepare_v02_mapping_review_handoff(
+    mapping_preparation: Path,
+    primary_reviewer_id: tuple[str, ...],
+    semantic_reviewer_id: tuple[str, ...],
+    tiebreak_reviewer_id: str | None,
+    prepared_at: str,
+    tool_git_sha: str,
+    output_root: Path,
+) -> None:
+    """Export private human packets and incomplete, source-bound submission templates."""
+
+    if len(primary_reviewer_id) != 2:
+        raise click.UsageError("--primary-reviewer-id must be supplied exactly twice.")
+    try:
+        _ensure_private_output_root(output_root)
+        verified = prepare_v02_mapping_review_handoff(
+            mapping_preparation_path=mapping_preparation,
+            primary_reviewer_ids=(primary_reviewer_id[0], primary_reviewer_id[1]),
+            semantic_reviewer_ids=semantic_reviewer_id,
+            tiebreak_reviewer_id=tiebreak_reviewer_id,
+            output_root=output_root,
+            prepared_at=prepared_at,
+            tool_git_sha=tool_git_sha,
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(json.dumps(asdict(verified), indent=2, sort_keys=True, default=str))
+
+
+@benchmark_group.command("verify-v02-mapping-review-handoff")
+@click.argument("handoff", type=click.Path(path_type=Path, exists=True, dir_okay=False))
+@click.option(
+    "--mapping-preparation",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+def benchmark_verify_v02_mapping_review_handoff(handoff: Path, mapping_preparation: Path) -> None:
+    """Verify reviewer roles, source patches, redaction, and still-blank submissions."""
+
+    try:
+        verified = verify_v02_mapping_review_handoff(
+            handoff, mapping_preparation_path=mapping_preparation
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    result = asdict(verified)
+    result["verified"] = True
+    click.echo(json.dumps(result, indent=2, sort_keys=True, default=str))
 
 
 @benchmark_group.command("seal-v02-mapping-consensus")
