@@ -84,6 +84,10 @@ class ExactCampaignConfig:
     cases: tuple[ExactCampaignCase, ...]
     executed_at: str
     tool_git_sha: str
+    prepared_at: str | None = None
+    bindings: Mapping[str, object] | None = None
+    config_sha256: str | None = None
+    raw_sha256: str | None = None
 
 
 @dataclass(frozen=True)
@@ -312,7 +316,20 @@ class _ProductionRuntime:
 def run_v02_exact_campaign(config_path: Path) -> dict[str, object]:
     """Run or safely resume the exact 20-case campaign from one strict private config."""
 
-    config = load_v02_exact_campaign_config(config_path)
+    from reproassert.benchmark_v02_exact_campaign_config import (
+        require_v02_exact_campaign_config,
+        verify_v02_exact_campaign_config,
+    )
+
+    authority = require_v02_exact_campaign_config(verify_v02_exact_campaign_config(config_path))
+    config = load_v02_exact_campaign_config(config_path, expected_sha256=authority.sha256)
+    if (
+        config.config_sha256 != authority.config_sha256
+        or config.tool_git_sha != authority.tool_git_sha
+        or config.bindings is None
+        or config.bindings.get("campaign_id") != authority.campaign_id
+    ):
+        raise _reject("Fresh config authority differs from the exact controller config.")
     runtime = _ProductionRuntime()
     return _run_with_runtime(config, runtime)
 
@@ -389,8 +406,14 @@ def _run_with_runtime(config: ExactCampaignConfig, runtime: _Runtime) -> dict[st
         _release_campaign_lock(lock)
 
 
-def load_v02_exact_campaign_config(path: Path) -> ExactCampaignConfig:
-    raw = Path(path).read_bytes()
+def load_v02_exact_campaign_config(
+    path: Path, *, expected_sha256: str | None = None
+) -> ExactCampaignConfig:
+    with open_regular_file(Path(path)) as stream:
+        raw = stream.read(MAX_CONFIG_BYTES + 1)
+    raw_sha256 = hashlib.sha256(raw).hexdigest()
+    if expected_sha256 is not None and raw_sha256 != _sha256(expected_sha256, "expected config"):
+        raise _reject("Exact campaign config changed after fresh verification.")
     if len(raw) > MAX_CONFIG_BYTES:
         raise _reject("Exact campaign config exceeds its size limit.")
     try:
@@ -398,12 +421,38 @@ def load_v02_exact_campaign_config(path: Path) -> ExactCampaignConfig:
     except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as exc:
         raise _reject("Exact campaign config is invalid JSON.") from exc
     if not isinstance(value, dict) or set(value) != {
+        "algorithm",
+        "bindings",
         "cases",
+        "claims",
+        "config_sha256",
         "executed_at",
         "paths",
+        "prepared_at",
+        "schema_version",
         "tool_git_sha",
     }:
         raise _reject("Exact campaign config fields are invalid.")
+    from reproassert.benchmark_v02_exact_campaign_config import (
+        CONFIG_ALGORITHM,
+        CONFIG_SCHEMA_VERSION,
+        config_self_hash,
+        validate_config_bindings,
+    )
+
+    if (
+        value.get("algorithm") != CONFIG_ALGORITHM
+        or value.get("schema_version") != CONFIG_SCHEMA_VERSION
+        or value.get("claims")
+        != {
+            "credentials_read": False,
+            "provider_calls": 0,
+            "provider_invoked_by_this_command": False,
+        }
+        or value.get("config_sha256") != config_self_hash(value)
+    ):
+        raise _reject("Exact campaign config identity is invalid.")
+    bindings = validate_config_bindings(value.get("bindings"))
     path_values = _mapping(value["paths"], "paths")
     expected_paths = set(ExactCampaignPaths.__dataclass_fields__)
     if set(path_values) != expected_paths:
@@ -473,6 +522,10 @@ def load_v02_exact_campaign_config(path: Path) -> ExactCampaignConfig:
         cases=tuple(cases),
         executed_at=_timestamp(value["executed_at"], "executed_at"),
         tool_git_sha=_git_sha(value["tool_git_sha"], "tool_git_sha"),
+        prepared_at=_timestamp(value["prepared_at"], "prepared_at"),
+        bindings=bindings,
+        config_sha256=cast(str, value["config_sha256"]),
+        raw_sha256=raw_sha256,
     )
 
 
@@ -606,6 +659,10 @@ def _controller_identity(config: ExactCampaignConfig) -> dict[str, str]:
         ],
         "executed_at": config.executed_at,
         "tool_git_sha": config.tool_git_sha,
+        "prepared_at": config.prepared_at,
+        "bindings": config.bindings,
+        "config_sha256": config.config_sha256,
+        "raw_sha256": config.raw_sha256,
     }
     return {
         "campaign_id": campaign_id,

@@ -156,6 +156,64 @@ The freeze command reads no provider key and makes no provider call. A request a
 rejects the entire freeze; the cap is never raised implicitly. It emits a statement containing the
 final freeze hash; `authorize-v02-execution` accepts only that exact statement after the freeze.
 
+## Exact campaign config handoff
+
+After exact authorization, do not assemble the 20 runner rows by hand. Build the private runner
+workspace with:
+
+```bash
+reproassert benchmark prepare-v02-exact-campaign-config \
+  --campaign-freeze "$PRIVATE_ROOT/benchmark-v02-campaign-freeze.json" \
+  --exact-preregistration "$PRIVATE_ROOT/benchmark-v02-exact-preregistration.json" \
+  --cases-preparation "$PRIVATE_ROOT/v02-case-preparation/benchmark-v02-cases-preparation.json" \
+  --cohort-plan "$PRIVATE_ROOT/cohort-plan.json" \
+  --chronology "$PRIVATE_ROOT/benchmark-v02-chronology-evidence.json" \
+  --hidden-extraction-receipt "$PRIVATE_ROOT/benchmark-v02-hidden-extraction.json" \
+  --issue-responses-root "$PRIVATE_ROOT/issue-responses" \
+  --mapping-preparation "$PRIVATE_ROOT/v02-mapping-packets/benchmark-v02-mapping-packet-set.json" \
+  --mapping-consensus "$PRIVATE_ROOT/benchmark-v02-mapping-consensus-set.json" \
+  --capability-index "$PRIVATE_ROOT/benchmark-v02-exact-capability-index.json" \
+  --runtime-manifest "$PRIVATE_ROOT/instance-runtime-manifest.json" \
+  --runtime-manifest-sha256 "$RUNTIME_MANIFEST_SHA256" \
+  --gold-smoke-receipt "$PRIVATE_ROOT/benchmark-v02-instance-gold-smoke.json" \
+  --gold-specs "$PRIVATE_ROOT/gold-specs.json" \
+  --execution-freeze "$PRIVATE_ROOT/benchmark-v02-execution-freeze.json" \
+  --execution-authorization "$PRIVATE_ROOT/benchmark-v02-execution-authorization.json" \
+  --output-root "$PRIVATE_ROOT/exact-campaign-run" \
+  --prepared-at "$PREPARED_AT" --executed-at "$EXECUTED_AT" \
+  --tool-git-sha "$FINAL_TOOL_GIT_SHA"
+```
+
+Use `--help` for the exact path contract. `executed-at` is the time persisted on evaluator
+receipts, not a dynamically measured timestamp; run the campaign immediately after preparation.
+The controller freshly verifies the full authority chain, gold-spec binding, final tool SHA, exact
+model, request set, USD 5.00 campaign cap, USD 0.25 case cap, and all 20 canonical package/source
+paths. It reads no credential and makes no provider call. The only permitted older-tool artifacts
+are object-source receipts, whose Git provenance is freshly rederived against their independently
+bound receipt hashes.
+
+The workspace is created transactionally with private directories:
+
+```text
+exact-campaign-run/
+  attempts/
+  controller/config.json
+  controller/progress.json       # created by the runner
+  ledger/scored-events.jsonl     # created by the runner
+  source-evidence/<case-id>.json
+```
+
+Before execution, or for a read-only status check, rederive everything again:
+
+```bash
+reproassert benchmark verify-v02-exact-campaign-config \
+  "$PRIVATE_ROOT/exact-campaign-run/controller/config.json"
+```
+
+`run-v02-exact-campaign` performs this same fresh verification before constructing a runtime. A
+self-rehashed config, changed gold file, authority swap, cap drift, non-private directory, or
+post-verification byte swap fails before provider-capable execution.
+
 Every started attempt contributes its wall time, input/output tokens, provider charge, sandbox
 compute, and artifact-transfer cost to its campaign, including attempts ending in no output,
 invalid patches, setup errors, or timeouts. The public case row records aggregate fields and the
