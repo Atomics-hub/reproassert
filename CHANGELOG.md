@@ -4,6 +4,11 @@ All notable changes to ReproAssert will be documented here. The format follows [
 
 ## [Unreleased]
 
+### Changed
+
+- Bound the source-context path manifest to 128 KiB while retaining every selected source file,
+  keeping conservative per-case model reservations within the frozen benchmark spend cap.
+
 ## [0.2.1] - 2026-07-11
 
 ### Added
