@@ -108,7 +108,7 @@
       "properties": {
         "path": {
           "type": "string",
-          "pattern": "^tests/reproassert/test_issue_[1-9][0-9]*\\.py$"
+          "pattern": "^(?:tests/reproassert/test_issue_[1-9][0-9]*|sympy/reproassert/tests/test_issue_01[67])\\.py$"
         },
         "sha256": { "$ref": "#/$defs/sha256" },
         "bytes": { "type": "integer", "minimum": 1, "maximum": 32768 },

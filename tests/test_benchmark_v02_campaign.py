@@ -13,6 +13,7 @@ from jsonschema import Draft202012Validator  # type: ignore[import-untyped]
 
 from reproassert import benchmark_v02_campaign as campaign
 from reproassert import cli
+from reproassert.benchmark_v02_candidate_contract import v02_candidate_contract
 from reproassert.benchmark_v02_package import (
     PreregisteredV02Case,
     build_v02_preregistration,
@@ -177,13 +178,18 @@ def _configuration(campaign_freeze_sha256: str) -> dict[str, Any]:
 
 
 def _candidate(index: int) -> dict[str, Any]:
+    contract = v02_candidate_contract(case_id=f"rk-v0.2-{index:03d}", issue_number=index)
     content = (
-        "from demo import normalize\n\n"
-        f"def test_issue_{index}_reproduction():\n"
+        "from sympy import Symbol\n\n"
+        f"def {contract.test_function}():\n"
+        "    assert Symbol('x').is_commutative is False, 'wrong normalized output'\n"
+        if contract.profile == "sympy-native-v1"
+        else "from demo import normalize\n\n"
+        f"def {contract.test_function}():\n"
         "    assert normalize('bug') == 'fixed', 'wrong normalized output'\n"
     )
     return {
-        "path": f"tests/reproassert/test_issue_{index}.py",
+        "path": contract.relative_path,
         "sha256": hashlib.sha256(content.encode()).hexdigest(),
         "bytes": len(content.encode()),
         "test_content": content,
@@ -193,6 +199,7 @@ def _candidate(index: int) -> dict[str, Any]:
 
 
 def _scheduled_runs(index: int) -> list[dict[str, Any]]:
+    contract = v02_candidate_contract(case_id=f"rk-v0.2-{index:03d}", issue_number=index)
     schedule = ("base", "fixed", "fixed", "base", "base", "fixed")
     role_counts = {"base": 0, "fixed": 0}
     records: list[dict[str, Any]] = []
@@ -205,7 +212,7 @@ def _scheduled_runs(index: int) -> list[dict[str, Any]]:
                 "role_ordinal": role_ordinal,
                 "schedule_ordinal": schedule_ordinal,
                 "phase": f"{source_role}_{role_ordinal}",
-                "argv": ["pytest", f"tests/reproassert/test_issue_{index}.py"],
+                "argv": contract.test_command.split(),
                 "exit_code": 1 if source_role == "base" else 0,
                 "duration_seconds": 0.1,
                 "timed_out": False,
@@ -228,15 +235,14 @@ def _control_run(
     observed_outcome: str,
     control_id: str | None = None,
 ) -> campaign.V02CausalControlRun:
-    path = f"tests/reproassert/test_issue_{index}.py"
-    test_command = f"pytest -q {path}::test_issue_{index}_reproduction"
+    contract = v02_candidate_contract(case_id=f"rk-v0.2-{index:03d}", issue_number=index)
     return campaign.V02CausalControlRun(
         control_id=control_id or control_type,
         control_type=control_type,
         expected_outcome=expected_outcome,
         observed_outcome=observed_outcome,
         executed_at=CONTROL_EXECUTED_AT,
-        test_command=test_command,
+        test_command=contract.test_command,
         exit_code=0 if observed_outcome == "pass" else 1,
         duration_ms=100,
         timed_out=False,

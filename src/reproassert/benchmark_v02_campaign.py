@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, cast
 
+from reproassert.benchmark_v02_candidate_contract import v02_candidate_contract
 from reproassert.benchmark_v02_package import (
     BENCHMARK_VERSION,
     EXPECTED_CASE_COUNT,
@@ -20,6 +21,7 @@ from reproassert.benchmark_v02_package import (
 )
 from reproassert.benchmark_v02_runner import V02LedgerSnapshot, read_v02_scored_ledger
 from reproassert.errors import PolicyRejection
+from reproassert.intake import parse_issue_url
 from reproassert.safeio import require_private_directory
 
 SCHEMA_VERSION = "1.0.0"
@@ -1493,10 +1495,11 @@ def _verify_causal_control_set(
                 f"Case {case_id} controls fall outside the post-attempt sealed window.",
             )
         candidate_path = cast(str, _mapping(candidate, "candidate")["path"])
-        issue_number = candidate_path.removeprefix("tests/reproassert/test_issue_").removesuffix(
-            ".py"
-        )
-        expected_command = f"pytest -q {candidate_path}::test_issue_{issue_number}_reproduction"
+        issue_number = parse_issue_url(expected_cases[case_id].issue_url).number
+        contract = v02_candidate_contract(case_id=case_id, issue_number=issue_number)
+        if candidate_path != contract.relative_path:
+            raise _reject("v02_causal_control", f"Case {case_id} candidate path differs.")
+        expected_command = contract.test_command
         for control_value in cast(Sequence[object], control_case["controls"]):
             control = _mapping(control_value, "causal-control run")
             if control["observed_outcome"] in {"not_available", "inconclusive"}:
@@ -1689,10 +1692,12 @@ def _final_records(
         if candidate is not None:
             candidate_record = cast(Mapping[str, Any], candidate)
             candidate_path_value = cast(str, candidate_record["path"])
-            issue_number = candidate_path_value.removeprefix(
-                "tests/reproassert/test_issue_"
-            ).removesuffix(".py")
-            target = f"{candidate_path_value}::test_issue_{issue_number}_reproduction"
+            issue_number = parse_issue_url(cast(str, case_record["issue_url"])).number
+            contract = v02_candidate_contract(case_id=case_id, issue_number=issue_number)
+            if candidate_path_value != contract.relative_path:
+                raise _reject(
+                    "v02_campaign_publication", "Candidate path differs from its case profile."
+                )
             evaluation_record = _mapping(evaluation, "private differential evaluation")
             dependency = _mapping(evaluation_record["dependency"], "dependency evidence")
             reproduction = {
@@ -1708,7 +1713,7 @@ def _final_records(
                 "dependency_plan_sha256": dependency["plan_sha256"],
                 "dependency_tree_sha256": dependency["tree_sha256"],
                 "dependency_runner_image_id": dependency["image_id"],
-                "test_command": f"pytest -q {target}",
+                "test_command": contract.test_command,
                 "command_scope": "prepared_exact_source_and_dependencies_only_not_bootstrap",
             }
         if candidate is None:
@@ -2050,7 +2055,8 @@ def _verify_public_aggregate_case(
     else:
         candidate_record = _verify_candidate(candidate, case_id)
         path = cast(str, candidate_record["path"])
-        issue_number = path.removeprefix("tests/reproassert/test_issue_").removesuffix(".py")
+        issue_number = parse_issue_url(case.issue_url).number
+        contract = v02_candidate_contract(case_id=case_id, issue_number=issue_number)
         reproduction = _mapping(row["reproduction"], "public reproduction requirements")
         _exact_keys(
             reproduction,
@@ -2078,8 +2084,8 @@ def _verify_public_aggregate_case(
             or reproduction["candidate_sha256"] != candidate_record["sha256"]
             or reproduction["source_context_sha256"] != case.source_context_sha256
             or reproduction["evaluator_commitment_sha256"] != case.evaluator_commitment_sha256
-            or reproduction["test_command"]
-            != f"pytest -q {path}::test_issue_{issue_number}_reproduction"
+            or path != contract.relative_path
+            or reproduction["test_command"] != contract.test_command
             or reproduction["command_scope"]
             != "prepared_exact_source_and_dependencies_only_not_bootstrap"
         ):

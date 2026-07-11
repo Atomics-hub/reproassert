@@ -16,6 +16,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Protocol, cast
 
 from reproassert import generator as generator_module
+from reproassert.benchmark_v02_candidate_contract import (
+    V02CandidateContract,
+    v02_candidate_contract,
+)
 from reproassert.benchmark_v02_package import (
     BENCHMARK_VERSION,
     PreregisteredV02Case,
@@ -27,7 +31,7 @@ from reproassert.benchmark_v02_package import (
 from reproassert.candidate import (
     MAX_TEST_BYTES,
     ValidatedCandidate,
-    candidate_path,
+    candidate_function,
     validate_candidate_payload,
 )
 from reproassert.context import SourceContext
@@ -1528,7 +1532,7 @@ def generate_v02_scored_case(
         _assert_total_within_reservation(run)
         _record_or_validate_recovery_artifact_cost(run, candidate)
         _assert_total_within_reservation(run)
-        _revalidate_candidate_file(artifact_path, candidate)
+        _revalidate_candidate_file(run, artifact_path, candidate)
     except _ControlledFailure as exc:
         classification_code = exc.classification_code
         _finish_open_phase(run, status="failed", classification_code=classification_code)
@@ -2118,7 +2122,7 @@ def evaluate_v02_frozen_case(
             raise _reject(
                 "v02_generation_disposition", "Frozen candidate differs from its transaction."
             )
-        _revalidate_candidate_file(transaction.path, candidate)
+        _revalidate_candidate_file(run, transaction.path, candidate)
         _assert_known_model_cost(run)
         _assert_total_within_reservation(run)
 
@@ -2131,14 +2135,14 @@ def evaluate_v02_frozen_case(
             campaign_id=cast(str, run.policy.campaign_id),
             attempt_id=run.attempt_id,
             candidate=candidate,
-            candidate_path=candidate_path(run.request.issue_number),
+            candidate_path=_run_candidate_contract(run).relative_path,
         )
         capability = consume_v02_evaluation_session(
             session,
             campaign_id=cast(str, run.policy.campaign_id),
             attempt_id=run.attempt_id,
             candidate=candidate,
-            candidate_path=candidate_path(run.request.issue_number),
+            candidate_path=_run_candidate_contract(run).relative_path,
         )
         differential: DifferentialVerificationOutcome | None = None
         outcome = "benchmark_infrastructure_error"
@@ -2154,7 +2158,7 @@ def evaluate_v02_frozen_case(
                 candidate=candidate,
                 dependency_handle=dependency_handle,
             )
-            _revalidate_candidate_file(transaction.path, candidate)
+            _revalidate_candidate_file(run, transaction.path, candidate)
             pricing = _require_pricing(run.policy)
             _record_cost(
                 run,
@@ -2308,7 +2312,7 @@ def recover_v02_scored_case(
         _assert_total_within_reservation(run)
         _record_or_validate_recovery_artifact_cost(run, candidate)
         _assert_total_within_reservation(run)
-        _revalidate_candidate_file(candidate_file, candidate)
+        _revalidate_candidate_file(run, candidate_file, candidate)
         snapshot = read_v02_scored_ledger(run.ledger_path)
         existing = [
             event
@@ -2780,6 +2784,7 @@ def _load_generation_transaction(run: _RunContext) -> _GenerationTransaction:
             "rationale": candidate_record.get("rationale"),
         },
         issue_number=run.request.issue_number,
+        required_test_function=_run_candidate_contract(run).test_function,
     )
     if candidate_record.get("sha256") != candidate.sha256 or candidate_record.get("bytes") != len(
         candidate.test_content.encode("utf-8")
@@ -2825,6 +2830,9 @@ def _candidate_commit_payload(
     run: _RunContext, transaction: _GenerationTransaction
 ) -> dict[str, object]:
     candidate = transaction.candidate
+    contract = _run_candidate_contract(run)
+    if candidate.test_function != contract.test_function:
+        raise _reject("v02_candidate_event", "Candidate function differs from its case profile.")
     return {
         "candidate_index": 1,
         "candidate_sha256": candidate.sha256,
@@ -2987,7 +2995,7 @@ def _recover_generation_without_provider(
             evidence=generation_evidence,
         )
     _check_wall_budget(run)
-    _revalidate_candidate_file(transaction.path, transaction.candidate)
+    _revalidate_candidate_file(run, transaction.path, transaction.candidate)
     return transaction.candidate, transaction.path
 
 
@@ -3496,7 +3504,7 @@ def _differential_phase(
             sandbox=sandbox,
             base_source=base_source,
             fixed_source=fixed_source,
-            relative_path=candidate_path(run.request.issue_number),
+            relative_path=_run_candidate_contract(run).relative_path,
             candidate=candidate,
             evaluator_capability=capability,
             run_id=f"{run.policy.campaign_id}-{run.case.id}",
@@ -3715,7 +3723,7 @@ def _private_result_record(
             None
             if candidate is None
             else {
-                "path": candidate_path(run.request.issue_number),
+                "path": _run_candidate_contract(run).relative_path,
                 "sha256": candidate.sha256,
                 "bytes": len(candidate.test_content.encode("utf-8")),
                 "test_content": candidate.test_content,
@@ -3770,7 +3778,7 @@ def _public_embargoed_result_record(
             None
             if candidate is None
             else {
-                "path": candidate_path(run.request.issue_number),
+                "path": _run_candidate_contract(run).relative_path,
                 "sha256": candidate.sha256,
                 "bytes": len(candidate.test_content.encode("utf-8")),
                 "test_content": candidate.test_content,
@@ -4925,6 +4933,11 @@ def _persist_generation_transaction(
     candidate: ValidatedCandidate,
     model_finish: Mapping[str, object],
 ) -> tuple[Path, str, int]:
+    contract = _run_candidate_contract(run)
+    if candidate.test_function != contract.test_function:
+        raise _reject(
+            "v02_candidate_artifact", "Candidate function differs from its frozen case profile."
+        )
     transaction = {
         "schema_version": SCHEMA_VERSION,
         "benchmark_version": BENCHMARK_VERSION,
@@ -4952,7 +4965,7 @@ def _persist_generation_transaction(
     return path, hashlib.sha256(encoded).hexdigest(), len(encoded)
 
 
-def _revalidate_candidate_file(path: Path, expected: ValidatedCandidate) -> None:
+def _revalidate_candidate_file(run: _RunContext, path: Path, expected: ValidatedCandidate) -> None:
     with open_regular_file(path) as stream:
         encoded = stream.read(MAX_RESULT_BYTES + 1)
     if len(encoded) > MAX_RESULT_BYTES:
@@ -4976,7 +4989,8 @@ def _revalidate_candidate_file(path: Path, expected: ValidatedCandidate) -> None
             "expected_symptom": value.get("expected_symptom"),
             "rationale": value.get("rationale"),
         },
-        issue_number=int(expected.test_function.split("_")[2]),
+        issue_number=run.request.issue_number,
+        required_test_function=_run_candidate_contract(run).test_function,
     )
     if (
         candidate != expected
@@ -5040,8 +5054,7 @@ def _generation_request(
     context: VerifiedV02GeneratorSourceContext,
 ) -> GenerationRequest:
     issue = parse_issue_url(case.issue_url)
-    suffix = case.id.rsplit("-", 1)[1]
-    sympy_native = case.id in {"rk-v0.2-016", "rk-v0.2-017"}
+    contract = v02_candidate_contract(case_id=case.id, issue_number=issue.number)
     return GenerationRequest(
         issue_url=case.issue_url,
         issue_number=issue.number,
@@ -5049,11 +5062,32 @@ def _generation_request(
         issue_body=projection.body,
         source_sha=case.base_sha,
         source_context=context.source_context,
-        candidate_profile=(SYMPY_NATIVE_CANDIDATE_PROFILE if sympy_native else "pytest-v1"),
-        required_test_function=(f"test_reproassert_issue_{suffix}" if sympy_native else None),
+        candidate_profile=contract.profile,
+        required_test_function=(
+            contract.test_function if contract.profile == SYMPY_NATIVE_CANDIDATE_PROFILE else None
+        ),
         attempt=1,
         feedback="",
     )
+
+
+def _run_candidate_contract(run: _RunContext) -> V02CandidateContract:
+    contract = v02_candidate_contract(
+        case_id=run.case.id,
+        issue_number=run.request.issue_number,
+    )
+    effective_function = run.request.required_test_function or candidate_function(
+        run.request.issue_number
+    )
+    if (
+        run.request.candidate_profile != contract.profile
+        or effective_function != contract.test_function
+    ):
+        raise _reject(
+            "v02_candidate_profile",
+            "Generation request differs from the frozen case candidate profile.",
+        )
+    return contract
 
 
 def _validate_generator_context(

@@ -17,6 +17,7 @@ from reproassert import benchmark_v02_runner as runner
 from reproassert import generator as generator_module
 from reproassert import semantic_issuer as issuer
 from reproassert.benchmark_snapshot import canonical_snapshot_content_bytes
+from reproassert.benchmark_v02_candidate_contract import v02_candidate_contract
 from reproassert.benchmark_v02_package import (
     PreregisteredV02Case,
     V02CaseIdentity,
@@ -133,7 +134,7 @@ def _case(index: int = 1) -> PreregisteredV02Case:
         id=f"rk-v0.2-{index:03d}",
         repo="owner/repo",
         issue_url=f"https://github.com/owner/repo/issues/{index}",
-        base_sha=f"{index:x}" * 40,
+        base_sha=f"{index:040x}",
         difficulty="lt_15m",
         smoke=False,
         generator_projection_sha256="2" * 64,
@@ -155,6 +156,26 @@ def _candidate(issue_number: int = 1) -> ValidatedCandidate:
             "rationale": "Exercises the reported behavior directly.",
         },
         issue_number=issue_number,
+    )
+
+
+def _candidate_for_run(run: runner._RunContext) -> ValidatedCandidate:
+    contract = runner._run_candidate_contract(run)
+    if contract.profile == "pytest-v1":
+        return _candidate(run.request.issue_number)
+    return validate_candidate_payload(
+        {
+            "test_content": (
+                "from sympy import Symbol\n\n"
+                f"def {contract.test_function}():\n"
+                "    actual = Symbol('x').is_commutative\n"
+                "    assert actual is False, 'wrong normalized output'\n"
+            ),
+            "expected_symptom": "wrong normalized output",
+            "rationale": "Exercises the reported SymPy behavior directly.",
+        },
+        issue_number=run.request.issue_number,
+        required_test_function=contract.test_function,
     )
 
 
@@ -218,6 +239,7 @@ def _run(tmp_path: Path, *, case: PreregisteredV02Case | None = None) -> runner.
         context_sha256="8" * 64,
         source_context=SourceContext(("demo.py",), (), 0),
     )
+    contract = v02_candidate_contract(case_id=frozen.id, issue_number=int(frozen.id[-3:]))
     request = GenerationRequest(
         issue_url=frozen.issue_url,
         issue_number=int(frozen.id[-3:]),
@@ -225,6 +247,10 @@ def _run(tmp_path: Path, *, case: PreregisteredV02Case | None = None) -> runner.
         issue_body="Calling normalize should return fixed output.",
         source_sha=frozen.base_sha,
         source_context=context.source_context,
+        candidate_profile=contract.profile,
+        required_test_function=(
+            contract.test_function if contract.profile == "sympy-native-v1" else None
+        ),
         attempt=1,
         feedback="",
     )
@@ -353,7 +379,7 @@ def _seed_recoverable_generation(
     path, _sha256, _bytes = runner._persist_generation_transaction(
         run,
         call_id=call_id,
-        candidate=_candidate(run.request.issue_number),
+        candidate=_candidate_for_run(run),
         model_finish=finish,
     )
     transaction = runner._load_generation_transaction(run)
@@ -475,6 +501,7 @@ def _campaign_run(
         context_sha256=case.source_context_sha256,
         source_context=SourceContext(("demo.py",), (), 0),
     )
+    contract = v02_candidate_contract(case_id=case.id, issue_number=index)
     request = GenerationRequest(
         issue_url=case.issue_url,
         issue_number=index,
@@ -482,6 +509,10 @@ def _campaign_run(
         issue_body="Reported behavior should be reproduced.",
         source_sha=case.base_sha,
         source_context=source_context.source_context,
+        candidate_profile=contract.profile,
+        required_test_function=(
+            contract.test_function if contract.profile == "sympy-native-v1" else None
+        ),
         attempt=1,
         feedback="",
     )
@@ -1293,7 +1324,7 @@ def test_transaction_fsyncs_candidate_before_model_finish_and_never_calls_provid
     monkeypatch.setattr(runner, "_append_event", assert_candidate_exists_before_finish)
     candidate, artifact = runner._run_transactional_openai_generation(run)
     assert calls == 1
-    runner._revalidate_candidate_file(artifact, candidate)
+    runner._revalidate_candidate_file(run, artifact, candidate)
     events = runner.read_v02_scored_ledger(run.ledger_path).events
     lifecycle = [
         event["event_type"]
@@ -1385,6 +1416,104 @@ def test_recovery_reconciles_each_pre_differential_crash_with_zero_provider_call
 
     monkeypatch.setattr(generator_module, "_post_openai_response", forbidden_provider)
     candidate, artifact = runner._recover_generation_without_provider(run)
+    assert provider_calls == 0
+    assert candidate == transaction.candidate
+    assert artifact == transaction.path
+
+    snapshot = runner.read_v02_scored_ledger(run.ledger_path)
+    events = [event for event in snapshot.events if event["attempt_id"] == run.attempt_id]
+    assert sum(event["event_type"] == "recovery_started" for event in events) == 1
+    assert sum(event["event_type"] == "candidate_submitted" for event in events) == 1
+    assert sum(event["event_type"] == "model_call_started" for event in events) == 1
+    assert sum(event["event_type"] == "model_call_finished" for event in events) == 1
+    assert (
+        sum(
+            event["event_type"] == "cost_recorded"
+            and event["payload"]["category"] == "model_inference"
+            for event in events
+        )
+        == 1
+    )
+    assert (
+        sum(
+            event["event_type"] == "phase_finished" and event["payload"]["phase"] == "generation"
+            for event in events
+        )
+        == 1
+    )
+    recovery = next(event for event in events if event["event_type"] == "recovery_started")
+    assert recovery["payload"]["execution_authorization_sha256"] == (
+        run.policy.execution_authorization_sha256
+    )
+    assert recovery["payload"]["provider_calls_permitted"] == 0
+    assert recovery["payload"]["oracle_feedback_permitted"] is False
+    assert recovery["payload"]["candidate_sha256"] == transaction.candidate.sha256
+    root = Path(__file__).parents[1]
+    for event_schema_path in (
+        root / "schemas" / "benchmark-v02-private-event.schema.json",
+        root / "src" / "reproassert" / "schemas" / "benchmark-v02-private-event.schema.json",
+    ):
+        event_schema = json.loads(event_schema_path.read_text())
+        Draft202012Validator.check_schema(event_schema)
+        Draft202012Validator(event_schema).validate(recovery)
+    assert transaction.candidate.test_content not in snapshot.encoded.decode()
+    assert transaction.candidate.expected_symptom not in snapshot.encoded.decode()
+
+    event_count = len(snapshot.events)
+    assert runner._recover_generation_without_provider(run) == (candidate, artifact)
+    assert len(runner.read_v02_scored_ledger(run.ledger_path).events) == event_count
+    assert provider_calls == 0
+
+
+@pytest.mark.parametrize("case_index", [16, 17])
+def test_sympy_recovery_reuses_one_durable_candidate_without_second_provider_call(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    case_index: int,
+) -> None:
+    run = _run(tmp_path, case=_case(case_index))
+    transaction = _seed_recoverable_generation(run, crash_point="after_candidate_fsync")
+    provider_calls = 0
+
+    def forbidden_provider(*_args: object, **_kwargs: object) -> bytes:
+        nonlocal provider_calls
+        provider_calls += 1
+        raise AssertionError("SymPy recovery must not issue another provider request")
+
+    monkeypatch.setattr(generator_module, "_post_openai_response", forbidden_provider)
+    candidate, artifact = runner._recover_generation_without_provider(run)
+    contract = runner._run_candidate_contract(run)
+
+    assert provider_calls == 0
+    assert candidate == transaction.candidate
+    assert artifact == transaction.path
+    assert candidate.test_function == contract.test_function
+    private = runner._private_result_record(
+        run,
+        candidate=candidate,
+        differential=None,
+        outcome="no_output",
+        claim_level="rejected",
+        costs={},
+        cost_complete=True,
+        total_cost=0,
+        ledger_head="f" * 64,
+        classification_code="v02_test_only",
+    )
+    embargoed = runner._public_embargoed_result_record(
+        run,
+        candidate=candidate,
+        costs={},
+        cost_complete=True,
+        total_cost=0,
+        ledger_head="f" * 64,
+    )
+    assert private["candidate"]["path"] == contract.relative_path  # type: ignore[index]
+    assert embargoed["candidate"]["path"] == contract.relative_path  # type: ignore[index]
+
+    event_count = len(runner.read_v02_scored_ledger(run.ledger_path).events)
+    assert runner._recover_generation_without_provider(run) == (candidate, artifact)
+    assert len(runner.read_v02_scored_ledger(run.ledger_path).events) == event_count
     assert provider_calls == 0
     assert candidate == transaction.candidate
     assert artifact == transaction.path
