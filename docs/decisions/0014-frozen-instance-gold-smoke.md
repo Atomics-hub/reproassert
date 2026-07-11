@@ -19,6 +19,13 @@ scikit-learn, and SymPy suites while remaining finite. The exact values, non-roo
 capabilities, read-only root, and network-none mode are committed in every receipt and rejected if
 they drift, even when a modified receipt is self-hashed again.
 
+SymPy's historical `FAIL_TO_PASS` values are bare test identifiers, not runnable paths. For the
+manifest-bound SymPy profile, the controller strictly parses the hidden developer patch and requires
+exactly one changed `sympy/**/tests/test_*.py` file plus exactly one safe bare identifier. It passes
+those as separate structured fields to the executor, which renders the fixed `bin/test PATH -k ID`
+argv. Zero, multiple, renamed, copied, incomplete, or unsafe paths are infrastructure failures. The
+derived path and identifier are evaluator-private and never appear in the gold-smoke receipt.
+
 The canonical private receipt always contains all 20 case rows. A targeted smoke marks the other 19
 rows `not_run`; it never shrinks the denominator. Raw hidden patches and raw sandbox output are not
 stored. The receipt records only hidden-input commitments and bounded output hashes. Timeouts,

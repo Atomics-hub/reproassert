@@ -89,8 +89,16 @@ class FakeExecutor:
         assert patch == b"private developer bytes"
 
     def run_test_command(
-        self, *, workspace: str, targets: tuple[str, ...], collect_only: bool = False
+        self,
+        *,
+        workspace: str,
+        targets: tuple[str, ...] = (),
+        collect_only: bool = False,
+        sympy_test_file: str | None = None,
+        sympy_test_identifier: str | None = None,
     ) -> InstancePytestResult:
+        assert sympy_test_file is None
+        assert sympy_test_identifier is None
         assert targets[0].endswith("::test_issue[param]")
         if self.network_failure and not collect_only:
             output = "ConnectionError: Failed to establish a new connection SECRET"
@@ -268,3 +276,140 @@ def test_missing_runtime_dependency_is_infrastructure() -> None:
     )
 
     assert controller._infrastructure_reason(result, collecting=False) == "setup_failure"
+
+
+@pytest.mark.parametrize(
+    ("path", "identifier"),
+    [
+        ("sympy/core/tests/test_args.py", "test_issue_case"),
+        ("sympy/physics/quantum/tests/test_gate.py", "test_gate_regression"),
+    ],
+)
+def test_derives_one_safe_sympy_test_contract_for_both_fixtures(path: str, identifier: str) -> None:
+    patch = (
+        f"diff --git a/{path} b/{path}\n"
+        "index 1111111..2222222 100644\n"
+        f"--- a/{path}\n"
+        f"+++ b/{path}\n"
+        "@@ -1,1 +1,2 @@\n"
+        " existing = True\n"
+        "+added = True\n"
+    ).encode()
+
+    assert controller._derive_sympy_test_contract(patch, (identifier,)) == (
+        path,
+        identifier,
+    )
+
+
+@pytest.mark.parametrize(
+    "patch",
+    [
+        b"diff --git a/sympy/core/core.py b/sympy/core/core.py\n"
+        b"--- a/sympy/core/core.py\n+++ b/sympy/core/core.py\n@@ -1 +1 @@\n-a\n+b\n",
+        b"diff --git a/sympy/a/tests/test_one.py b/sympy/a/tests/test_one.py\n"
+        b"--- a/sympy/a/tests/test_one.py\n+++ b/sympy/a/tests/test_one.py\n@@ -1 +1 @@\n-a\n+b\n"
+        b"diff --git a/sympy/b/tests/test_two.py b/sympy/b/tests/test_two.py\n"
+        b"--- a/sympy/b/tests/test_two.py\n+++ b/sympy/b/tests/test_two.py\n@@ -1 +1 @@\n-a\n+b\n",
+        b"diff --git a/sympy/core/tests/../../test_escape.py "
+        b"b/sympy/core/tests/../../test_escape.py\n"
+        b"--- a/sympy/core/tests/../../test_escape.py\n"
+        b"+++ b/sympy/core/tests/../../test_escape.py\n@@ -1 +1 @@\n-a\n+b\n",
+    ],
+)
+def test_rejects_zero_multiple_or_unsafe_sympy_test_paths(patch: bytes) -> None:
+    with pytest.raises(PolicyRejection):
+        controller._derive_sympy_test_contract(patch, ("test_issue",))
+
+
+@pytest.mark.parametrize("identifier", ["", "test_one test_two", "-k", "test_x[param]"])
+def test_rejects_unsafe_sympy_bare_identifier(identifier: str) -> None:
+    path = "sympy/core/tests/test_args.py"
+    patch = (
+        f"diff --git a/{path} b/{path}\n--- a/{path}\n+++ b/{path}\n@@ -1 +1 @@\n-a\n+b\n"
+    ).encode()
+    with pytest.raises(PolicyRejection):
+        controller._derive_sympy_test_contract(patch, (identifier,))
+
+
+def test_sympy_case_passes_only_structured_hidden_contract_to_executor(
+    tmp_path: Path,
+) -> None:
+    manifest_path, _, _, _ = _inputs(tmp_path)
+    manifest = load_instance_runtime_manifest(manifest_path)
+    test_path = "sympy/core/tests/test_issue.py"
+    identifier = "test_regression"
+    developer = (
+        f"diff --git a/{test_path} b/{test_path}\n"
+        f"--- a/{test_path}\n+++ b/{test_path}\n"
+        "@@ -1 +1,2 @@\n existing = True\n+added = True\n"
+    ).encode()
+    production = b"private production bytes"
+    developer_path = tmp_path / "sympy-developer.patch"
+    production_path = tmp_path / "sympy-production.patch"
+    developer_path.write_bytes(developer)
+    production_path.write_bytes(production)
+    calls: list[tuple[str, str, str]] = []
+
+    class SympyExecutor(FakeExecutor):
+        def prepare_workspaces(self, *, fixed_patch: bytes) -> None:
+            assert fixed_patch == production
+
+        def apply_patch(self, *, workspace: str, patch: bytes) -> None:
+            assert workspace in {"base", "fixed"}
+            assert patch == developer
+
+        def run_test_command(
+            self,
+            *,
+            workspace: str,
+            targets: tuple[str, ...] = (),
+            collect_only: bool = False,
+            sympy_test_file: str | None = None,
+            sympy_test_identifier: str | None = None,
+        ) -> InstancePytestResult:
+            assert not targets and not collect_only
+            assert sympy_test_file is not None and sympy_test_identifier is not None
+            calls.append((workspace, sympy_test_file, sympy_test_identifier))
+            return InstancePytestResult(
+                workspace=workspace,  # type: ignore[arg-type]
+                exit_code=1 if workspace == "base" else 0,
+                output="hidden output",
+                timed_out=False,
+                output_truncated=False,
+            )
+
+    artifact_refs = {
+        "production_patch": {
+            "bytes": len(production),
+            "path": production_path,
+            "sha256": hashlib.sha256(production).hexdigest(),
+        },
+        "developer_tests": {
+            "bytes": len(developer),
+            "path": developer_path,
+            "sha256": hashlib.sha256(developer).hexdigest(),
+        },
+    }
+    row = controller._run_case(
+        manifest=manifest,
+        case_id="rk-v0.2-001",
+        spec=controller.GoldSmokeSpec(
+            instance_id="sympy__sympy-15345",
+            version="1.0",
+            fail_to_pass=(identifier,),
+            pass_to_pass=(),
+        ),
+        test_command_profile="sympy-bin-test-v1",
+        artifact_refs=artifact_refs,
+        executor_factory=lambda _manifest, case_id, _policy: SympyExecutor(case_id),
+    )
+
+    assert calls == [
+        ("base", test_path, identifier),
+        ("fixed", test_path, identifier),
+    ]
+    assert row["classification"] == "semantic_valid"
+    encoded = json.dumps(row).encode()
+    assert test_path.encode() not in encoded
+    assert identifier.encode() not in encoded

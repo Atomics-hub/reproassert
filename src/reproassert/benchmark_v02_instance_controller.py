@@ -35,6 +35,9 @@ _CASE_ID = re.compile(r"rk-v0\.2-[0-9]{3}\Z")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _INSTANCE_ID = re.compile(r"[A-Za-z0-9_.-]+__[A-Za-z0-9_.-]+-[0-9]+\Z")
 _VERSION = re.compile(r"[A-Za-z0-9_.-]{1,40}\Z")
+_SYMPY_TEST_IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,199}\Z")
+_PATCH_PATH = re.compile(r"[A-Za-z0-9_.+/-]{1,500}\Z")
+_SYMPY_TEST_PATH = re.compile(r"sympy(?:/[A-Za-z0-9_]+)+/tests/test_[A-Za-z0-9_]+\.py\Z")
 _NETWORK_MARKERS = (
     "network is unreachable",
     "temporary failure in name resolution",
@@ -300,6 +303,11 @@ def _run_case(
     reason = "controller_failure"
     try:
         runtime = next(entry for entry in manifest.entries if entry.case_id == case_id)
+        sympy_contract = (
+            _derive_sympy_test_contract(developer_tests, spec.fail_to_pass)
+            if test_command_profile == "sympy-bin-test-v1"
+            else None
+        )
         policy = _gold_smoke_policy(runtime.image_id)
         with executor_factory(manifest, case_id, policy) as executor:
             executor.acquire()
@@ -322,8 +330,21 @@ def _run_case(
             if collect_reason is not None:
                 reason = collect_reason
             else:
-                base = executor.run_test_command(workspace="base", targets=spec.fail_to_pass)
-                fixed = executor.run_test_command(workspace="fixed", targets=spec.fail_to_pass)
+                if sympy_contract is None:
+                    base = executor.run_test_command(workspace="base", targets=spec.fail_to_pass)
+                    fixed = executor.run_test_command(workspace="fixed", targets=spec.fail_to_pass)
+                else:
+                    test_file, test_identifier = sympy_contract
+                    base = executor.run_test_command(
+                        workspace="base",
+                        sympy_test_file=test_file,
+                        sympy_test_identifier=test_identifier,
+                    )
+                    fixed = executor.run_test_command(
+                        workspace="fixed",
+                        sympy_test_file=test_file,
+                        sympy_test_identifier=test_identifier,
+                    )
                 phases["base"] = _result_evidence(base)
                 phases["fixed"] = _result_evidence(fixed)
                 runtime_reason = _infrastructure_reason(base, fixed, collecting=False)
@@ -403,6 +424,8 @@ def _infrastructure_reason(*results: InstancePytestResult, collecting: bool) -> 
 def _bounded_error_reason(exc: Exception) -> str:
     if isinstance(exc, ReproAssertError):
         code = exc.code.lower()
+        if code == "benchmark_v02_sympy_test_contract":
+            return "hidden_test_contract_failure"
         if "network" in exc.message.lower():
             return "network_dependency"
         if "cleanup" in exc.message.lower():
@@ -410,6 +433,88 @@ def _bounded_error_reason(exc: Exception) -> str:
         if "docker" in code or "instance" in code:
             return "sandbox_setup_failure"
     return "controller_failure"
+
+
+def _derive_sympy_test_contract(
+    developer_patch: bytes, fail_to_pass: tuple[str, ...]
+) -> tuple[str, str]:
+    """Derive one safe bin/test argv contract from strict Git patch structure."""
+
+    if len(fail_to_pass) != 1 or _SYMPY_TEST_IDENTIFIER.fullmatch(fail_to_pass[0]) is None:
+        raise _reject_sympy("SymPy gold smoke requires exactly one safe bare test identifier.")
+    try:
+        lines = developer_patch.decode("utf-8", errors="strict").splitlines()
+    except UnicodeDecodeError as exc:
+        raise _reject_sympy("SymPy developer patch is not valid UTF-8.") from exc
+    if not lines or len(lines) > 50_000:
+        raise _reject_sympy("SymPy developer patch line count is invalid.")
+
+    paths: list[str] = []
+    current: str | None = None
+    old_header = False
+    new_header = False
+    hunk = False
+
+    def finish() -> None:
+        nonlocal current, old_header, new_header, hunk
+        if current is None:
+            return
+        if not old_header or not new_header or not hunk:
+            raise _reject_sympy("SymPy developer patch section is incomplete.")
+        if _SYMPY_TEST_PATH.fullmatch(current) is not None:
+            paths.append(current)
+
+    for line in lines:
+        if line.startswith("diff --git "):
+            finish()
+            parts = line.split(" ")
+            if (
+                len(parts) != 4
+                or not parts[2].startswith("a/")
+                or not parts[3].startswith("b/")
+                or parts[2][2:] != parts[3][2:]
+            ):
+                raise _reject_sympy("SymPy developer patch diff header is invalid.")
+            current = _safe_patch_path(parts[2][2:])
+            old_header = False
+            new_header = False
+            hunk = False
+            continue
+        if current is None:
+            if line:
+                raise _reject_sympy("SymPy developer patch has an unexpected preamble.")
+            continue
+        if line.startswith(("rename from ", "rename to ", "copy from ", "copy to ")):
+            raise _reject_sympy("SymPy developer patch renames and copies are forbidden.")
+        if line.startswith("--- "):
+            if old_header or line not in {f"--- a/{current}", "--- /dev/null"}:
+                raise _reject_sympy("SymPy developer patch old-file header is invalid.")
+            old_header = True
+        elif line.startswith("+++ "):
+            if new_header or line != f"+++ b/{current}":
+                raise _reject_sympy("SymPy developer patch new-file header is invalid.")
+            new_header = True
+        elif line.startswith("@@ "):
+            if not old_header or not new_header:
+                raise _reject_sympy("SymPy developer patch hunk precedes its file headers.")
+            hunk = True
+    finish()
+    if len(paths) != 1:
+        raise _reject_sympy("SymPy developer patch must change exactly one safe test file.")
+    return paths[0], fail_to_pass[0]
+
+
+def _safe_patch_path(value: str) -> str:
+    path = Path(value)
+    if (
+        _PATCH_PATH.fullmatch(value) is None
+        or path.is_absolute()
+        or ".." in path.parts
+        or "." in path.parts
+        or "//" in value
+    ):
+        raise _reject_sympy("SymPy developer patch path is unsafe.")
+    return value
 
 
 def _load_gold_specs(raw: bytes) -> tuple[GoldSmokeSpec, ...]:
@@ -554,6 +659,7 @@ def _verify_result_row(row: dict[str, object]) -> None:
         "cleanup_failure",
         "sandbox_setup_failure",
         "controller_failure",
+        "hidden_test_contract_failure",
     }
     if row.get("reason") not in reasons:
         raise _reject("Gold-smoke result reason is invalid.")
@@ -718,3 +824,7 @@ def _timestamp(value: object) -> str:
 
 def _reject(message: str) -> PolicyRejection:
     return PolicyRejection("benchmark_v02_instance_controller", message)
+
+
+def _reject_sympy(message: str) -> PolicyRejection:
+    return PolicyRejection("benchmark_v02_sympy_test_contract", message)
