@@ -73,14 +73,17 @@ class FakeDocker:
             return self._result(args[-1] + "\n")
         if args[0] == "create":
             name = args[args.index("--name") + 1]
-            volume_arg = args[args.index("--mount") + 1]
-            volume = dict(part.split("=", 1) for part in volume_arg.split(","))["src"]
+            mount_args = [args[index + 1] for index, value in enumerate(args) if value == "--mount"]
+            parsed_mounts = [
+                dict(part.split("=", 1) for part in value.split(",")) for value in mount_args
+            ]
             image_id = _runtime().image_id
             image_index = args.index(image_id)
             self.containers[name] = {
                 "Config": {
                     "Cmd": args[image_index + 1 :],
                     "Entrypoint": [args[args.index("--entrypoint") + 1]],
+                    "Env": ["PATH=/usr/bin:/bin", "HOME=/tmp/home"],
                     "User": "0:0",
                 },
                 "HostConfig": {
@@ -98,11 +101,12 @@ class FakeDocker:
                 "Image": image_id,
                 "Mounts": [
                     {
-                        "Destination": "/workspace",
-                        "Name": volume,
+                        "Destination": mount["dst"],
+                        "Name": mount["src"],
                         "RW": True,
                         "Type": "volume",
                     }
+                    for mount in parsed_mounts
                 ],
             }
             return self._result("3" * 64 + "\n")
@@ -156,7 +160,9 @@ def test_prepares_two_fresh_workspaces_and_runs_bounded_pytest() -> None:
         content=b"def test_repro():\n    assert False\n",
     )
     result = executor.run_pytest(
-        workspace="base", target="tests/test_reproassert_issue_14305.py", collect_only=True
+        workspace="base",
+        targets=("tests/test_reproassert_issue_14305.py::test_case[param-1]",),
+        collect_only=True,
     )
 
     assert workspaces.base_volume != workspaces.fixed_volume
@@ -174,10 +180,12 @@ def test_prepares_two_fresh_workspaces_and_runs_bounded_pytest() -> None:
     assert all("--read-only" in command for command in creates)
     assert all("--cap-drop" in command and "ALL" in command for command in creates)
     assert all("type=bind" not in " ".join(command) for command in creates)
-    assert any(command[0] == "cp" for command in fake.commands)
+    assert any(command[0] == "cp" and ":/input/" in command[-1] for command in fake.commands)
     pytest_create = next(command for command in creates if "pytest-base" in " ".join(command))
     assert "--collect-only" in pytest_create
-    assert "tests/test_reproassert_issue_14305.py" in pytest_create
+    assert "tests/test_reproassert_issue_14305.py::test_case[param-1]" in pytest_create
+    assert "/opt/miniconda3/envs/testbed/bin/python -I -m pytest" in " ".join(pytest_create)
+    assert "HOME=/tmp/home" in pytest_create
 
     executor.cleanup()
     assert not fake.containers
@@ -185,7 +193,14 @@ def test_prepares_two_fresh_workspaces_and_runs_bounded_pytest() -> None:
 
 @pytest.mark.parametrize(
     "target",
-    ["--pwn", "/etc/passwd", "../test.py", "tests/../../escape.py", "tests/test.py::node"],
+    [
+        "--pwn",
+        "/etc/passwd",
+        "../test.py",
+        "tests/../../escape.py",
+        "tests/test.py::",
+        "tests/test.py::node\n--pwn",
+    ],
 )
 def test_rejects_untrusted_pytest_targets(target: str) -> None:
     fake = FakeDocker()
@@ -194,7 +209,7 @@ def test_rejects_untrusted_pytest_targets(target: str) -> None:
     executor.prepare_workspaces(fixed_patch=b"diff --git a/a b/a\n")
 
     with pytest.raises(PolicyRejection):
-        executor.run_pytest(workspace="base", target=target)
+        executor.run_pytest(workspace="base", targets=(target,))
 
 
 def test_rejects_wrong_policy_image() -> None:
@@ -205,3 +220,38 @@ def test_rejects_wrong_policy_image() -> None:
             policy=SandboxPolicy(image=f"sha256:{'9' * 64}"),
             runner=FakeDocker(),
         )
+
+
+def test_git_operations_use_isolated_home_and_safe_directory() -> None:
+    fake = FakeDocker()
+    executor = _executor(fake)
+    executor.acquire()
+    executor.prepare_workspaces(fixed_patch=b"diff --git a/a b/a\n")
+
+    creates = [command for command in fake.commands if command[0] == "create"]
+    copy_command = next(command for command in creates if "copy-base" in " ".join(command))
+    patch_command = next(
+        command
+        for command in fake.commands
+        if command[0] == "exec" and "reproassert-patch" in " ".join(command)
+    )
+    assert "git config --global --add safe.directory /workspace" in " ".join(copy_command)
+    assert "git config --global --add safe.directory /workspace" in " ".join(patch_command)
+
+
+def test_public_patch_api_can_stage_developer_tests_on_both_workspaces() -> None:
+    fake = FakeDocker()
+    executor = _executor(fake)
+    executor.acquire()
+    executor.prepare_workspaces(fixed_patch=b"diff --git a/a b/a\n")
+
+    executor.apply_patch(workspace="base", patch=b"diff --git a/t b/t\n")
+    executor.apply_patch(workspace="fixed", patch=b"diff --git a/t b/t\n")
+
+    patch_execs = [
+        command
+        for command in fake.commands
+        if command[0] == "exec" and "reproassert-patch" in " ".join(command)
+    ]
+    assert len(patch_execs) == 3
+    assert any("stage-patch-base" in " ".join(command) for command in fake.commands)

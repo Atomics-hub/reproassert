@@ -29,11 +29,15 @@ MAX_STAGED_BYTES = 2 * 1024 * 1024
 _CONTROL_OUTPUT_BYTES = 2 * 1024 * 1024
 _LABEL_OWNER = "io.reproassert.instance-owner=controller-v1"
 _SAFE_TARGET = re.compile(r"[A-Za-z0-9_./-]{1,300}\Z")
+_MAX_PYTEST_TARGETS = 64
+_MAX_PYTEST_TARGET_BYTES = 500
 _CONTAINER_ID = re.compile(r"[0-9a-f]{12,64}\Z")
 _CONTAINER_TMP = "/tmp"  # noqa: S108 - isolated container path, never a host path
 
 _COPY_TESTBED_SCRIPT = """set -eu
 cp -a /testbed/. /workspace/
+mkdir -p "$HOME"
+git config --global --add safe.directory /workspace
 cd /workspace
 test "$(git rev-parse HEAD)" = "$1"
 test "$(git rev-parse 'HEAD^{tree}')" = "$2"
@@ -41,27 +45,27 @@ test -z "$(git status --porcelain --untracked-files=no)"
 """.strip()
 
 _APPLY_PATCH_SCRIPT = """set -eu
-test "$(sha256sum /tmp/reproassert-input | cut -d ' ' -f 1)" = "$1"
+test "$(sha256sum /input/reproassert-input | cut -d ' ' -f 1)" = "$1"
+mkdir -p "$HOME"
+git config --global --add safe.directory /workspace
 cd /workspace
-git apply --check /tmp/reproassert-input
-git apply /tmp/reproassert-input
+git apply --check /input/reproassert-input
+git apply /input/reproassert-input
 test "$(git rev-parse HEAD)" = "$2"
 """.strip()
 
 _STAGE_CANDIDATE_SCRIPT = """set -eu
-test "$(sha256sum /tmp/reproassert-input | cut -d ' ' -f 1)" = "$1"
+test "$(sha256sum /input/reproassert-input | cut -d ' ' -f 1)" = "$1"
 cd /workspace
 test ! -e "$2"
 mkdir -p "$(dirname "$2")"
-cp /tmp/reproassert-input "$2"
+cp /input/reproassert-input "$2"
 test "$(sha256sum "$2" | cut -d ' ' -f 1)" = "$1"
 """.strip()
 
 _PYTEST_SCRIPT = """set -eu
-source /opt/miniconda3/bin/activate
-conda activate testbed
 cd /workspace
-exec python -I -m pytest "$@"
+exec /opt/miniconda3/envs/testbed/bin/python -I -m pytest "$@"
 """.strip()
 
 
@@ -154,32 +158,47 @@ class InstanceRuntimeExecutor:
         if not self._acquired or self._prepared:
             raise self._reject("Instance image must be acquired once before workspace preparation.")
         _bounded_bytes(fixed_patch, "fixed patch")
-        for role in ("base", "fixed"):
-            volume = f"reproassert-{self._token}-{role}"
-            self._require_absent("volume", volume)
-            result = self._run(
-                [
-                    "volume",
-                    "create",
-                    "--label",
-                    _LABEL_OWNER,
-                    "--label",
-                    f"io.reproassert.instance-run={self._token}",
-                    "--label",
-                    f"io.reproassert.instance-role={role}",
-                    volume,
-                ],
-                timeout=30,
+        try:
+            for role in ("base", "fixed"):
+                volume = f"reproassert-{self._token}-{role}"
+                self._require_absent("volume", volume)
+                result = self._run(
+                    [
+                        "volume",
+                        "create",
+                        "--label",
+                        _LABEL_OWNER,
+                        "--label",
+                        f"io.reproassert.instance-run={self._token}",
+                        "--label",
+                        f"io.reproassert.instance-role={role}",
+                        volume,
+                    ],
+                    timeout=30,
+                )
+                if result.output.strip() != volume:
+                    raise self._reject("Docker created an unexpected workspace volume.")
+                self._volumes[role] = volume
+                self._copy_pristine_testbed(role)
+            self._stage_bytes("fixed", fixed_patch, purpose="patch")
+            self._prepared = True
+            return InstanceWorkspaceSet(
+                base_volume=self._volumes["base"], fixed_volume=self._volumes["fixed"]
             )
-            if result.output.strip() != volume:
-                raise self._reject("Docker created an unexpected workspace volume.")
-            self._volumes[role] = volume
-            self._copy_pristine_testbed(role)
-        self._stage_bytes("fixed", fixed_patch, purpose="patch")
-        self._prepared = True
-        return InstanceWorkspaceSet(
-            base_volume=self._volumes["base"], fixed_volume=self._volumes["fixed"]
-        )
+        except BaseException as exc:
+            try:
+                self.cleanup()
+            except BaseException as cleanup_error:
+                raise cleanup_error from exc
+            raise
+
+    def apply_patch(self, *, workspace: Literal["base", "fixed"], patch: bytes) -> None:
+        """Apply controller-owned patch bytes to one prepared workspace."""
+
+        if not self._prepared or workspace not in self._volumes:
+            raise self._reject("Requested instance workspace is unavailable.")
+        _bounded_bytes(patch, "patch")
+        self._stage_bytes(workspace, patch, purpose="patch")
 
     def stage_candidate(self, *, relative_path: str, content: bytes) -> None:
         if not self._prepared:
@@ -193,19 +212,25 @@ class InstanceRuntimeExecutor:
         self,
         *,
         workspace: Literal["base", "fixed"],
-        target: str,
+        targets: tuple[str, ...],
         collect_only: bool = False,
     ) -> InstancePytestResult:
         if not self._prepared or workspace not in self._volumes:
             raise self._reject("Requested instance workspace is unavailable.")
-        checked_target = _relative_target(target, "pytest target")
+        if (
+            not isinstance(targets, tuple)
+            or not 1 <= len(targets) <= _MAX_PYTEST_TARGETS
+            or len(set(targets)) != len(targets)
+        ):
+            raise self._reject("Pytest targets must be a bounded unique tuple.")
+        checked_targets = tuple(_pytest_target(target) for target in targets)
         command = [
             "/bin/bash",
             "-c",
             _PYTEST_SCRIPT,
             "reproassert-pytest",
             *(["--collect-only"] if collect_only else []),
-            checked_target,
+            *checked_targets,
         ]
         name = self._create_sandbox_container(workspace, command, role=f"pytest-{workspace}")
         try:
@@ -269,20 +294,52 @@ class InstanceRuntimeExecutor:
         arguments = (
             [digest, self.runtime.base_sha] if purpose == "patch" else [digest, relative_path]
         )
-        command = ["/bin/bash", "-c", script, f"reproassert-{purpose}", *cast(list[str], arguments)]
-        name = self._create_sandbox_container(
-            workspace, command, role=f"stage-{purpose}-{workspace}"
+        command = [
+            "/bin/bash",
+            "-c",
+            script,
+            f"reproassert-{purpose}",
+            *cast(list[str], arguments),
+        ]
+        idle_command = ["/bin/bash", "-c", "exec tail -f /dev/null"]
+        input_volume = f"reproassert-{self._token}-input-{uuid.uuid4().hex[:8]}"
+        self._require_absent("volume", input_volume)
+        created = self._run(
+            [
+                "volume",
+                "create",
+                "--label",
+                _LABEL_OWNER,
+                "--label",
+                f"io.reproassert.instance-run={self._token}",
+                "--label",
+                "io.reproassert.instance-role=staging-input",
+                input_volume,
+            ],
+            timeout=30,
         )
+        if created.output.strip() != input_volume:
+            raise self._reject("Docker created an unexpected staging-input volume.")
+        name: str | None = None
         try:
+            name = self._create_sandbox_container(
+                workspace,
+                idle_command,
+                role=f"stage-{purpose}-{workspace}",
+                input_volume=input_volume,
+            )
+            self._run(["start", name], timeout=30)
             with tempfile.TemporaryDirectory(prefix="reproassert-instance-") as temporary:
                 os.chmod(temporary, 0o700)
                 source = Path(temporary) / "input"
                 source.write_bytes(content)
-                source.chmod(0o600)
-                self._run(["cp", str(source), f"{name}:/tmp/reproassert-input"], timeout=30)
-            self._run(["start", "--attach", name], timeout=120)
+                source.chmod(0o644)
+                self._run(["cp", str(source), f"{name}:/input/reproassert-input"], timeout=30)
+            self._run(["exec", name, *command], timeout=120)
         finally:
-            self._remove_container(name)
+            if name is not None:
+                self._remove_container(name)
+            self._run(["volume", "rm", input_volume], timeout=30)
 
     def _create_sandbox_container(
         self,
@@ -291,6 +348,7 @@ class InstanceRuntimeExecutor:
         *,
         role: str,
         read_only: bool = True,
+        input_volume: str | None = None,
     ) -> str:
         volume = self._volumes[workspace]
         name = f"reproassert-{self._token}-{role}-{uuid.uuid4().hex[:8]}"
@@ -320,11 +378,15 @@ class InstanceRuntimeExecutor:
             _cpu_text(self.policy.cpus),
             "--user",
             "0:0",
+            "--env",
+            "HOME=/tmp/home",
             "--tmpfs",
             f"{_CONTAINER_TMP}:rw,noexec,nosuid,nodev,size={self.policy.tmpfs_bytes},nr_inodes={self.policy.tmpfs_inodes}",
             "--mount",
             f"type=volume,src={volume},dst=/workspace",
         ]
+        if input_volume is not None:
+            args.extend(["--mount", f"type=volume,src={input_volume},dst=/input"])
         if read_only:
             args.append("--read-only")
         args.extend(["--entrypoint", command[0], self.runtime.image_id, *command[1:]])
@@ -333,11 +395,23 @@ class InstanceRuntimeExecutor:
         if _CONTAINER_ID.fullmatch(container_id) is None:
             raise self._reject("Docker returned an invalid instance container ID.")
         self._containers.add(name)
-        self._inspect_container_policy(name, volume, command=command, read_only=read_only)
+        self._inspect_container_policy(
+            name,
+            volume,
+            command=command,
+            read_only=read_only,
+            input_volume=input_volume,
+        )
         return name
 
     def _inspect_container_policy(
-        self, name: str, volume: str, *, command: list[str], read_only: bool
+        self,
+        name: str,
+        volume: str,
+        *,
+        command: list[str],
+        read_only: bool,
+        input_volume: str | None,
     ) -> None:
         payload = self._inspect_one(["container", "inspect", name], "container")
         config = _mapping(payload.get("Config"), "container config")
@@ -351,18 +425,27 @@ class InstanceRuntimeExecutor:
             )
         }
         expected_nano_cpus = int(self.policy.cpus * 1_000_000_000)
-        valid_mount = (
-            isinstance(mounts, list)
-            and len(mounts) == 1
-            and isinstance(mounts[0], dict)
-            and mounts[0].get("Type") == "volume"
-            and mounts[0].get("Name") == volume
-            and mounts[0].get("Destination") == "/workspace"
-            and mounts[0].get("RW") is True
+        expected_mounts = {(volume, "/workspace")}
+        if input_volume is not None:
+            expected_mounts.add((input_volume, "/input"))
+        actual_mounts = (
+            {
+                (item.get("Name"), item.get("Destination"))
+                for item in mounts
+                if isinstance(item, dict)
+                and item.get("Type") == "volume"
+                and item.get("RW") is True
+            }
+            if isinstance(mounts, list)
+            else set()
         )
+        mount_count = len(mounts) if isinstance(mounts, list) else 0
+        valid_mount = actual_mounts == expected_mounts and len(actual_mounts) == mount_count
         if not (
             payload.get("Image") == self.runtime.image_id
             and config.get("User") == "0:0"
+            and isinstance(config.get("Env"), list)
+            and "HOME=/tmp/home" in cast(list[object], config.get("Env"))
             and config.get("Entrypoint") == [command[0]]
             and config.get("Cmd") == command[1:]
             and host.get("NetworkMode") == "none"
@@ -434,6 +517,22 @@ def _relative_target(value: str, label: str) -> str:
     path = PurePosixPath(value)
     if path.is_absolute() or any(part in {"", ".", ".."} for part in path.parts):
         raise PolicyRejection("benchmark_v02_instance_executor", f"{label.capitalize()} is unsafe.")
+    return value
+
+
+def _pytest_target(value: str) -> str:
+    if (
+        not isinstance(value, str)
+        or not value.isascii()
+        or not 1 <= len(value.encode("ascii")) <= _MAX_PYTEST_TARGET_BYTES
+        or value.startswith("-")
+        or any(ord(character) < 0x20 or ord(character) == 0x7F for character in value)
+    ):
+        raise PolicyRejection("benchmark_v02_instance_executor", "Pytest target is outside policy.")
+    path, *nodes = value.split("::")
+    _relative_target(path, "pytest path")
+    if any(not node for node in nodes):
+        raise PolicyRejection("benchmark_v02_instance_executor", "Pytest node selector is invalid.")
     return value
 
 
