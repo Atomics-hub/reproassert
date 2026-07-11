@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atomics-hub.github.io/reproassert/benchmark-v02-instance-gold-smoke.schema.json",
+  "title": "ReproAssert evaluator-private v0.2 instance gold-smoke receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["algorithm", "benchmark_version", "case_count", "claims", "counts", "executed_at", "inputs", "policy", "receipt_sha256", "results", "schema_version", "selection", "status", "tool_git_sha"],
+  "properties": {
+    "algorithm": {"const": "reproassert-v02-instance-gold-smoke-v1"},
+    "benchmark_version": {"const": "0.2"},
+    "case_count": {"const": 20},
+    "claims": {
+      "const": {"hidden_patch_contents_emitted": false, "model_or_provider_invoked": false, "network_during_sandbox_execution": false, "provider_calls": 0}
+    },
+    "counts": {
+      "type": "object", "additionalProperties": false,
+      "required": ["infrastructure_failure", "not_run", "selected", "semantic_failure", "semantic_valid"],
+      "properties": {
+        "infrastructure_failure": {"type": "integer", "minimum": 0, "maximum": 20},
+        "not_run": {"type": "integer", "minimum": 0, "maximum": 20},
+        "selected": {"type": "integer", "minimum": 1, "maximum": 20},
+        "semantic_failure": {"type": "integer", "minimum": 0, "maximum": 20},
+        "semantic_valid": {"type": "integer", "minimum": 0, "maximum": 20}
+      }
+    },
+    "executed_at": {"type": "string", "pattern": "^20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"},
+    "inputs": {
+      "type": "object", "additionalProperties": false,
+      "required": ["gold_specs_sha256", "hidden_extraction_receipt_sha256", "instance_runtime_manifest_sha256"],
+      "properties": {
+        "gold_specs_sha256": {"$ref": "#/$defs/sha256"},
+        "hidden_extraction_receipt_sha256": {"$ref": "#/$defs/sha256"},
+        "instance_runtime_manifest_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "policy": {
+      "const": {
+        "image_acquisition": "bounded_exact-digest-pull-before-sandbox-execution",
+        "provider_execution_enabled": false,
+        "sandbox_network_mode": "none"
+      }
+    },
+    "receipt_sha256": {"$ref": "#/$defs/sha256"},
+    "results": {
+      "type": "array", "minItems": 20, "maxItems": 20,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["case_id", "classification", "hidden_inputs", "instance_id", "phases", "reason", "selected", "test_command_profile", "test_counts"],
+        "properties": {
+          "case_id": {"type": "string", "pattern": "^rk-v0\\.2-[0-9]{3}$"},
+          "classification": {"enum": ["infrastructure_failure", "not_run", "semantic_failure", "semantic_valid"]},
+          "hidden_inputs": {
+            "oneOf": [
+              {"type": "null"},
+              {
+                "type": "object", "additionalProperties": false,
+                "required": ["developer_tests_bytes", "developer_tests_sha256", "production_patch_bytes", "production_patch_sha256"],
+                "properties": {
+                  "developer_tests_bytes": {"type": "integer", "minimum": 1, "maximum": 1048576},
+                  "developer_tests_sha256": {"$ref": "#/$defs/sha256"},
+                  "production_patch_bytes": {"type": "integer", "minimum": 1, "maximum": 1048576},
+                  "production_patch_sha256": {"$ref": "#/$defs/sha256"}
+                }
+              }
+            ]
+          },
+          "instance_id": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+__[A-Za-z0-9_.-]+-[0-9]+$"},
+          "phases": {
+            "type": "object", "additionalProperties": false,
+            "properties": {
+              "base_collect": {"$ref": "#/$defs/execution"},
+              "fixed_collect": {"$ref": "#/$defs/execution"},
+              "base": {"$ref": "#/$defs/execution"},
+              "fixed": {"$ref": "#/$defs/execution"}
+            }
+          },
+          "reason": {"enum": ["not_selected", "fails_on_base_passes_on_fixed", "does_not_fail_on_base", "does_not_pass_on_fixed", "timeout", "output_limit", "network_dependency", "collection_or_setup_failure", "cleanup_failure", "sandbox_setup_failure", "controller_failure"]},
+          "selected": {"type": "boolean"},
+          "test_command_profile": {"type": ["string", "null"], "enum": ["pytest-v1", "sympy-bin-test-v1", null]},
+          "test_counts": {
+            "oneOf": [
+              {"type": "null"},
+              {
+                "type": "object", "additionalProperties": false,
+                "required": ["fail_to_pass", "pass_to_pass_not_executed"],
+                "properties": {
+                  "fail_to_pass": {"type": "integer", "minimum": 1, "maximum": 64},
+                  "pass_to_pass_not_executed": {"type": "integer", "minimum": 0, "maximum": 1000}
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "schema_version": {"const": "0.1.0"},
+    "selection": {"oneOf": [{"const": "all"}, {"type": "string", "pattern": "^rk-v0\\.2-[0-9]{3}$"}]},
+    "status": {"enum": ["complete", "partial_explicit_case"]},
+    "tool_git_sha": {"$ref": "#/$defs/gitSha"}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "gitSha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "execution": {
+      "type": "object", "additionalProperties": false,
+      "required": ["exit_code", "output_bytes", "output_sha256", "output_stored", "output_truncated", "timed_out"],
+      "properties": {
+        "exit_code": {"type": "integer", "minimum": -2147483648, "maximum": 2147483647},
+        "output_bytes": {"type": "integer", "minimum": 0, "maximum": 2097152},
+        "output_sha256": {"$ref": "#/$defs/sha256"},
+        "output_stored": {"const": false},
+        "output_truncated": {"type": "boolean"},
+        "timed_out": {"type": "boolean"}
+      }
+    }
+  }
+}

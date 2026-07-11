@@ -41,6 +41,10 @@ from reproassert.benchmark_v02_campaign import (
 )
 from reproassert.benchmark_v02_cases import prepare_v02_cases, verify_v02_cases
 from reproassert.benchmark_v02_hidden import prepare_v02_hidden_gold, verify_v02_hidden_gold
+from reproassert.benchmark_v02_instance_controller import (
+    run_instance_gold_smoke,
+    verify_instance_gold_smoke_receipt,
+)
 from reproassert.benchmark_v02_object_source import (
     prepare_v02_object_source_case,
     verify_v02_object_source_receipt,
@@ -659,6 +663,104 @@ def benchmark_verify_v02_cases(preparation_receipt: Path) -> None:
                 "preparation_receipt_sha256": prepared.receipt_sha256,
                 "provider_calls": 0,
                 "provider_execution_enabled": False,
+                "verified": True,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+@benchmark_group.command("smoke-v02-instance-runtimes")
+@click.option(
+    "--instance-runtime-manifest",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option("--expected-manifest-sha256", required=True)
+@click.option(
+    "--hidden-extraction-receipt",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--gold-specs",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option("--expected-gold-specs-sha256", required=True)
+@click.option("--case-id", help="Run one case while retaining 20 denominator rows.")
+@click.option("--executed-at", required=True, help="UTC execution timestamp.")
+@click.option("--tool-git-sha", required=True, help="Exact 40-hex controller revision.")
+@click.option(
+    "--output",
+    type=click.Path(path_type=Path, dir_okay=False),
+    required=True,
+    help="New evaluator-private canonical gold-smoke receipt.",
+)
+def benchmark_run_v02_instance_gold_smoke(
+    instance_runtime_manifest: Path,
+    expected_manifest_sha256: str,
+    hidden_extraction_receipt: Path,
+    gold_specs: Path,
+    expected_gold_specs_sha256: str,
+    case_id: str | None,
+    executed_at: str,
+    tool_git_sha: str,
+    output: Path,
+) -> None:
+    """Run exact hidden gold tests in no-network instance sandboxes; never call a provider."""
+
+    try:
+        _ensure_private_output_root(output.parent)
+        receipt = run_instance_gold_smoke(
+            manifest_path=instance_runtime_manifest,
+            expected_manifest_sha256=expected_manifest_sha256,
+            hidden_extraction_receipt=hidden_extraction_receipt,
+            gold_specs_path=gold_specs,
+            expected_gold_specs_sha256=expected_gold_specs_sha256,
+            output_path=output,
+            executed_at=executed_at,
+            tool_git_sha=tool_git_sha,
+            case_id=case_id,
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(
+        json.dumps(
+            {
+                "case_count": 20,
+                "infrastructure_failure_count": receipt.infrastructure_failure_count,
+                "provider_calls": 0,
+                "provider_execution_enabled": False,
+                "receipt_sha256": receipt.sha256,
+                "selected_case_count": receipt.selected_case_count,
+                "semantic_valid_count": receipt.semantic_valid_count,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+@benchmark_group.command("verify-v02-instance-gold-smoke")
+@click.argument("receipt", type=click.Path(path_type=Path, exists=True, dir_okay=False))
+def benchmark_verify_v02_instance_gold_smoke(receipt: Path) -> None:
+    """Verify canonical redacted gold-smoke evidence without executing code."""
+
+    try:
+        verified = verify_instance_gold_smoke_receipt(receipt)
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(
+        json.dumps(
+            {
+                "case_count": 20,
+                "infrastructure_failure_count": verified.infrastructure_failure_count,
+                "provider_calls": 0,
+                "receipt_sha256": verified.sha256,
+                "selected_case_count": verified.selected_case_count,
+                "semantic_valid_count": verified.semantic_valid_count,
                 "verified": True,
             },
             indent=2,
