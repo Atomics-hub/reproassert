@@ -10,6 +10,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import cast
 
+from reproassert.benchmark_v02_amendment import (
+    VerifiedV02BenchmarkAmendment,
+    require_v02_benchmark_amendment,
+)
 from reproassert.benchmark_v02_hidden import (
     VerifiedV02HiddenExtraction,
     hidden_case_artifacts,
@@ -27,6 +31,11 @@ from reproassert.errors import PolicyRejection
 from reproassert.safeio import open_regular_file, require_private_directory, write_bytes_exclusive
 
 CAPABILITY_ALGORITHM = "reproassert-v02-exact-image-evaluator-capability-v1"
+CAPABILITY_ALGORITHM_V2 = "reproassert-v02-exact-image-evaluator-capability-v2"
+INDEX_ALGORITHM_V1 = "reproassert-v02-exact-image-capability-index-v1"
+INDEX_ALGORITHM_V2 = "reproassert-v02-exact-image-capability-index-v2"
+LEGACY_GOLD_SPECS_SHA256 = "f9cdfa3b0fa7aa8d26a7c4720af36095fe429f098daa5dcea41a436895f63544"
+AMENDED_GOLD_SPECS_SHA256 = "8fa460abb6d72fcaa19f3588277216aa8b483eb28e27ea78985cb7e6f6ceb1db"
 _CASE_ID = re.compile(r"rk-v0\.2-[0-9]{3}\Z")
 _GIT_SHA = re.compile(r"[0-9a-f]{40}\Z")
 _TIMESTAMP = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?Z\Z")
@@ -50,6 +59,9 @@ class VerifiedV02ExactImageEvaluatorCapability:
     developer_tests_sha256: str
     developer_tests_bytes: int
     evaluator_public_commitment_sha256: str
+    capability_algorithm: str
+    benchmark_amendment_receipt_sha256: str | None
+    benchmark_amendment_review_status: str | None
     _issuer: object = field(repr=False, compare=False)
 
     def __init__(self, *_args: object, **_kwargs: object) -> None:
@@ -59,7 +71,13 @@ class VerifiedV02ExactImageEvaluatorCapability:
         """Return the complete redacted binding carried into evaluation receipts."""
 
         return {
-            "algorithm": CAPABILITY_ALGORITHM,
+            "algorithm": getattr(self, "capability_algorithm", CAPABILITY_ALGORITHM),
+            "benchmark_amendment_receipt_sha256": getattr(
+                self, "benchmark_amendment_receipt_sha256", None
+            ),
+            "benchmark_amendment_review_status": getattr(
+                self, "benchmark_amendment_review_status", None
+            ),
             "case_id": self.case_id,
             "gold_smoke": {
                 "case_classification": self.gold_smoke_classification,
@@ -99,6 +117,7 @@ def prepare_v02_exact_image_capability_index(
     prepared_at: str,
     tool_git_sha: str,
     output_path: Path,
+    amendment_authority: VerifiedV02BenchmarkAmendment | None = None,
 ) -> VerifiedV02ExactImageCapabilityIndex:
     """Persist 20 redacted commitments while keeping nominal authority process-local."""
 
@@ -113,6 +132,7 @@ def prepare_v02_exact_image_capability_index(
         hidden_extraction_receipt=Path(hidden_extraction_receipt),
         prepared_at=prepared_at,
         tool_git_sha=tool_git_sha,
+        amendment_authority=amendment_authority,
     )
     record["index_sha256"] = _index_hash(record)
     write_bytes_exclusive(destination, _canonical(record) + b"\n")
@@ -122,6 +142,7 @@ def prepare_v02_exact_image_capability_index(
         expected_manifest_sha256=expected_manifest_sha256,
         gold_smoke_receipt_path=gold_smoke_receipt_path,
         hidden_extraction_receipt=hidden_extraction_receipt,
+        amendment_authority=amendment_authority,
     )
 
 
@@ -132,6 +153,7 @@ def verify_v02_exact_image_capability_index(
     expected_manifest_sha256: str,
     gold_smoke_receipt_path: Path,
     hidden_extraction_receipt: Path,
+    amendment_authority: VerifiedV02BenchmarkAmendment | None = None,
 ) -> VerifiedV02ExactImageCapabilityIndex:
     raw = _read_bounded(Path(path), 1024 * 1024, "capability index")
     try:
@@ -153,14 +175,24 @@ def verify_v02_exact_image_capability_index(
         "tool_git_sha",
     }:
         raise _reject("Exact-image capability index fields are invalid.")
+    if record.get("case_count") != 20 or record.get("index_sha256") != _index_hash(record):
+        raise _reject("Exact-image capability index identity is invalid.")
+    claims = record.get("claims")
+    if not isinstance(claims, dict):
+        raise _reject("Exact-image capability index claims are invalid.")
+    ready_count, infrastructure_count = _capability_counts(claims)
+    expected_identity = (
+        (INDEX_ALGORITHM_V2, "2.0.0", "0.2.1")
+        if ready_count == 20
+        else (INDEX_ALGORITHM_V1, "1.0.0", "0.2")
+    )
     if (
-        record.get("algorithm") != "reproassert-v02-exact-image-capability-index-v1"
-        or record.get("schema_version") != "1.0.0"
-        or record.get("benchmark_version") != "0.2"
-        or record.get("case_count") != 20
-        or record.get("status") != "runtime_attested_20_evaluator_preflight_19"
-        or record.get("index_sha256") != _index_hash(record)
-    ):
+        record.get("algorithm"),
+        record.get("schema_version"),
+        record.get("benchmark_version"),
+    ) != expected_identity or record.get(
+        "status"
+    ) != f"runtime_attested_20_evaluator_preflight_{ready_count}":
         raise _reject("Exact-image capability index identity is invalid.")
     expected = _derive_index(
         manifest_path=Path(manifest_path),
@@ -169,6 +201,7 @@ def verify_v02_exact_image_capability_index(
         hidden_extraction_receipt=Path(hidden_extraction_receipt),
         prepared_at=_timestamp(record.get("prepared_at")),
         tool_git_sha=_git_sha(record.get("tool_git_sha")),
+        amendment_authority=amendment_authority,
     )
     unsigned = dict(record)
     unsigned.pop("index_sha256")
@@ -179,8 +212,8 @@ def verify_v02_exact_image_capability_index(
         sha256=hashlib.sha256(raw).hexdigest(),
         case_count=20,
         runtime_attested_count=20,
-        evaluator_preflight_ready_count=19,
-        infrastructure_failure_count=1,
+        evaluator_preflight_ready_count=ready_count,
+        infrastructure_failure_count=infrastructure_count,
     )
 
 
@@ -192,11 +225,16 @@ def _derive_index(
     hidden_extraction_receipt: Path,
     prepared_at: str,
     tool_git_sha: str,
+    amendment_authority: VerifiedV02BenchmarkAmendment | None = None,
 ) -> dict[str, object]:
     timestamp = _timestamp(prepared_at)
     if _timestamp_value(timestamp) > datetime.now(timezone.utc):
         raise _reject("Exact-image capability index cannot be future-dated.")
     producer_sha = _git_sha(tool_git_sha)
+    if amendment_authority is not None:
+        amendment = require_v02_benchmark_amendment(amendment_authority)
+        if amendment.tool_git_sha != producer_sha:
+            raise _reject("Benchmark amendment and capability index tool Git SHAs differ.")
     hidden = verify_v02_hidden_gold(hidden_extraction_receipt)
     rows: list[dict[str, object]] = []
     for number in range(1, 21):
@@ -206,6 +244,7 @@ def _derive_index(
             gold_smoke_receipt_path=gold_smoke_receipt_path,
             verified_hidden=hidden,
             case_id=f"rk-v0.2-{number:03d}",
+            amendment_authority=amendment_authority,
         )
         require_v02_exact_image_evaluator_capability(capability)
         rows.append(
@@ -222,21 +261,23 @@ def _derive_index(
                 ),
             }
         )
+    ready_count = sum(row["status"] == "runtime_attested_evaluator_preflight_ready" for row in rows)
+    infrastructure_count = 20 - ready_count
     return {
-        "algorithm": "reproassert-v02-exact-image-capability-index-v1",
-        "benchmark_version": "0.2",
+        "algorithm": INDEX_ALGORITHM_V2 if ready_count == 20 else INDEX_ALGORITHM_V1,
+        "benchmark_version": "0.2.1" if ready_count == 20 else "0.2",
         "case_count": 20,
         "cases": rows,
         "claims": {
-            "evaluator_preflight_ready_count": 19,
-            "infrastructure_failure_count": 1,
+            "evaluator_preflight_ready_count": ready_count,
+            "infrastructure_failure_count": infrastructure_count,
             "nominal_authority_serialized": False,
             "provider_calls": 0,
             "runtime_attested_count": 20,
         },
         "prepared_at": timestamp,
-        "schema_version": "1.0.0",
-        "status": "runtime_attested_20_evaluator_preflight_19",
+        "schema_version": "2.0.0" if ready_count == 20 else "1.0.0",
+        "status": f"runtime_attested_20_evaluator_preflight_{ready_count}",
         "tool_git_sha": producer_sha,
     }
 
@@ -248,6 +289,7 @@ def issue_verified_v02_exact_image_evaluator_capability(
     gold_smoke_receipt_path: Path,
     verified_hidden: VerifiedV02HiddenExtraction,
     case_id: str,
+    amendment_authority: VerifiedV02BenchmarkAmendment | None = None,
 ) -> VerifiedV02ExactImageEvaluatorCapability:
     """Verify the complete frozen evidence chain and issue authority for one exact case."""
 
@@ -267,42 +309,97 @@ def issue_verified_v02_exact_image_evaluator_capability(
     record = cast(dict[str, object], json.loads(raw))
     if record.get("selection") != "all" or record.get("status") != "complete":
         raise _reject("Evaluator capability requires a complete all-case gold-smoke receipt.")
-    if record.get("counts") != {
-        "infrastructure_failure": 1,
-        "not_run": 0,
-        "selected": 20,
-        "semantic_failure": 0,
-        "semantic_valid": 19,
+    counts = record.get("counts")
+    if not isinstance(counts, dict) or set(counts) != {
+        "infrastructure_failure",
+        "not_run",
+        "selected",
+        "semantic_failure",
+        "semantic_valid",
     }:
+        raise _reject("Gold-smoke denominator is invalid.")
+    semantic_valid = counts.get("semantic_valid")
+    infrastructure_failure = counts.get("infrastructure_failure")
+    if (
+        type(semantic_valid) is not int
+        or type(infrastructure_failure) is not int
+        or (semantic_valid, infrastructure_failure) not in {(19, 1), (20, 0)}
+        or counts.get("selected") != 20
+        or counts.get("not_run") != 0
+        or counts.get("semantic_failure") != 0
+    ):
         raise _reject(
-            "Gold-smoke denominator must preserve 19 valid cases and the case 014 "
-            "infrastructure failure."
+            "Gold-smoke denominator must be complete and preserve either legacy 19/1 "
+            "evidence or fresh all-20 semantic-valid evidence."
         )
+    expected_specs_sha = (
+        AMENDED_GOLD_SPECS_SHA256 if semantic_valid == 20 else LEGACY_GOLD_SPECS_SHA256
+    )
     inputs = cast(dict[str, object], record["inputs"])
+    if inputs.get("gold_specs_sha256") != expected_specs_sha:
+        raise _reject("Gold-smoke specs do not match the versioned benchmark amendment.")
+    amendment_sha: str | None = None
+    amendment_review_status: str | None = None
+    if semantic_valid == 20:
+        amendment = require_v02_benchmark_amendment(amendment_authority)
+        amendment_sha = amendment.receipt_sha256
+        amendment_review_status = amendment.review_status
+        if (
+            amendment.runtime_manifest_sha256 != manifest.sha256
+            or amendment.hidden_extraction_receipt_sha256 != verified_hidden.prepared.receipt_sha256
+            or amendment.amended_gold_smoke_receipt_sha256 != verified_gold.sha256
+        ):
+            raise _reject("Benchmark amendment authority does not bind exact evaluator evidence.")
+    elif amendment_authority is not None:
+        raise _reject("Legacy exact-image capability cannot bind a v0.2.1 amendment.")
     if inputs["instance_runtime_manifest_sha256"] != manifest.sha256:
         raise _reject("Gold-smoke receipt does not bind the exact runtime manifest.")
     prepared = verified_hidden.prepared
     if inputs["hidden_extraction_receipt_sha256"] != prepared.receipt_sha256:
         raise _reject("Gold-smoke receipt does not bind the freshly verified hidden extraction.")
 
-    rows = cast(list[dict[str, object]], record["results"])
+    rows_value = record.get("results")
+    if not isinstance(rows_value, list) or len(rows_value) != 20:
+        raise _reject("Gold-smoke results must contain all 20 cases.")
+    rows = cast(list[dict[str, object]], rows_value)
+    semantic_rows = 0
+    infrastructure_rows = 0
+    for position, result in enumerate(rows, start=1):
+        expected_case = f"rk-v0.2-{position:03d}"
+        if not isinstance(result, dict) or result.get("case_id") != expected_case:
+            raise _reject("Gold-smoke results are reordered, duplicated, or cross-case swapped.")
+        classification = result.get("classification")
+        reason = result.get("reason")
+        if classification == "semantic_valid" and reason == "fails_on_base_passes_on_fixed":
+            semantic_rows += 1
+        elif (
+            expected_case == "rk-v0.2-014"
+            and classification == "infrastructure_failure"
+            and reason == "network_dependency"
+        ):
+            infrastructure_rows += 1
+        elif expected_case == "rk-v0.2-014":
+            raise _reject("Case 014 gold-smoke classification is invalid.")
+        else:
+            raise _reject("Non-014 case lacks valid hidden gold-smoke evidence.")
+    if (semantic_rows, infrastructure_rows) != (semantic_valid, infrastructure_failure):
+        raise _reject("Gold-smoke result counts differ from the claimed denominator.")
     row = next(item for item in rows if item["case_id"] == checked_case)
     if (
         row["instance_id"] != runtime.instance_id
         or row["test_command_profile"] != runtime.test_command_profile
     ):
         raise _reject("Gold-smoke case does not bind the exact runtime entry.")
-    if checked_case == "rk-v0.2-014":
-        if (
-            row["classification"] != "infrastructure_failure"
-            or row["reason"] != "network_dependency"
-        ):
-            raise _reject("Case 014 must remain the recorded network infrastructure failure.")
+    if row["classification"] == "semantic_valid":
+        if row["reason"] != "fails_on_base_passes_on_fixed":
+            raise _reject("Semantic-valid gold-smoke evidence has an invalid reason.")
     elif (
-        row["classification"] != "semantic_valid"
-        or row["reason"] != "fails_on_base_passes_on_fixed"
+        checked_case != "rk-v0.2-014"
+        or semantic_valid != 19
+        or row["classification"] != "infrastructure_failure"
+        or row["reason"] != "network_dependency"
     ):
-        raise _reject("Non-014 case lacks valid hidden gold-smoke evidence.")
+        raise _reject("Gold-smoke case classification differs from the accepted denominator.")
 
     refs = hidden_case_artifacts(verified_hidden, checked_case)
     hidden = cast(dict[str, object], row["hidden_inputs"])
@@ -322,6 +419,11 @@ def issue_verified_v02_exact_image_evaluator_capability(
         "developer_tests_sha256": cast(str, hidden["developer_tests_sha256"]),
         "developer_tests_bytes": cast(int, hidden["developer_tests_bytes"]),
         "_issuer": _ISSUER,
+        "capability_algorithm": (
+            CAPABILITY_ALGORITHM_V2 if semantic_valid == 20 else CAPABILITY_ALGORITHM
+        ),
+        "benchmark_amendment_receipt_sha256": amendment_sha,
+        "benchmark_amendment_review_status": amendment_review_status,
     }
     for name, value in values.items():
         object.__setattr__(capability, name, value)
@@ -367,6 +469,29 @@ def _runtime_record(runtime: InstanceRuntime) -> dict[str, str]:
         "spec_sha256": runtime.spec_sha256,
         "test_command_profile": runtime.test_command_profile,
     }
+
+
+def _capability_counts(claims: dict[str, object]) -> tuple[int, int]:
+    if set(claims) != {
+        "evaluator_preflight_ready_count",
+        "infrastructure_failure_count",
+        "nominal_authority_serialized",
+        "provider_calls",
+        "runtime_attested_count",
+    }:
+        raise _reject("Exact-image capability index claims are invalid.")
+    ready = claims.get("evaluator_preflight_ready_count")
+    infrastructure = claims.get("infrastructure_failure_count")
+    if (
+        type(ready) is not int
+        or type(infrastructure) is not int
+        or (ready, infrastructure) not in {(19, 1), (20, 0)}
+        or claims.get("nominal_authority_serialized") is not False
+        or claims.get("provider_calls") != 0
+        or claims.get("runtime_attested_count") != 20
+    ):
+        raise _reject("Exact-image capability index claims are invalid.")
+    return ready, infrastructure
 
 
 def _read_gold(path: Path) -> bytes:

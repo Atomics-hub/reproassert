@@ -94,6 +94,64 @@ def test_prepare_cases_cli_emits_only_safe_zero_spend_summary(
     assert str(inputs["hidden"]) not in result.output
     assert observed["hidden_extraction_receipt"] == inputs["hidden"]
     assert observed["dependency_plans_root"] is None
+    assert observed["instance_runtime_manifest"] is None
+    assert observed["exact_capability_index"] is None
+
+
+def test_prepare_cases_cli_forwards_complete_exact_image_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    inputs = _inputs(tmp_path)
+    prepared = _prepared(tmp_path)
+    observed: dict[str, object] = {}
+    manifest = tmp_path / "manifest.json"
+    gold = tmp_path / "gold.json"
+    index = tmp_path / "index.json"
+    for path in (manifest, gold, index):
+        path.write_text("{}\n")
+    monkeypatch.setattr(
+        cli,
+        "prepare_v02_cases",
+        lambda **kwargs: observed.update(kwargs) or prepared,
+    )
+
+    result = CliRunner().invoke(
+        cli.main,
+        [
+            "benchmark",
+            "prepare-v02-cases",
+            "--cohort-plan",
+            str(inputs["cohort"]),
+            "--dataset-preparation-receipt",
+            str(inputs["dataset"]),
+            "--hidden-extraction-receipt",
+            str(inputs["hidden"]),
+            "--object-sources-root",
+            str(inputs["sources"]),
+            "--pricing-snapshot",
+            str(inputs["pricing"]),
+            "--instance-runtime-manifest",
+            str(manifest),
+            "--expected-runtime-manifest-sha256",
+            HEX64,
+            "--gold-smoke-receipt",
+            str(gold),
+            "--exact-capability-index",
+            str(index),
+            "--tool-git-sha",
+            "b" * 40,
+            "--prepared-at",
+            "2026-07-10T12:00:00Z",
+            "--output-root",
+            str(tmp_path / "output"),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert observed["instance_runtime_manifest"] == manifest
+    assert observed["expected_runtime_manifest_sha256"] == HEX64
+    assert observed["gold_smoke_receipt"] == gold
+    assert observed["exact_capability_index"] == index
 
 
 def test_verify_cases_cli_never_emits_evaluator_private_paths(

@@ -335,6 +335,132 @@ def test_prepare_controller_builds_all_twenty_provider_disabled_packets(
     assert len(receipt["packages"]) == 20
 
 
+def test_prepare_controller_uses_fresh_exact_image_authority_for_all_twenty(
+    prepared_tree: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    prepared = prepared_tree["prepared"]
+    root = prepared.root
+    parent = root.parent
+    cohort_input = parent / "cohort-exact.json"
+    pricing_input = parent / "pricing-exact.json"
+    cohort_input.write_bytes((root / "inputs/cohort-plan.json").read_bytes())
+    pricing_input.write_bytes((root / "inputs/pricing-snapshot.json").read_bytes())
+    inputs = cast(dict[str, object], prepared_tree["record"]["inputs"])
+    dataset = cast(dict[str, object], inputs["dataset_preparation"])
+    hidden = cast(dict[str, object], inputs["hidden_extraction"])
+    sources = cast(dict[str, object], inputs["object_sources_root"])
+    manifest = parent / "runtime-manifest.json"
+    gold_smoke = parent / "gold-smoke.json"
+    capability_index = parent / "capability-index.json"
+    amendment_inputs = tuple(
+        parent / name
+        for name in (
+            "amendment.json",
+            "original-gold-specs.json",
+            "amended-gold-specs.json",
+            "original-gold-smoke.json",
+        )
+    )
+    manifest.write_text("{}\n")
+    gold_smoke.write_text("{}\n")
+    rows = {
+        f"rk-v0.2-{number:03d}": {
+            "case_id": f"rk-v0.2-{number:03d}",
+            "evaluator_public_commitment_sha256": f"{number:064x}",
+            "evidence": {
+                "runtime": {
+                    "image_digest": f"sha256:{number:064x}",
+                    "image_id": f"sha256:{number + 20:064x}",
+                },
+                "runtime_manifest_sha256": "8" * 64,
+            },
+            "status": "runtime_attested_evaluator_preflight_ready",
+        }
+        for number in range(1, 21)
+    }
+    capability_index.write_bytes(cases._canonical({"cases": list(rows.values())}) + b"\n")
+    for path in amendment_inputs:
+        path.write_text("{}\n")
+    verified = SimpleNamespace(
+        sha256=hashlib.sha256(capability_index.read_bytes()).hexdigest(),
+        evaluator_preflight_ready_count=20,
+    )
+    monkeypatch.setattr(
+        cases,
+        "_verify_exact_image_dependency_evidence",
+        lambda *_args, **_kwargs: (verified, rows),
+    )
+    shutil.rmtree(root)
+
+    cases.prepare_v02_cases(
+        cohort_plan_path=cohort_input,
+        dataset_preparation_receipt=Path(cast(str, dataset["path"])),
+        hidden_extraction_receipt=Path(cast(str, hidden["path"])),
+        object_sources_root=Path(cast(str, sources["path"])),
+        output_root=parent,
+        pricing_snapshot_path=pricing_input,
+        tool_git_sha="4" * 40,
+        prepared_at="2026-07-10T12:00:00Z",
+        instance_runtime_manifest=manifest,
+        expected_runtime_manifest_sha256="8" * 64,
+        gold_smoke_receipt=gold_smoke,
+        exact_capability_index=capability_index,
+        amendment_receipt=amendment_inputs[0],
+        original_gold_specs=amendment_inputs[1],
+        amended_gold_specs=amendment_inputs[2],
+        original_gold_smoke_receipt=amendment_inputs[3],
+    )
+
+    receipt = json.loads((root / cases.CASES_PREPARATION_FILENAME).read_text())
+    assert receipt["algorithm"] == cases.CASES_PREPARATION_EXACT_IMAGE_ALGORITHM
+    assert receipt["benchmark_version"] == "0.2.1"
+    assert receipt["dependency_ready_count"] == 20
+    assert receipt["inputs"]["dependency_evidence"]["mode"] == "exact_instance_image"
+    for row in receipt["packages"]:
+        package = json.loads((root / cast(str, row["path"])).read_text())
+        assert package["dependency"]["status"] == "evaluator_preflight_ready"
+        assert "dependency_execution_receipt_missing" not in package["blockers"]
+
+
+def test_exact_image_inputs_are_all_or_none_and_conflict_with_legacy_plans(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(PolicyRejection, match="all four"):
+        cases._exact_image_input_paths(
+            dependency_plans_root=None,
+            instance_runtime_manifest=tmp_path / "manifest",
+            expected_runtime_manifest_sha256=None,
+            gold_smoke_receipt=None,
+            exact_capability_index=None,
+        )
+    with pytest.raises(PolicyRejection, match="cannot use legacy"):
+        cases._exact_image_input_paths(
+            dependency_plans_root=tmp_path,
+            instance_runtime_manifest=tmp_path / "manifest",
+            expected_runtime_manifest_sha256="8" * 64,
+            gold_smoke_receipt=tmp_path / "gold",
+            exact_capability_index=tmp_path / "index",
+        )
+
+
+def test_pending_amendment_permits_packaging_but_not_dependency_readiness() -> None:
+    state, blockers = cases._exact_image_dependency_state(
+        {
+            "status": "runtime_attested_evaluator_preflight_ready",
+            "evaluator_public_commitment_sha256": "a" * 64,
+            "evidence": {
+                "benchmark_amendment_review_status": "pending",
+                "runtime": {"image_digest": "sha256:" + "b" * 64, "image_id": "sha256:" + "c" * 64},
+                "runtime_manifest_sha256": "d" * 64,
+            },
+        },
+        SimpleNamespace(sha256="e" * 64),  # type: ignore[arg-type]
+    )
+
+    assert state["status"] == "amendment_review_pending"
+    assert blockers == ["exact_image_amendment_review_pending"]
+
+
 def test_verifier_rejects_ready_package_index(prepared_tree: dict[str, Any]) -> None:
     prepared_tree["record"]["packages"][0]["status"] = "ready"
     prepared_tree["record"]["receipt_sha256"] = cases._self_hash(prepared_tree["record"])

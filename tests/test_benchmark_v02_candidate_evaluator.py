@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import jsonschema
 import pytest
 
+import reproassert.benchmark_v02_amendment as amendment_module
 import reproassert.benchmark_v02_candidate_evaluator as evaluator
 import reproassert.benchmark_v02_exact_capability as capability_module
 from reproassert.benchmark_v02_candidate_evaluator import CandidateArtifact
@@ -78,6 +79,7 @@ def _capability(
     case_id: str,
     production_patch: bytes,
     developer_tests: bytes,
+    v2: bool = False,
 ) -> capability_module.VerifiedV02ExactImageEvaluatorCapability:
     """Issue a test-local nominal value without invoking Docker-backed hidden verification."""
 
@@ -98,6 +100,13 @@ def _capability(
         "developer_tests_sha256": hashlib.sha256(developer_tests).hexdigest(),
         "developer_tests_bytes": len(developer_tests),
         "_issuer": capability_module._ISSUER,
+        "capability_algorithm": (
+            capability_module.CAPABILITY_ALGORITHM_V2
+            if v2
+            else capability_module.CAPABILITY_ALGORITHM
+        ),
+        "benchmark_amendment_receipt_sha256": "8" * 64 if v2 else None,
+        "benchmark_amendment_review_status": "pending" if v2 else None,
     }
     for name, item in fields.items():
         object.__setattr__(value, name, item)
@@ -107,6 +116,28 @@ def _capability(
         "evaluator_public_commitment_sha256",
         hashlib.sha256(capability_module._canonical(value.public_record())).hexdigest(),
     )
+    return value
+
+
+def _pending_amendment(
+    authority: capability_module.VerifiedV02ExactImageEvaluatorCapability,
+) -> amendment_module.VerifiedV02BenchmarkAmendment:
+    value = object.__new__(amendment_module.VerifiedV02BenchmarkAmendment)
+    fields = {
+        "receipt_path": Path("amendment.json"),
+        "receipt_sha256": "8" * 64,
+        "runtime_manifest_sha256": authority.runtime_manifest_sha256,
+        "hidden_extraction_receipt_sha256": authority.hidden_extraction_receipt_sha256,
+        "original_gold_smoke_receipt_sha256": "7" * 64,
+        "amended_gold_smoke_receipt_sha256": authority.gold_smoke_receipt_sha256,
+        "review_status": "pending",
+        "reviewer_ids": (),
+        "provider_calls": 0,
+        "tool_git_sha": "9" * 40,
+        "_issuer": amendment_module._ISSUER,
+    }
+    for name, item in fields.items():
+        object.__setattr__(value, name, item)
     return value
 
 
@@ -413,6 +444,58 @@ def test_public_scored_api_derives_private_inputs_and_gold_targets(
             executed_at="2026-07-11T01:02:03Z",
             tool_git_sha="9" * 40,
         )
+
+
+def test_pending_v021_amendment_rejects_before_hidden_resolution_or_executor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest, digest = _manifest(tmp_path)
+    authority = _capability(
+        manifest,
+        case_id="rk-v0.2-001",
+        production_patch=b"PRIVATE PRODUCTION FIX",
+        developer_tests=b"PRIVATE GOLD TESTS",
+        v2=True,
+    )
+    pending = _pending_amendment(authority)
+    hidden_calls = 0
+    executor_calls = 0
+
+    def forbidden_hidden(**_kwargs: object) -> object:
+        nonlocal hidden_calls
+        hidden_calls += 1
+        raise AssertionError("hidden resolution must not run")
+
+    def forbidden_executor(*_args: object, **_kwargs: object) -> object:
+        nonlocal executor_calls
+        executor_calls += 1
+        raise AssertionError("executor construction must not run")
+
+    monkeypatch.setattr(evaluator, "_resolve_hidden_evaluator_inputs", forbidden_hidden)
+    output = tmp_path / "pending-v021.json"
+    with pytest.raises(PolicyRejection, match="review is pending"):
+        evaluator.evaluate_instance_candidate(
+            evaluator_capability=authority,
+            amendment_authority=pending,
+            verified_hidden=SimpleNamespace(),  # type: ignore[arg-type]
+            gold_smoke_receipt_path=tmp_path / "gold.json",
+            gold_specs_path=tmp_path / "specs.json",
+            manifest_path=manifest,
+            expected_manifest_sha256=digest,
+            case_id="rk-v0.2-001",
+            candidate=CandidateArtifact(
+                "tests/reproassert/test_generated.py",
+                b"def test_bug():\n    assert True\n",
+                "test_bug",
+            ),
+            output_path=output,
+            executed_at="2026-07-11T01:02:03Z",
+            tool_git_sha="9" * 40,
+            executor_factory=forbidden_executor,  # type: ignore[arg-type]
+        )
+    assert hidden_calls == 0
+    assert executor_calls == 0
+    assert not output.exists()
 
 
 def test_hidden_resolution_rejects_forged_authority_and_post_verification_mutation(

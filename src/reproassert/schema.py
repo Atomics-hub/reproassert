@@ -33,6 +33,7 @@ SCHEMA_FILENAMES = {
     "benchmark-v02-exact-image-authorization": (
         "benchmark-v02-exact-image-authorization.schema.json"
     ),
+    "benchmark-v02-amendment": "benchmark-v02-amendment.schema.json",
     "benchmark-v02-exact-image-capability-index": (
         "benchmark-v02-exact-image-capability-index.schema.json"
     ),

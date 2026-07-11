@@ -1,0 +1,56 @@
+{
+  "algorithm": "reproassert-v021-exact-image-amendment-evidence-v1",
+  "amendment": {
+    "changed_instance_count": 1,
+    "eligibility_changed": true,
+    "excluded_fail_to_pass_count": 5,
+    "fail_to_pass_count_after": 1,
+    "fail_to_pass_count_before": 6,
+    "instance_id": "psf__requests-1921",
+    "new_gold_specs_sha256": "8fa460abb6d72fcaa19f3588277216aa8b483eb28e27ea78985cb7e6f6ceb1db",
+    "old_gold_specs_sha256": "f9cdfa3b0fa7aa8d26a7c4720af36095fe429f098daa5dcea41a436895f63544",
+    "pass_to_pass_changed": false,
+    "reason": "five excluded checks require external network access under the fixed network-none sandbox policy",
+    "tests_added": 0
+  },
+  "benchmark_protocol": "0.2",
+  "claims": {
+    "candidate_outputs_inspected": false,
+    "case_count_changed": false,
+    "cohort_changed": false,
+    "hidden_contents_emitted": false,
+    "model_or_provider_invoked": false,
+    "provider_calls": 0,
+    "raw_logs_emitted": false
+  },
+  "cohort": {
+    "case_count": 20,
+    "denominator_changed": false
+  },
+  "evidence": {
+    "amended_gold_smoke_internal_sha256": "4edee82d78aea67831e85ebb34a1d407fbb0faec338f35e6178c4e243f860b92",
+    "amended_gold_smoke_raw_sha256": "717304fd207077211d5e4066737100128d68012c0e6967e9d930d3dcaae3fc19",
+    "amended_tool_git_sha": "282c6cb5bb67968847509d7b1c6a1721fc492e70",
+    "new_counts": {
+      "infrastructure_failure": 0,
+      "not_run": 0,
+      "semantic_failure": 0,
+      "semantic_valid": 20
+    },
+    "old_counts": {
+      "infrastructure_failure": 1,
+      "not_run": 0,
+      "semantic_failure": 0,
+      "semantic_valid": 19
+    },
+    "original_gold_smoke_internal_sha256": "1ad936c83fb9a2d83a1bddc235c68c17a8eda8b1e141cece6ea79731d1711aa6",
+    "original_gold_smoke_raw_sha256": "f3f9069c814e4ae02b833a7907def018a5cee74e3080bda291918b6887061d46",
+    "original_tool_git_sha": "282c6cb5bb67968847509d7b1c6a1721fc492e70"
+  },
+  "freeze_revision": "0.2.1",
+  "review": {
+    "genuine_independent_review_complete": false,
+    "status": "pending_independent_review"
+  },
+  "status": "provider_disabled_evidence_verified_review_pending"
+}

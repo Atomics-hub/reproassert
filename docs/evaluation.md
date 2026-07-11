@@ -85,8 +85,12 @@ pair, exact capability index, runtime manifest, hidden extraction, and gold-smok
 `reproassert benchmark prepare-v02-exact-preregistration --help` for the complete explicit path
 contract.
 
-The freeze is provider-free. It records 19 evaluator-preflight-ready cases and retains case 014 as
-the one no-network infrastructure failure. Verification reruns every upstream verifier:
+The v0.2 freeze is provider-free. It records 19 evaluator-preflight-ready cases and retains case
+014 as the one no-network infrastructure failure. A fresh all-20 semantic-valid gold smoke produces
+provider-disabled v0.2.1 capability and case-preparation evidence, but it cannot enter this v0.2
+preregistration or execution path. That scoring-policy amendment requires a separately reviewed
+v0.2.1 preregistration, freeze, authorization, execution, controls, review, and publication chain.
+Verification reruns every upstream verifier:
 
 ```bash
 reproassert benchmark verify-v02-exact-preregistration \

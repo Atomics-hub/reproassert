@@ -12,7 +12,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
+from reproassert.benchmark_v02_amendment import verify_v02_benchmark_amendment
 from reproassert.benchmark_v02_cohort import load_v02_leak_audited_cohort_plan
+from reproassert.benchmark_v02_exact_capability import (
+    VerifiedV02ExactImageCapabilityIndex,
+    verify_v02_exact_image_capability_index,
+)
 from reproassert.benchmark_v02_hidden import (
     hidden_case_artifacts,
     verify_v02_hidden_gold,
@@ -40,7 +45,9 @@ from reproassert.intake import parse_issue_url
 from reproassert.safeio import open_regular_file, require_private_directory, write_bytes_exclusive
 
 CASES_PREPARATION_ALGORITHM = "reproassert-v02-cases-preparation-v1"
+CASES_PREPARATION_EXACT_IMAGE_ALGORITHM = "reproassert-v02-cases-preparation-v2"
 CASES_PREPARATION_SCHEMA_VERSION = "1.0.0"
+CASES_PREPARATION_EXACT_IMAGE_SCHEMA_VERSION = "2.0.0"
 CASES_PREPARATION_DIRECTORY = "v02-case-preparation"
 CASES_PREPARATION_FILENAME = "benchmark-v02-cases-preparation.json"
 MAX_RECEIPT_BYTES = 512 * 1024
@@ -75,6 +82,14 @@ def prepare_v02_cases(
     tool_git_sha: str,
     prepared_at: str,
     dependency_plans_root: Path | None = None,
+    instance_runtime_manifest: Path | None = None,
+    expected_runtime_manifest_sha256: str | None = None,
+    gold_smoke_receipt: Path | None = None,
+    exact_capability_index: Path | None = None,
+    amendment_receipt: Path | None = None,
+    original_gold_specs: Path | None = None,
+    amended_gold_specs: Path | None = None,
+    original_gold_smoke_receipt: Path | None = None,
 ) -> V02CasesPreparation:
     """Create 20 review-ready preparation packages without provider-capable behavior."""
 
@@ -87,9 +102,30 @@ def prepare_v02_cases(
     if destination.exists() or destination.is_symlink():
         raise _reject("Refusing to overwrite an existing v0.2 case preparation.")
 
+    exact_inputs = _exact_image_input_paths(
+        dependency_plans_root=dependency_plans_root,
+        instance_runtime_manifest=instance_runtime_manifest,
+        expected_runtime_manifest_sha256=expected_runtime_manifest_sha256,
+        gold_smoke_receipt=gold_smoke_receipt,
+        exact_capability_index=exact_capability_index,
+        amendment_receipt=amendment_receipt,
+        original_gold_specs=original_gold_specs,
+        amended_gold_specs=amended_gold_specs,
+        original_gold_smoke_receipt=original_gold_smoke_receipt,
+    )
+
     # These verifiers rerun the no-network Docker boundaries before any package is written.
     dataset = verify_v02_dataset_preparation(Path(dataset_preparation_receipt))
     hidden = verify_v02_hidden_gold(Path(hidden_extraction_receipt))
+    exact_evidence = (
+        None
+        if exact_inputs is None
+        else _verify_exact_image_dependency_evidence(
+            exact_inputs,
+            hidden_extraction_receipt=Path(hidden_extraction_receipt),
+            expected_tool_git_sha=producer_sha,
+        )
+    )
     load_v02_object_source_plan(Path(cohort_plan_path))
     plan = load_v02_leak_audited_cohort_plan(Path(cohort_plan_path))
     cases = _ordered_cases(plan)
@@ -130,6 +166,26 @@ def prepare_v02_cases(
                 }
             ),
         }
+        if exact_inputs is not None:
+            dependency_evidence: dict[str, object] = {
+                "capability_index": _external_ref(exact_inputs[3], MAX_MANIFEST_BYTES),
+                "expected_runtime_manifest_sha256": exact_inputs[1],
+                "gold_smoke_receipt": _external_ref(exact_inputs[2], MAX_SOURCE_RECEIPT_BYTES),
+                "mode": "exact_instance_image",
+                "runtime_manifest": _external_ref(exact_inputs[0], MAX_MANIFEST_BYTES),
+            }
+            if len(exact_inputs) == 8:
+                dependency_evidence.update(
+                    {
+                        "amendment_receipt": _external_ref(exact_inputs[4], MAX_RECEIPT_BYTES),
+                        "original_gold_specs": _external_ref(exact_inputs[5], MAX_MANIFEST_BYTES),
+                        "amended_gold_specs": _external_ref(exact_inputs[6], MAX_MANIFEST_BYTES),
+                        "original_gold_smoke_receipt": _external_ref(
+                            exact_inputs[7], MAX_SOURCE_RECEIPT_BYTES
+                        ),
+                    }
+                )
+            input_refs["dependency_evidence"] = dependency_evidence
 
         dataset_record = _json_object(
             dataset.receipt_path, MAX_RECEIPT_BYTES, "dataset preparation"
@@ -174,10 +230,14 @@ def prepare_v02_cases(
                 f"cases/{case_id}/dependency-inventory.json",
                 inventory,
             )
-            dependency, dependency_blockers = _dependency_state(
-                dependency_plans_root,
-                case,
-                cast(str, source["tree_sha256"]),
+            dependency, dependency_blockers = (
+                _dependency_state(
+                    dependency_plans_root,
+                    case,
+                    cast(str, source["tree_sha256"]),
+                )
+                if exact_evidence is None
+                else _exact_image_dependency_state(exact_evidence[1][case_id], exact_evidence[0])
             )
             if not dependency_blockers:
                 dependency_ready_count += 1
@@ -248,8 +308,12 @@ def prepare_v02_cases(
             "reproassert-v02-preparation-package-set-v1",
         )
         record: dict[str, object] = {
-            "algorithm": CASES_PREPARATION_ALGORITHM,
-            "benchmark_version": "0.2",
+            "algorithm": (
+                CASES_PREPARATION_ALGORITHM
+                if exact_evidence is None
+                else CASES_PREPARATION_EXACT_IMAGE_ALGORITHM
+            ),
+            "benchmark_version": "0.2" if exact_evidence is None else "0.2.1",
             "case_count": 20,
             "claims": {
                 "campaign_ready_count": 0,
@@ -265,7 +329,11 @@ def prepare_v02_cases(
             "preparation_set_sha256": preparation_set_sha256,
             "provider_execution_enabled": False,
             "request_set_sha256": request_set_sha256,
-            "schema_version": CASES_PREPARATION_SCHEMA_VERSION,
+            "schema_version": (
+                CASES_PREPARATION_SCHEMA_VERSION
+                if exact_evidence is None
+                else CASES_PREPARATION_EXACT_IMAGE_SCHEMA_VERSION
+            ),
             "spend_gate": spend_ref,
             "status": "prepared_review_required_provider_disabled",
             "tool": {"git_sha": producer_sha, "provenance": "publisher_declared_revision"},
@@ -289,14 +357,17 @@ def verify_v02_cases(receipt_path: Path) -> V02CasesPreparation:
     record = _load_receipt(prepared.receipt_path)
     _verify_private_tree(prepared.root)
     inputs = cast(dict[str, object], record["inputs"])
-    if set(inputs) != {
+    legacy_inputs = {
         "cohort_plan",
         "dataset_preparation",
         "dependency_plans_root",
         "hidden_extraction",
         "object_sources_root",
         "pricing_snapshot",
-    }:
+    }
+    exact_mode = record["algorithm"] == CASES_PREPARATION_EXACT_IMAGE_ALGORITHM
+    expected_inputs = legacy_inputs | ({"dependency_evidence"} if exact_mode else set())
+    if set(inputs) != expected_inputs:
         raise _reject("Case preparation input fields are invalid.")
     cohort_ref = cast(dict[str, object], inputs["cohort_plan"])
     pricing_ref = cast(dict[str, object], inputs["pricing_snapshot"])
@@ -332,6 +403,78 @@ def verify_v02_cases(receipt_path: Path) -> V02CasesPreparation:
         if inputs["dependency_plans_root"] is None
         else _external_directory(inputs["dependency_plans_root"], "dependency plans root")
     )
+    exact_evidence: (
+        tuple[VerifiedV02ExactImageCapabilityIndex, dict[str, dict[str, object]]] | None
+    ) = None
+    if exact_mode:
+        if dependency_root is not None:
+            raise _reject("Exact-image dependency evidence cannot use legacy wheel plans.")
+        evidence = inputs["dependency_evidence"]
+        base_evidence_fields = {
+            "capability_index",
+            "expected_runtime_manifest_sha256",
+            "gold_smoke_receipt",
+            "mode",
+            "runtime_manifest",
+        }
+        amendment_fields = {
+            "amendment_receipt",
+            "original_gold_specs",
+            "amended_gold_specs",
+            "original_gold_smoke_receipt",
+        }
+        if (
+            not isinstance(evidence, dict)
+            or set(evidence) not in (base_evidence_fields, base_evidence_fields | amendment_fields)
+            or evidence.get("mode") != "exact_instance_image"
+        ):
+            raise _reject("Exact-image dependency evidence fields are invalid.")
+        for name, limit in (
+            ("capability_index", MAX_MANIFEST_BYTES),
+            ("gold_smoke_receipt", MAX_SOURCE_RECEIPT_BYTES),
+            ("runtime_manifest", MAX_MANIFEST_BYTES),
+        ):
+            _verify_external_ref(cast(dict[str, object], evidence[name]), name, limit=limit)
+        for name, limit in (
+            ("amendment_receipt", MAX_RECEIPT_BYTES),
+            ("original_gold_specs", MAX_MANIFEST_BYTES),
+            ("amended_gold_specs", MAX_MANIFEST_BYTES),
+            ("original_gold_smoke_receipt", MAX_SOURCE_RECEIPT_BYTES),
+        ):
+            if name in evidence:
+                _verify_external_ref(cast(dict[str, object], evidence[name]), name, limit=limit)
+        expected_manifest_sha = _sha256(
+            evidence.get("expected_runtime_manifest_sha256"), "runtime manifest commitment"
+        )
+        exact_inputs: (
+            tuple[Path, str, Path, Path] | tuple[Path, str, Path, Path, Path, Path, Path, Path]
+        ) = (
+            Path(cast(str, cast(dict[str, object], evidence["runtime_manifest"])["path"])),
+            expected_manifest_sha,
+            Path(cast(str, cast(dict[str, object], evidence["gold_smoke_receipt"])["path"])),
+            Path(cast(str, cast(dict[str, object], evidence["capability_index"])["path"])),
+        )
+        if "amendment_receipt" in evidence:
+            exact_inputs = (
+                exact_inputs[0],
+                exact_inputs[1],
+                exact_inputs[2],
+                exact_inputs[3],
+                Path(cast(str, cast(dict[str, object], evidence["amendment_receipt"])["path"])),
+                Path(cast(str, cast(dict[str, object], evidence["original_gold_specs"])["path"])),
+                Path(cast(str, cast(dict[str, object], evidence["amended_gold_specs"])["path"])),
+                Path(
+                    cast(
+                        str,
+                        cast(dict[str, object], evidence["original_gold_smoke_receipt"])["path"],
+                    )
+                ),
+            )
+        exact_evidence = _verify_exact_image_dependency_evidence(
+            exact_inputs,
+            hidden_extraction_receipt=Path(cast(str, hidden_ref["path"])),
+            expected_tool_git_sha=cast(str, cast(dict[str, object], record["tool"])["git_sha"]),
+        )
     packages = cast(list[dict[str, object]], record["packages"])
     expected = [f"rk-v0.2-{position:03d}" for position in range(1, 21)]
     if [row.get("case_id") for row in packages] != expected:
@@ -352,8 +495,10 @@ def verify_v02_cases(receipt_path: Path) -> V02CasesPreparation:
         ):
             _verify_ref(prepared.root, cast(dict[str, object], package[name]), name)
         source, exact_source_plan = _source_package(source_root, case, cohort_plan_path=cohort_path)
-        dependency, dependency_blockers = _dependency_state(
-            dependency_root, case, cast(str, source["tree_sha256"])
+        dependency, dependency_blockers = (
+            _dependency_state(dependency_root, case, cast(str, source["tree_sha256"]))
+            if exact_evidence is None
+            else _exact_image_dependency_state(exact_evidence[1][case_id], exact_evidence[0])
         )
         if not dependency_blockers:
             dependency_ready_count += 1
@@ -482,6 +627,174 @@ def load_v02_cases_preparation(receipt_path: Path) -> V02CasesPreparation:
         dependency_ready_count=cast(int, record["dependency_ready_count"]),
         campaign_ready_count=0,
     )
+
+
+def _exact_image_input_paths(
+    *,
+    dependency_plans_root: Path | None,
+    instance_runtime_manifest: Path | None,
+    expected_runtime_manifest_sha256: str | None,
+    gold_smoke_receipt: Path | None,
+    exact_capability_index: Path | None,
+    amendment_receipt: Path | None = None,
+    original_gold_specs: Path | None = None,
+    amended_gold_specs: Path | None = None,
+    original_gold_smoke_receipt: Path | None = None,
+) -> tuple[Path, str, Path, Path] | tuple[Path, str, Path, Path, Path, Path, Path, Path] | None:
+    values = (
+        instance_runtime_manifest,
+        expected_runtime_manifest_sha256,
+        gold_smoke_receipt,
+        exact_capability_index,
+    )
+    if all(value is None for value in values):
+        return None
+    if any(value is None for value in values):
+        raise _reject("Exact-image dependency evidence requires all four exact evidence inputs.")
+    if dependency_plans_root is not None:
+        raise _reject("Exact-image dependency evidence cannot use legacy wheel plans.")
+    base = (
+        Path(cast(Path, instance_runtime_manifest)),
+        _sha256(expected_runtime_manifest_sha256, "runtime manifest commitment"),
+        Path(cast(Path, gold_smoke_receipt)),
+        Path(cast(Path, exact_capability_index)),
+    )
+    amendment_values = (
+        amendment_receipt,
+        original_gold_specs,
+        amended_gold_specs,
+        original_gold_smoke_receipt,
+    )
+    if all(value is None for value in amendment_values):
+        raise _reject("Exact-image v0.2.1 evidence requires all four amendment inputs.")
+    if any(value is None for value in amendment_values):
+        raise _reject("Exact-image v0.2.1 evidence requires all four amendment inputs.")
+    return (
+        base[0],
+        base[1],
+        base[2],
+        base[3],
+        Path(cast(Path, amendment_receipt)),
+        Path(cast(Path, original_gold_specs)),
+        Path(cast(Path, amended_gold_specs)),
+        Path(cast(Path, original_gold_smoke_receipt)),
+    )
+
+
+def _verify_exact_image_dependency_evidence(
+    inputs: tuple[Path, str, Path, Path] | tuple[Path, str, Path, Path, Path, Path, Path, Path],
+    *,
+    hidden_extraction_receipt: Path,
+    expected_tool_git_sha: str,
+) -> tuple[VerifiedV02ExactImageCapabilityIndex, dict[str, dict[str, object]]]:
+    manifest, expected_manifest_sha, gold_smoke, capability_index = inputs[:4]
+    amendment = None
+    if len(inputs) == 8:
+        amendment = verify_v02_benchmark_amendment(
+            inputs[4],
+            original_gold_specs=inputs[5],
+            amended_gold_specs=inputs[6],
+            original_gold_smoke_receipt=inputs[7],
+            amended_gold_smoke_receipt=gold_smoke,
+            instance_runtime_manifest=manifest,
+            expected_runtime_manifest_sha256=expected_manifest_sha,
+            hidden_extraction_receipt=hidden_extraction_receipt,
+        )
+    verified = verify_v02_exact_image_capability_index(
+        capability_index,
+        manifest_path=manifest,
+        expected_manifest_sha256=expected_manifest_sha,
+        gold_smoke_receipt_path=gold_smoke,
+        hidden_extraction_receipt=hidden_extraction_receipt,
+        amendment_authority=amendment,
+    )
+    raw = _read_regular(capability_index, MAX_MANIFEST_BYTES)
+    if hashlib.sha256(raw).hexdigest() != verified.sha256:
+        raise _reject("Exact capability index changed after fresh verification.")
+    try:
+        record = json.loads(raw)
+    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as exc:
+        raise _reject("Exact capability index is invalid JSON.") from exc
+    if not isinstance(record, dict) or raw != _canonical(record) + b"\n":
+        raise _reject("Exact capability index is not canonical JSON.")
+    if record.get("tool_git_sha") != expected_tool_git_sha:
+        raise _reject("Exact capability index and case preparation tool SHAs differ.")
+    if (
+        record.get("algorithm") != "reproassert-v02-exact-image-capability-index-v2"
+        or record.get("benchmark_version") != "0.2.1"
+        or verified.evaluator_preflight_ready_count != 20
+        or verified.infrastructure_failure_count != 0
+    ):
+        raise _reject("Exact-image case preparation requires complete v0.2.1 authority.")
+    rows = record.get("cases")
+    if not isinstance(rows, list) or len(rows) != 20:
+        raise _reject("Exact capability index does not contain all 20 cases.")
+    ordered: dict[str, dict[str, object]] = {}
+    for position, row in enumerate(rows, start=1):
+        case_id = f"rk-v0.2-{position:03d}"
+        if not isinstance(row, dict) or row.get("case_id") != case_id:
+            raise _reject("Exact capability index case ordering is invalid.")
+        ordered[case_id] = row
+    ready_count = sum(
+        row.get("status") == "runtime_attested_evaluator_preflight_ready"
+        for row in ordered.values()
+    )
+    if ready_count != verified.evaluator_preflight_ready_count:
+        raise _reject("Exact dependency readiness differs from verifier-issued authority.")
+    return verified, ordered
+
+
+def _exact_image_dependency_state(
+    row: dict[str, object], verified: VerifiedV02ExactImageCapabilityIndex
+) -> tuple[dict[str, object], list[str]]:
+    evidence = row.get("evidence")
+    if not isinstance(evidence, dict):
+        raise _reject("Exact capability case evidence is invalid.")
+    runtime = evidence.get("runtime")
+    if not isinstance(runtime, dict):
+        raise _reject("Exact capability runtime evidence is invalid.")
+    status = row.get("status")
+    amendment_status = evidence.get("benchmark_amendment_review_status")
+    amendment_ready = amendment_status in (None, "approved")
+    ready = status == "runtime_attested_evaluator_preflight_ready" and amendment_ready
+    if status not in {
+        "runtime_attested_evaluator_preflight_ready",
+        "runtime_attested_gold_smoke_infrastructure_failure",
+    }:
+        raise _reject("Exact capability readiness status is invalid.")
+    dependency_status = (
+        "evaluator_preflight_ready"
+        if ready
+        else (
+            "amendment_review_pending"
+            if amendment_status == "pending"
+            else "gold_smoke_infrastructure_failure"
+        )
+    )
+    return {
+        "authority": evidence,
+        "capability_index_sha256": verified.sha256,
+        "evaluator_public_commitment_sha256": row.get("evaluator_public_commitment_sha256"),
+        "image_digest": runtime.get("image_digest"),
+        "image_id": runtime.get("image_id"),
+        "mode": "exact_instance_image",
+        "runtime_manifest_sha256": evidence.get("runtime_manifest_sha256"),
+        "status": dependency_status,
+    }, (
+        []
+        if ready
+        else [
+            "exact_image_amendment_review_pending"
+            if amendment_status == "pending"
+            else "exact_image_evaluator_preflight_not_ready"
+        ]
+    )
+
+
+def _sha256(value: object, label: str) -> str:
+    if not isinstance(value, str) or _SHA256.fullmatch(value) is None:
+        raise _reject(f"Exact-image {label} is invalid.")
+    return value
 
 
 def _source_package(
@@ -831,11 +1144,19 @@ def _load_receipt(path: Path) -> dict[str, object]:
         "status",
         "tool",
     }
+    identity = (value.get("algorithm"), value.get("schema_version"))
     if (
         set(value) != required
-        or value.get("algorithm") != CASES_PREPARATION_ALGORITHM
-        or value.get("benchmark_version") != "0.2"
-        or value.get("schema_version") != CASES_PREPARATION_SCHEMA_VERSION
+        or identity
+        not in {
+            (CASES_PREPARATION_ALGORITHM, CASES_PREPARATION_SCHEMA_VERSION),
+            (
+                CASES_PREPARATION_EXACT_IMAGE_ALGORITHM,
+                CASES_PREPARATION_EXACT_IMAGE_SCHEMA_VERSION,
+            ),
+        }
+        or value.get("benchmark_version")
+        != ("0.2.1" if identity[0] == CASES_PREPARATION_EXACT_IMAGE_ALGORITHM else "0.2")
         or value.get("case_count") != 20
         or value.get("status") != "prepared_review_required_provider_disabled"
         or value.get("provider_execution_enabled") is not False
@@ -887,14 +1208,16 @@ def _external_ref(path: Path, limit: int) -> dict[str, object]:
     }
 
 
-def _verify_external_ref(reference: dict[str, object], label: str) -> None:
+def _verify_external_ref(
+    reference: dict[str, object], label: str, *, limit: int = MAX_RECEIPT_BYTES
+) -> None:
     if (
         set(reference) != {"bytes", "path", "sha256", "storage"}
         or reference.get("storage") != "evaluator_private_external"
     ):
         raise _reject(f"{label} external reference is invalid.")
     path = Path(cast(str, reference["path"]))
-    raw = _read_regular(path, MAX_RECEIPT_BYTES)
+    raw = _read_regular(path, limit)
     if len(raw) != reference["bytes"] or hashlib.sha256(raw).hexdigest() != reference["sha256"]:
         raise _reject(f"{label} differs from its external commitment.")
 

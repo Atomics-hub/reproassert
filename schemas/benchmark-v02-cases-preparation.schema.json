@@ -5,9 +5,19 @@
   "type": "object",
   "additionalProperties": false,
   "required": ["algorithm", "benchmark_version", "case_count", "claims", "dependency_ready_count", "inputs", "packages", "prepared_at", "preparation_set_sha256", "provider_execution_enabled", "request_set_sha256", "receipt_sha256", "schema_version", "spend_gate", "status", "tool"],
+  "allOf": [
+    {
+      "if": {"properties": {"algorithm": {"const": "reproassert-v02-cases-preparation-v1"}}},
+      "then": {"properties": {"benchmark_version": {"const": "0.2"}, "schema_version": {"const": "1.0.0"}, "inputs": {"not": {"required": ["dependency_evidence"]}}}}
+    },
+    {
+      "if": {"properties": {"algorithm": {"const": "reproassert-v02-cases-preparation-v2"}}},
+      "then": {"properties": {"benchmark_version": {"const": "0.2.1"}, "schema_version": {"const": "2.0.0"}, "inputs": {"required": ["dependency_evidence"], "properties": {"dependency_plans_root": {"const": null}}}}}
+    }
+  ],
   "properties": {
-    "algorithm": {"const": "reproassert-v02-cases-preparation-v1"},
-    "benchmark_version": {"const": "0.2"},
+    "algorithm": {"enum": ["reproassert-v02-cases-preparation-v1", "reproassert-v02-cases-preparation-v2"]},
+    "benchmark_version": {"enum": ["0.2", "0.2.1"]},
     "case_count": {"const": 20},
     "claims": {
       "const": {
@@ -29,6 +39,7 @@
         "dependency_plans_root": {
           "oneOf": [{"type": "null"}, {"$ref": "#/$defs/external_directory"}]
         },
+        "dependency_evidence": {"$ref": "#/$defs/exact_dependency_evidence"},
         "hidden_extraction": {"$ref": "#/$defs/external_reference"},
         "object_sources_root": {"$ref": "#/$defs/external_directory"},
         "pricing_snapshot": {"$ref": "#/$defs/reference"}
@@ -45,7 +56,7 @@
     "provider_execution_enabled": {"const": false},
     "request_set_sha256": {"$ref": "#/$defs/sha256"},
     "receipt_sha256": {"$ref": "#/$defs/sha256"},
-    "schema_version": {"const": "1.0.0"},
+    "schema_version": {"enum": ["1.0.0", "2.0.0"]},
     "spend_gate": {"$ref": "#/$defs/reference"},
     "status": {"const": "prepared_review_required_provider_disabled"},
     "tool": {
@@ -101,6 +112,22 @@
       "properties": {
         "path": {"type": "string", "pattern": "^/"},
         "storage": {"const": "evaluator_private_external_directory"}
+      }
+    },
+    "exact_dependency_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["amended_gold_specs", "amendment_receipt", "capability_index", "expected_runtime_manifest_sha256", "gold_smoke_receipt", "mode", "original_gold_smoke_receipt", "original_gold_specs", "runtime_manifest"],
+      "properties": {
+        "amended_gold_specs": {"$ref": "#/$defs/external_reference"},
+        "amendment_receipt": {"$ref": "#/$defs/external_reference"},
+        "capability_index": {"$ref": "#/$defs/external_reference"},
+        "expected_runtime_manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "gold_smoke_receipt": {"$ref": "#/$defs/external_reference"},
+        "mode": {"const": "exact_instance_image"},
+        "original_gold_smoke_receipt": {"$ref": "#/$defs/external_reference"},
+        "original_gold_specs": {"$ref": "#/$defs/external_reference"},
+        "runtime_manifest": {"$ref": "#/$defs/external_reference"}
       }
     }
   }
