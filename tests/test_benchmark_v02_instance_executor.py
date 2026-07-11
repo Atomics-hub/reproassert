@@ -286,6 +286,7 @@ def test_git_operations_use_isolated_home_and_safe_directory() -> None:
     assert "git config --global --add safe.directory /testbed" in " ".join(copy_command)
     assert "git config --global --add safe.directory /workspace" in " ".join(patch_command)
     assert "chmod -R" not in " ".join(copy_command)
+    assert "cp -a --no-preserve=ownership /testbed/. /workspace/" in " ".join(copy_command)
     assert "chown -R 65532:65532 /workspace" in " ".join(copy_command)
     assert "source_diff=" in " ".join(copy_command)
     assert "workspace_diff=" in " ".join(copy_command)

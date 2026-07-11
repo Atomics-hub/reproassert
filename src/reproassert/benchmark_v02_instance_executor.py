@@ -37,7 +37,7 @@ _CONTAINER_ID = re.compile(r"[0-9a-f]{12,64}\Z")
 _CONTAINER_TMP = "/tmp"  # noqa: S108 - isolated container path, never a host path
 
 _COPY_TESTBED_SCRIPT = """set -eu
-cp -a /testbed/. /workspace/
+cp -a --no-preserve=ownership /testbed/. /workspace/
 chown -R 65532:65532 /workspace
 mkdir -p "$HOME"
 git config --global --add safe.directory /testbed
