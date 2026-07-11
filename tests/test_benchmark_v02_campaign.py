@@ -12,6 +12,7 @@ from click.testing import CliRunner
 from jsonschema import Draft202012Validator  # type: ignore[import-untyped]
 
 from reproassert import benchmark_v02_campaign as campaign
+from reproassert import benchmark_v02_exact_preregistration as exact_preregistration
 from reproassert import cli
 from reproassert.benchmark_v02_candidate_contract import v02_candidate_contract
 from reproassert.benchmark_v02_package import (
@@ -19,6 +20,7 @@ from reproassert.benchmark_v02_package import (
     build_v02_preregistration,
 )
 from reproassert.benchmark_v02_runner import V02LedgerSnapshot
+from reproassert.benchmark_v02_scored_preregistration import load_v02_scored_preregistration
 from reproassert.errors import PolicyRejection
 
 ROOT = Path(__file__).parents[1]
@@ -952,9 +954,16 @@ def _prepare(
 
 
 def _finalize(
-    artifacts: _Artifacts, monkeypatch: pytest.MonkeyPatch
+    artifacts: _Artifacts,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    include_exact_authority: bool = True,
 ) -> campaign.V02CampaignFinalization:
     monkeypatch.setattr(campaign, "read_v02_scored_ledger", lambda _path: artifacts.snapshot())
+    loaded = load_v02_scored_preregistration(artifacts.preregistration)
+    authority: object | None = None
+    if loaded.format == "exact-image-v1" and include_exact_authority:
+        authority = _issued_exact_authority(artifacts.preregistration)
     return campaign.finalize_v02_campaign(
         campaign_freeze_path=artifacts.freeze_path,
         preregistration_path=artifacts.preregistration,
@@ -967,7 +976,26 @@ def _finalize(
         tool_name="reproassert",
         tool_version="0.2-test",
         tool_git_sha="1" * 40,
+        exact_preregistration=authority,
     )
+
+
+def _issued_exact_authority(path: Path) -> object:
+    loaded = load_v02_scored_preregistration(path)
+    authority = object.__new__(exact_preregistration.VerifiedV02ExactPreregistration)
+    for name, value in {
+        "path": path,
+        "sha256": loaded.raw_sha256,
+        "cohort_sha256": loaded.cohort_sha256,
+        "request_set_sha256": loaded.request_set_sha256,
+        "case_count": len(loaded.cases),
+        "evaluator_preflight_ready_count": 19,
+        "infrastructure_failure_count": 1,
+        "provider_calls": 0,
+        "_issuer": exact_preregistration._ISSUER,
+    }.items():
+        object.__setattr__(authority, name, value)
+    return authority
 
 
 def _rehash_control_document(document: dict[str, Any], case_index: int) -> str:
@@ -1105,6 +1133,14 @@ def test_exact_campaign_finalizes_20_mixed_profiles_and_rejects_tampering(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     artifacts = _prepare(tmp_path / "exact", exact=True, no_candidate={20})
+    with pytest.raises(PolicyRejection, match="Fresh verifier-issued"):
+        _finalize(artifacts, monkeypatch, include_exact_authority=False)
+    mismatched = _issued_exact_authority(artifacts.preregistration)
+    object.__setattr__(mismatched, "sha256", "f" * 64)
+    with pytest.raises(PolicyRejection, match="differs from the finalization campaign"):
+        campaign._require_exact_finalization_preregistration(
+            mismatched, load_v02_scored_preregistration(artifacts.preregistration)
+        )
     result = _finalize(artifacts, monkeypatch)
     public = json.loads(result.public_path.read_text())
 
@@ -1117,6 +1153,10 @@ def test_exact_campaign_finalizes_20_mixed_profiles_and_rejects_tampering(
     sympy = public["cases"][15]["reproduction"]
     assert "bin/test " in sympy["test_command"]
     assert "junit" not in json.dumps(sympy).lower()
+    review_schema = json.loads(
+        (ROOT / "schemas" / "benchmark-v02-semantic-review-set.schema.json").read_text()
+    )
+    Draft202012Validator(review_schema).validate(json.loads(artifacts.review_path.read_text()))
 
     artifacts.output_root = tmp_path / "tampered-output"
     artifacts.output_root.mkdir(mode=0o700)
@@ -1132,6 +1172,122 @@ def test_exact_campaign_finalizes_20_mixed_profiles_and_rejects_tampering(
     terminal["payload"]["private_result_sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
     with pytest.raises(PolicyRejection, match="exact result binding"):
         _finalize(artifacts, monkeypatch)
+
+
+def test_exact_infrastructure_review_waiver_is_case014_only(tmp_path: Path) -> None:
+    artifacts = _prepare(tmp_path / "exact-review", exact=True, no_candidate={20})
+    review = json.loads(artifacts.review_path.read_text())
+    row = review["cases"][12]
+    row.update(
+        {
+            "status": "not_applicable_infrastructure_failure",
+            "reviewer_role_seal_sha256": None,
+            "mapping_reviewer_ids": [],
+            "authorized_semantic_reviewer_ids": [],
+            "reviews": [],
+            "reviewer_count": 0,
+            "consensus_verdict": "inconclusive",
+            "tiebreak_used": False,
+        }
+    )
+    row["review_case_sha256"] = campaign._self_hash(row, "review_case_sha256")
+    review["review_set_sha256"] = campaign._self_hash(review, "review_set_sha256")
+    path = tmp_path / "forged-infrastructure-review.json"
+    _write(path, review)
+    with pytest.raises(PolicyRejection, match="reviewer role seal"):
+        campaign.verify_v02_semantic_review_set(
+            path,
+            campaign_freeze_path=artifacts.freeze_path,
+            preregistration_path=artifacts.preregistration,
+        )
+
+
+def test_exact_finalize_cli_rederives_preregistration_authority(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    artifacts = _prepare(tmp_path / "exact-cli", exact=True, no_candidate={20})
+    monkeypatch.setattr(campaign, "read_v02_scored_ledger", lambda _path: artifacts.snapshot())
+    monkeypatch.setattr(
+        cli,
+        "verify_v02_exact_preregistration",
+        lambda *_args, **_kwargs: _issued_exact_authority(artifacts.preregistration),
+    )
+    output = tmp_path / "exact-cli-output"
+    args = [
+        "benchmark",
+        "finalize-v02-exact-campaign",
+        "--campaign-freeze",
+        str(artifacts.freeze_path),
+        "--preregistration",
+        str(artifacts.preregistration),
+        "--ledger",
+        str(artifacts.ledger_path),
+        "--attempts-root",
+        str(artifacts.attempts_root),
+        "--causal-control-set",
+        str(artifacts.control_path),
+        "--semantic-review-set",
+        str(artifacts.review_path),
+        "--output-root",
+        str(output),
+        "--finalized-at",
+        FINALIZED_AT,
+        "--tool-version",
+        "0.2-test",
+        "--tool-git-sha",
+        "1" * 40,
+    ]
+    evidence_files = {
+        "--cases-preparation": artifacts.preregistration,
+        "--cohort-plan": artifacts.preregistration,
+        "--chronology": artifacts.preregistration,
+        "--hidden-extraction-receipt": artifacts.preregistration,
+        "--mapping-preparation": artifacts.preregistration,
+        "--mapping-consensus": artifacts.preregistration,
+        "--capability-index": artifacts.preregistration,
+        "--instance-runtime-manifest": artifacts.preregistration,
+        "--gold-smoke-receipt": artifacts.preregistration,
+    }
+    for option, path in evidence_files.items():
+        args.extend((option, str(path)))
+    args.extend(("--issue-responses-root", str(artifacts.attempts_root)))
+    args.extend(("--expected-manifest-sha256", "a" * 64))
+    invoked = CliRunner().invoke(cli.main, args)
+    assert invoked.exit_code == 0, invoked.output
+    payload = json.loads(invoked.output)
+    assert payload["exact_preregistration_authority_rederived"] is True
+    assert payload["l2_semantic_valid_count"] == 0
+
+
+def test_legacy_aggregate_rejects_exact_candidate_shape_downgrade(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    artifacts = _prepare(tmp_path / "legacy")
+    result = _finalize(artifacts, monkeypatch)
+    public = json.loads(result.public_path.read_text())
+    legacy_candidate = public["cases"][0]["candidate"]
+    public["cases"][0]["candidate"] = {
+        "bytes": legacy_candidate["bytes"],
+        "path": legacy_candidate["path"],
+        "sha256": legacy_candidate["sha256"],
+        "test_function": "test_issue_1_reproduction",
+    }
+    public["public_aggregate_sha256"] = campaign._self_hash(
+        public, "public_aggregate_sha256"
+    )
+    public_path = tmp_path / "legacy-downgraded-public.json"
+    _write(public_path, public)
+    private = json.loads(result.private_path.read_text())
+    private["public_aggregate_sha256"] = hashlib.sha256(public_path.read_bytes()).hexdigest()
+    private_path = tmp_path / "legacy-downgraded-private.json"
+    _write(private_path, private)
+    with pytest.raises(PolicyRejection, match="candidate shape"):
+        campaign.verify_v02_campaign_output_structure(
+            campaign_freeze_path=artifacts.freeze_path,
+            preregistration_path=artifacts.preregistration,
+            private_finalization_path=private_path,
+            public_aggregate_path=public_path,
+        )
 
 
 def test_emitted_campaign_artifacts_and_event_rows_match_strict_bundled_schemas(

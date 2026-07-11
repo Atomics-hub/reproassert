@@ -2374,6 +2374,121 @@ def benchmark_finalize_v02_campaign(
     )
 
 
+@benchmark_group.command("finalize-v02-exact-campaign")
+@click.option(
+    "--campaign-freeze",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--preregistration",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--ledger",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--attempts-root",
+    type=click.Path(path_type=Path, exists=True, file_okay=False),
+    required=True,
+)
+@click.option(
+    "--causal-control-set",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--semantic-review-set",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option("--output-root", type=click.Path(path_type=Path, file_okay=False), required=True)
+@click.option("--finalized-at", required=True)
+@click.option("--tool-name", default="reproassert", show_default=True)
+@click.option("--tool-version", required=True)
+@click.option("--tool-git-sha", required=True)
+@_exact_preregistration_evidence_options
+def benchmark_finalize_v02_exact_campaign(
+    campaign_freeze: Path,
+    preregistration: Path,
+    ledger: Path,
+    attempts_root: Path,
+    causal_control_set: Path,
+    semantic_review_set: Path,
+    output_root: Path,
+    finalized_at: str,
+    tool_name: str,
+    tool_version: str,
+    tool_git_sha: str,
+    cases_preparation: Path,
+    cohort_plan: Path,
+    chronology: Path,
+    hidden_extraction_receipt: Path,
+    issue_responses_root: Path,
+    mapping_preparation: Path,
+    mapping_consensus: Path,
+    capability_index: Path,
+    instance_runtime_manifest: Path,
+    expected_manifest_sha256: str,
+    gold_smoke_receipt: Path,
+) -> None:
+    """Freshly rederive exact preregistration authority, then finalize fail-closed L2."""
+
+    try:
+        _ensure_private_output_root(output_root)
+        exact = verify_v02_exact_preregistration(
+            preregistration,
+            cases_preparation_path=cases_preparation,
+            cohort_plan_path=cohort_plan,
+            chronology_path=chronology,
+            hidden_extraction_receipt=hidden_extraction_receipt,
+            issue_responses_root=issue_responses_root,
+            mapping_preparation_path=mapping_preparation,
+            mapping_consensus_path=mapping_consensus,
+            capability_index_path=capability_index,
+            runtime_manifest_path=instance_runtime_manifest,
+            expected_runtime_manifest_sha256=expected_manifest_sha256,
+            gold_smoke_receipt_path=gold_smoke_receipt,
+        )
+        result = finalize_v02_campaign(
+            campaign_freeze_path=campaign_freeze,
+            preregistration_path=preregistration,
+            ledger_path=ledger,
+            attempts_root=attempts_root,
+            causal_control_set_path=causal_control_set,
+            semantic_review_set_path=semantic_review_set,
+            output_root=output_root,
+            finalized_at=finalized_at,
+            tool_name=tool_name,
+            tool_version=tool_version,
+            tool_git_sha=tool_git_sha,
+            exact_preregistration=exact,
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(
+        json.dumps(
+            {
+                "private_finalization": str(result.private_path),
+                "public_aggregate": str(result.public_path),
+                "public_aggregate_sha256": result.public_sha256,
+                "provisional_candidate_count": result.provisional_candidate_count,
+                "l2_semantic_valid_count": result.l2_semantic_valid_count,
+                "review_semantic_valid_count": result.review_semantic_valid_count,
+                "total_attributable_microusd": result.total_attributable_microusd,
+                "exact_preregistration_authority_rederived": True,
+                "exact_l2_authority_mode": "fail_closed_without_live_control_authorities",
+                "provider_invoked_by_this_command": False,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
 @benchmark_group.command("verify-v02-finalization")
 @click.option(
     "--campaign-freeze",
