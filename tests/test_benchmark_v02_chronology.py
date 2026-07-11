@@ -179,3 +179,39 @@ def test_chronology_rejects_late_issue_and_tampered_receipt(
             hidden_extraction_receipt=hidden,
             issue_responses_root=responses,
         )
+
+
+def test_public_capture_uses_bounded_credential_free_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _cohort, _hidden, _responses, cases = _fixtures(tmp_path, monkeypatch)
+    parent = tmp_path / "capture"
+    parent.mkdir(mode=0o700)
+    observed: list[str] = []
+
+    def transport(path: str) -> bytes:
+        observed.append(path)
+        position = int(path.rsplit("/", 1)[-1])
+        case = cases[position - 1]
+        return json.dumps(
+            {
+                "created_at": "2024-01-01T00:00:00Z",
+                "html_url": case["issue_url"],
+                "number": position,
+                "repository_url": f"https://api.github.com/repos/{case['repo']}",
+            },
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode()
+
+    captured = chronology.capture_v02_public_issue_responses(
+        cohort_plan_path=tmp_path / "cohort.json",
+        output_root=parent,
+        transport=transport,
+    )
+
+    assert len(observed) == 20
+    assert observed[0] == "/repos/owner/repository-1/issues/1"
+    assert observed[-1] == "/repos/owner/repository-20/issues/20"
+    assert len(tuple(captured.glob("*.json"))) == 20
+    assert all(path.stat().st_mode & 0o777 == 0o600 for path in captured.glob("*.json"))

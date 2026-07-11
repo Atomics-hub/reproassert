@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import hashlib
+import http.client
 import json
 import re
+import shutil
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import cast
+from typing import Protocol, cast
 
 from reproassert.benchmark_v02_cohort import load_v02_leak_audited_cohort_plan
 from reproassert.benchmark_v02_hidden import hidden_case_artifacts, verify_v02_hidden_gold
@@ -34,6 +36,56 @@ class VerifiedV02ChronologyEvidence:
     case_count: int
     issue_precedes_fix_count: int
     provider_calls: int = 0
+
+
+class PublicIssueTransport(Protocol):
+    def __call__(self, path: str) -> bytes: ...
+
+
+def capture_v02_public_issue_responses(
+    *,
+    cohort_plan_path: Path,
+    output_root: Path,
+    transport: PublicIssueTransport | None = None,
+) -> Path:
+    """Capture bounded public GitHub issue JSON without credentials or provider access."""
+
+    parent = Path(output_root)
+    require_private_directory(parent)
+    destination = parent / "github-issue-responses"
+    if destination.exists() or destination.is_symlink():
+        raise _reject("Refusing to overwrite public issue response captures.")
+    fetch = transport or _fetch_public_github_json
+    plan = load_v02_leak_audited_cohort_plan(Path(cohort_plan_path))
+    cases = cast(list[dict[str, object]], plan["cases"])
+    created = False
+    try:
+        destination.mkdir(mode=0o700)
+        created = True
+        for position, case in enumerate(cases, start=1):
+            case_id = _case_id(case.get("case_id"))
+            if case_id != f"rk-v0.2-{position:03d}":
+                raise _reject("Public issue capture cohort ordering is invalid.")
+            repo = _bounded_text(case.get("repo"), "repository", 3, 200)
+            issue_url = _bounded_text(case.get("issue_url"), "issue URL", 20, 500)
+            issue_number = int(issue_url.rsplit("/", 1)[-1])
+            raw = fetch(f"/repos/{repo}/issues/{issue_number}")
+            if not isinstance(raw, bytes) or not 1 <= len(raw) <= MAX_RESPONSE_BYTES:
+                raise _reject("GitHub issue response exceeds its transport contract.")
+            response = _decode_json(raw, "GitHub issue response")
+            if (
+                response.get("number") != issue_number
+                or response.get("html_url") != issue_url
+                or response.get("repository_url") != f"https://api.github.com/repos/{repo}"
+            ):
+                raise _reject(f"GitHub issue response identity differs for {case_id}.")
+            _timestamp(response.get("created_at"), "issue creation timestamp")
+            write_bytes_exclusive(destination / f"{case_id}.json", raw)
+        return destination
+    except BaseException:
+        if created:
+            shutil.rmtree(destination, ignore_errors=True)
+        raise
 
 
 def prepare_v02_chronology_evidence(
@@ -251,6 +303,33 @@ def _read_regular(path: Path, limit: int, label: str) -> bytes:
         raise _reject(f"{label.capitalize()} could not be read safely.") from exc
     if len(raw) > limit:
         raise _reject(f"{label.capitalize()} exceeds its size limit.")
+    return raw
+
+
+def _fetch_public_github_json(path: str) -> bytes:
+    if not path.startswith("/repos/") or any(character in path for character in "\r\n\x00"):
+        raise _reject("GitHub API path is invalid.")
+    connection = http.client.HTTPSConnection("api.github.com", timeout=20.0)
+    try:
+        connection.request(
+            "GET",
+            path,
+            headers={
+                "Accept": "application/vnd.github+json",
+                "User-Agent": "reproassert-chronology/0.2",
+                "X-GitHub-Api-Version": "2022-11-28",
+            },
+        )
+        response = connection.getresponse()
+        raw = response.read(MAX_RESPONSE_BYTES + 1)
+    except (OSError, http.client.HTTPException) as exc:
+        raise _reject("Public GitHub chronology capture failed under bounded transport.") from exc
+    finally:
+        connection.close()
+    if response.status != 200:
+        raise _reject(f"Public GitHub chronology capture returned HTTP {response.status}.")
+    if len(raw) > MAX_RESPONSE_BYTES:
+        raise _reject("Public GitHub chronology response exceeds its size limit.")
     return raw
 
 
