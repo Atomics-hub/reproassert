@@ -130,18 +130,21 @@ fresh workspaces, does not reuse smoke candidates, and does not feed one case's 
 | Repository-owned documentation and tests present at the base SHA | Oracle symptom rubric, decoys, and alternative-fix controls |
 | Declared resource policy and generated-run feedback | Other benchmark cases' hidden artifacts or verdicts |
 
-Issue comments are excluded. The frozen v0.2 generator projection comes from the pinned dataset
-snapshot and is explicitly classified `chronology_unproven` and
-`historical_public_contamination_exposed`. Raw patch/test fields, fixing-PR identity, row ordinals,
-leak-audit detail, and chronology labels remain evaluator-only. This supports generation against the
-exact buggy base with the historical fix hidden; it does not support “before anyone attempted a
-fix.” See [ADR 0004](decisions/0004-historical-snapshot-provenance.md).
+Issue comments are excluded. A provider-free chronology controller binds the raw public GitHub
+issue-response hash to verified private metadata and proves that issue creation precedes the fixing
+artifact for all 20 cases. The frozen generator title/body still comes from a later pinned dataset
+snapshot and remains `historical_public_contamination_exposed`. Raw patch/test fields, fixing-PR
+identity, row ordinals, leak-audit detail, and chronology evidence remain evaluator-only. This
+supports generation against the exact buggy base with the historical fix hidden; it does not
+support “before anyone attempted a fix.” See
+[ADR 0004](decisions/0004-historical-snapshot-provenance.md).
 
 The v0.2-draft offline producer and default validator now parse the frozen GraphQL capture shape,
 require complete creation/body history and a continuous title-rename chain, select the last revision
 strictly before the fixing pull request's `publishedAt`, and independently rerun exact fixing-link
-redaction. This is an optional upgrade for a future stronger chronology claim, not a prerequisite
-for the dataset-snapshot cohort. Capture authenticity would remain trusted-controller evidence
+redaction. This remains an optional upgrade for a stronger content-revision claim, not a
+prerequisite for the issue-before-fix ordering receipt. Capture authenticity remains
+trusted-controller evidence
 rather than a GitHub-signed attestation.
 
 The trusted preparation controller resolves the full 40-character base SHA and independently

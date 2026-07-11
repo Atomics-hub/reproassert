@@ -230,13 +230,16 @@ Measured results remain intentionally separate from product capability.
 - The v0.2 cohort remains **0/20 scored runs, 0/20 L1, 0/20 L2, and zero maintainer validations**.
 - No scored model spend or maintainer outreach has occurred.
 - The zero-spend preparation lane has authentically extracted 20/20 hidden evaluator records and
-  built 20/20 provider-disabled pre-review packets. Dependency-ready and campaign-ready counts are
-  still 0/20; these are not scored case packages.
+  built 20/20 provider-disabled pre-review packets. Exact images are runtime-attested for 20/20;
+  hidden-gold preflight is valid for 19/20, with case 014 retained as a network-dependent
+  infrastructure failure. Campaign-ready remains 0/20 pending genuine mapping review.
 
 The v0.2 preparation and evaluation machinery is default-deny: source, dependency, hidden-fix,
 request, pricing, authorization, causal-control, and reviewer commitments must be bound before a
-provider-capable run. Its issue snapshots remain labeled `chronology_unproven` and
-`historical_public_contamination_exposed`; no historical-cleanliness claim is implied.
+provider-capable run. Public issue creation now precedes the fixing artifact for 20/20 cases under a
+hash-bound chronology receipt. The dataset title/body snapshots remain
+`historical_public_contamination_exposed` because full pre-fix revision capture is unavailable; no
+historical-cleanliness claim is implied.
 
 The final exact-image authorization is also fail-closed on spend. `reproassert benchmark
 prepare-v02-execution-freeze` recomputes all 20 worst-case request reservations and binds the merged
