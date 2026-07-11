@@ -527,7 +527,7 @@ class InstanceRuntimeExecutor:
             and host.get("NetworkMode") == "none"
             and host.get("ReadonlyRootfs") is read_only
             and host.get("CapDrop") == ["ALL"]
-            and (host.get("CapAdd") or []) == list(cap_add)
+            and (host.get("CapAdd") or []) == [f"CAP_{capability}" for capability in cap_add]
             and isinstance(security_options, list)
             and "no-new-privileges" in security_options
             and host.get("PidsLimit") == self.policy.pids

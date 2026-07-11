@@ -43,11 +43,15 @@ class FakeDocker:
         self,
         runtime: InstanceRuntime | None = None,
         policy: SandboxPolicy | None = None,
+        *,
+        normalize_capabilities: bool = True,
     ) -> None:
         self.commands = []
         self.containers: dict[str, dict[str, object]] = {}
+        self.created_policies: list[dict[str, object]] = []
         self.runtime = runtime or _runtime()
         self.policy = policy or SandboxPolicy(image=self.runtime.image_id)
+        self.normalize_capabilities = normalize_capabilities
 
     def run(
         self,
@@ -100,7 +104,13 @@ class FakeDocker:
                 "HostConfig": {
                     "Binds": None,
                     "CapAdd": [
-                        args[index + 1] for index, value in enumerate(args) if value == "--cap-add"
+                        (
+                            f"CAP_{args[index + 1]}"
+                            if self.normalize_capabilities
+                            else args[index + 1]
+                        )
+                        for index, value in enumerate(args)
+                        if value == "--cap-add"
                     ],
                     "CapDrop": ["ALL"],
                     "Memory": self.policy.memory_bytes,
@@ -129,6 +139,7 @@ class FakeDocker:
                     for mount in parsed_mounts
                 ],
             }
+            self.created_policies.append(self.containers[name])
             return self._result("3" * 64 + "\n")
         if args[:2] == ["container", "inspect"]:
             return self._result(json.dumps([self.containers[args[2]]]))
@@ -278,6 +289,26 @@ def test_git_operations_use_isolated_home_and_safe_directory() -> None:
     assert copy_command[copy_command.index("--cap-add") + 1] == "CHOWN"
     non_copy_creates = [command for command in creates if "copy-" not in " ".join(command)]
     assert all("--cap-add" not in command for command in non_copy_creates)
+
+
+def test_effective_policy_accepts_only_docker_normalized_cap_chown() -> None:
+    normalized = FakeDocker(normalize_capabilities=True)
+    executor = _executor(normalized)
+    executor.acquire()
+    executor.prepare_workspaces(fixed_patch=b"diff --git a/a b/a\n")
+
+    copy_policy = next(
+        value
+        for value in normalized.created_policies
+        if value["HostConfig"]["CapAdd"] == ["CAP_CHOWN"]
+    )
+    assert copy_policy["HostConfig"]["CapAdd"] == ["CAP_CHOWN"]
+
+    unnormalized = FakeDocker(normalize_capabilities=False)
+    rejected = _executor(unnormalized)
+    rejected.acquire()
+    with pytest.raises(ReproAssertError, match="Effective instance container policy"):
+        rejected.prepare_workspaces(fixed_patch=b"diff --git a/a b/a\n")
 
 
 def test_public_patch_api_can_stage_developer_tests_on_both_workspaces() -> None:
