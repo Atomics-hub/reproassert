@@ -37,10 +37,13 @@ _ENTRY_KEYS = {
     "image_tag",
     "instance_id",
     "spec_sha256",
+    "test_command_profile",
 }
+_TEST_COMMAND_PROFILES = frozenset({"pytest-v1", "sympy-bin-test-v1"})
 _POLICY = {
     "capabilities": "drop_all",
     "commands": "reproassert-controller-allowlist-v1",
+    "controller_user": "0:0",
     "credentials": "none",
     "docker_socket": False,
     "host_bind_mounts": False,
@@ -49,6 +52,7 @@ _POLICY = {
     "platform": "linux/amd64",
     "profile": INSTANCE_RUNTIME_PROFILE,
     "resource_limits": "reproassert-sandbox-policy-v1",
+    "test_user": "65532:65532",
 }
 
 
@@ -62,6 +66,7 @@ class InstanceRuntime:
     image_tag: str
     image_digest: str
     image_id: str
+    test_command_profile: str
 
 
 @dataclass(frozen=True)
@@ -147,16 +152,26 @@ def load_instance_runtime_manifest(path: Path) -> InstanceRuntimeManifest:
     entries: list[InstanceRuntime] = []
     for position, raw_entry in enumerate(raw_entries, start=1):
         entry = _exact(raw_entry, _ENTRY_KEYS, f"instance runtime entry {position}")
+        test_command_profile = entry["test_command_profile"]
+        if (
+            not isinstance(test_command_profile, str)
+            or test_command_profile not in _TEST_COMMAND_PROFILES
+        ):
+            raise _reject("Instance test command profile is unsupported.")
+        instance_id = _text(entry["instance_id"], _INSTANCE_ID, "instance ID")
+        if instance_id.startswith("sympy__sympy-") != (test_command_profile == "sympy-bin-test-v1"):
+            raise _reject("Instance test command profile differs from the frozen harness family.")
         entries.append(
             InstanceRuntime(
                 case_id=_text(entry["case_id"], _CASE_ID, "case ID"),
-                instance_id=_text(entry["instance_id"], _INSTANCE_ID, "instance ID"),
+                instance_id=instance_id,
                 base_sha=_text(entry["base_sha"], _GIT_SHA, "base SHA"),
                 base_tree_oid=_text(entry["base_tree_oid"], _GIT_SHA, "base tree OID"),
                 spec_sha256=_digest(entry["spec_sha256"], "instance spec"),
                 image_tag=_text(entry["image_tag"], _IMAGE_TAG, "instance image tag"),
                 image_digest=_text(entry["image_digest"], _IMAGE_ID, "instance image digest"),
                 image_id=_text(entry["image_id"], _IMAGE_ID, "instance image ID"),
+                test_command_profile=test_command_profile,
             )
         )
     if entries != sorted(entries, key=lambda entry: entry.case_id):
@@ -193,6 +208,7 @@ def instance_runtime_manifest_bytes(
                 "image_tag": entry.image_tag,
                 "instance_id": entry.instance_id,
                 "spec_sha256": entry.spec_sha256,
+                "test_command_profile": entry.test_command_profile,
             }
             for entry in sorted(entries, key=lambda entry: entry.case_id)
         ],

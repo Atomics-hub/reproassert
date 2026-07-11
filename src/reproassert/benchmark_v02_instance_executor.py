@@ -36,6 +36,7 @@ _CONTAINER_TMP = "/tmp"  # noqa: S108 - isolated container path, never a host pa
 
 _COPY_TESTBED_SCRIPT = """set -eu
 cp -a /testbed/. /workspace/
+chmod -R a+rwX /workspace
 mkdir -p "$HOME"
 git config --global --add safe.directory /workspace
 cd /workspace
@@ -66,6 +67,12 @@ test "$(sha256sum "$2" | cut -d ' ' -f 1)" = "$1"
 _PYTEST_SCRIPT = """set -eu
 cd /workspace
 exec /opt/miniconda3/envs/testbed/bin/python -I -m pytest "$@"
+""".strip()
+
+_SYMPY_TEST_SCRIPT = """set -eu
+cd /workspace
+export PYTHONWARNINGS='ignore::UserWarning,ignore::SyntaxWarning'
+exec /opt/miniconda3/envs/testbed/bin/python -I bin/test -C --verbose "$@"
 """.strip()
 
 
@@ -215,6 +222,21 @@ class InstanceRuntimeExecutor:
         targets: tuple[str, ...],
         collect_only: bool = False,
     ) -> InstancePytestResult:
+        if self.runtime.test_command_profile != "pytest-v1":
+            raise self._reject("Frozen instance runtime does not use the pytest command profile.")
+        return self.run_test_command(
+            workspace=workspace, targets=targets, collect_only=collect_only
+        )
+
+    def run_test_command(
+        self,
+        *,
+        workspace: Literal["base", "fixed"],
+        targets: tuple[str, ...],
+        collect_only: bool = False,
+    ) -> InstancePytestResult:
+        """Run exactly one manifest-bound harness command profile."""
+
         if not self._prepared or workspace not in self._volumes:
             raise self._reject("Requested instance workspace is unavailable.")
         if (
@@ -224,15 +246,30 @@ class InstanceRuntimeExecutor:
         ):
             raise self._reject("Pytest targets must be a bounded unique tuple.")
         checked_targets = tuple(_pytest_target(target) for target in targets)
+        if self.runtime.test_command_profile == "pytest-v1":
+            script = _PYTEST_SCRIPT
+            profile_args = ["--collect-only"] if collect_only else []
+        elif self.runtime.test_command_profile == "sympy-bin-test-v1":
+            if collect_only:
+                raise self._reject("The frozen SymPy command profile has no collection-only mode.")
+            script = _SYMPY_TEST_SCRIPT
+            profile_args = []
+        else:  # pragma: no cover - manifest loader excludes this state
+            raise self._reject("Frozen instance test command profile is unsupported.")
         command = [
             "/bin/bash",
             "-c",
-            _PYTEST_SCRIPT,
-            "reproassert-pytest",
-            *(["--collect-only"] if collect_only else []),
+            script,
+            f"reproassert-{self.runtime.test_command_profile}",
+            *profile_args,
             *checked_targets,
         ]
-        name = self._create_sandbox_container(workspace, command, role=f"pytest-{workspace}")
+        name = self._create_sandbox_container(
+            workspace,
+            command,
+            role=f"test-{workspace}",
+            user="65532:65532",
+        )
         try:
             result = self._run(
                 ["start", "--attach", name],
@@ -349,6 +386,7 @@ class InstanceRuntimeExecutor:
         role: str,
         read_only: bool = True,
         input_volume: str | None = None,
+        user: str = "0:0",
     ) -> str:
         volume = self._volumes[workspace]
         name = f"reproassert-{self._token}-{role}-{uuid.uuid4().hex[:8]}"
@@ -377,7 +415,7 @@ class InstanceRuntimeExecutor:
             "--cpus",
             _cpu_text(self.policy.cpus),
             "--user",
-            "0:0",
+            user,
             "--env",
             "HOME=/tmp/home",
             "--tmpfs",
@@ -401,6 +439,7 @@ class InstanceRuntimeExecutor:
             command=command,
             read_only=read_only,
             input_volume=input_volume,
+            user=user,
         )
         return name
 
@@ -412,6 +451,7 @@ class InstanceRuntimeExecutor:
         command: list[str],
         read_only: bool,
         input_volume: str | None,
+        user: str,
     ) -> None:
         payload = self._inspect_one(["container", "inspect", name], "container")
         config = _mapping(payload.get("Config"), "container config")
@@ -443,7 +483,7 @@ class InstanceRuntimeExecutor:
         valid_mount = actual_mounts == expected_mounts and len(actual_mounts) == mount_count
         if not (
             payload.get("Image") == self.runtime.image_id
-            and config.get("User") == "0:0"
+            and config.get("User") == user
             and isinstance(config.get("Env"), list)
             and "HOME=/tmp/home" in cast(list[object], config.get("Env"))
             and config.get("Entrypoint") == [command[0]]

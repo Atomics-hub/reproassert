@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from typing import ClassVar
 
 import pytest
@@ -8,7 +9,7 @@ import pytest
 from reproassert.benchmark_v02_instance_executor import InstanceRuntimeExecutor
 from reproassert.benchmark_v02_instance_runtime import InstanceRuntime, InstanceRuntimeManifest
 from reproassert.dependency_executor import CommandResult
-from reproassert.errors import PolicyRejection
+from reproassert.errors import PolicyRejection, ReproAssertError
 from reproassert.sandbox import SandboxPolicy
 
 
@@ -22,6 +23,7 @@ def _runtime() -> InstanceRuntime:
         image_tag="swebench/sweb.eval.x86_64.astropy_1776_astropy-14309:latest",
         image_digest=f"sha256:{'d' * 64}",
         image_id=f"sha256:{'e' * 64}",
+        test_command_profile="pytest-v1",
     )
 
 
@@ -37,9 +39,10 @@ def _manifest() -> InstanceRuntimeManifest:
 class FakeDocker:
     commands: ClassVar[list[list[str]]]
 
-    def __init__(self) -> None:
+    def __init__(self, runtime: InstanceRuntime | None = None) -> None:
         self.commands = []
         self.containers: dict[str, dict[str, object]] = {}
+        self.runtime = runtime or _runtime()
 
     def run(
         self,
@@ -52,7 +55,7 @@ class FakeDocker:
         del timeout_seconds, max_output_bytes, input_bytes
         self.commands.append(list(args))
         if args[:2] == ["image", "inspect"]:
-            runtime = _runtime()
+            runtime = self.runtime
             return self._result(
                 json.dumps(
                     [
@@ -77,14 +80,14 @@ class FakeDocker:
             parsed_mounts = [
                 dict(part.split("=", 1) for part in value.split(",")) for value in mount_args
             ]
-            image_id = _runtime().image_id
+            image_id = self.runtime.image_id
             image_index = args.index(image_id)
             self.containers[name] = {
                 "Config": {
                     "Cmd": args[image_index + 1 :],
                     "Entrypoint": [args[args.index("--entrypoint") + 1]],
                     "Env": ["PATH=/usr/bin:/bin", "HOME=/tmp/home"],
-                    "User": "0:0",
+                    "User": args[args.index("--user") + 1],
                 },
                 "HostConfig": {
                     "Binds": None,
@@ -115,7 +118,7 @@ class FakeDocker:
         if args[:3] == ["container", "rm", "--force"]:
             self.containers.pop(args[3], None)
             return self._result("")
-        if args[:2] == ["start", "--attach"] and "pytest" in args[2]:
+        if args[:2] == ["start", "--attach"] and "test-base" in args[2]:
             return self._result("one failed\n", returncode=1)
         return self._result("")
 
@@ -124,11 +127,12 @@ class FakeDocker:
         return CommandResult(returncode=returncode, output=output)
 
 
-def _executor(fake: FakeDocker) -> InstanceRuntimeExecutor:
+def _executor(fake: FakeDocker, runtime: InstanceRuntime | None = None) -> InstanceRuntimeExecutor:
+    selected = runtime or _runtime()
     return InstanceRuntimeExecutor(
-        _manifest(),
-        case_id="rk-v0.2-001",
-        policy=SandboxPolicy(image=_runtime().image_id),
+        replace(_manifest(), entries=(selected,)),
+        case_id=selected.case_id,
+        policy=SandboxPolicy(image=selected.image_id),
         runner=fake,
     )
 
@@ -181,11 +185,14 @@ def test_prepares_two_fresh_workspaces_and_runs_bounded_pytest() -> None:
     assert all("--cap-drop" in command and "ALL" in command for command in creates)
     assert all("type=bind" not in " ".join(command) for command in creates)
     assert any(command[0] == "cp" and ":/input/" in command[-1] for command in fake.commands)
-    pytest_create = next(command for command in creates if "pytest-base" in " ".join(command))
+    pytest_create = next(command for command in creates if "test-base" in " ".join(command))
     assert "--collect-only" in pytest_create
     assert "tests/test_reproassert_issue_14305.py::test_case[param-1]" in pytest_create
     assert "/opt/miniconda3/envs/testbed/bin/python -I -m pytest" in " ".join(pytest_create)
     assert "HOME=/tmp/home" in pytest_create
+    assert pytest_create[pytest_create.index("--user") + 1] == "65532:65532"
+    controller_creates = [command for command in creates if command is not pytest_create]
+    assert all(command[command.index("--user") + 1] == "0:0" for command in controller_creates)
 
     executor.cleanup()
     assert not fake.containers
@@ -255,3 +262,34 @@ def test_public_patch_api_can_stage_developer_tests_on_both_workspaces() -> None
     ]
     assert len(patch_execs) == 3
     assert any("stage-patch-base" in " ".join(command) for command in fake.commands)
+
+
+def test_sympy_profile_runs_only_frozen_bin_test_as_nonroot() -> None:
+    runtime = replace(
+        _runtime(),
+        case_id="rk-v0.2-016",
+        instance_id="sympy__sympy-15345",
+        image_tag="swebench/sweb.eval.x86_64.sympy_1776_sympy-15345:latest",
+        test_command_profile="sympy-bin-test-v1",
+    )
+    fake = FakeDocker(runtime)
+    executor = _executor(fake, runtime)
+    executor.acquire()
+    executor.prepare_workspaces(fixed_patch=b"diff --git a/a b/a\n")
+
+    result = executor.run_test_command(
+        workspace="base", targets=("sympy/core/tests/test_basic.py",)
+    )
+
+    assert result.exit_code == 1
+    test_create = next(
+        command
+        for command in fake.commands
+        if command[0] == "create" and "test-base" in " ".join(command)
+    )
+    rendered = " ".join(test_create)
+    assert "/opt/miniconda3/envs/testbed/bin/python -I bin/test -C --verbose" in rendered
+    assert "PYTHONWARNINGS=" in rendered
+    assert test_create[test_create.index("--user") + 1] == "65532:65532"
+    with pytest.raises(ReproAssertError, match="does not use the pytest"):
+        executor.run_pytest(workspace="base", targets=("sympy/core/tests/test_basic.py",))

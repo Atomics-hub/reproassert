@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -23,6 +24,7 @@ def _entry(number: int, digit: str) -> InstanceRuntime:
         image_tag=f"swebench/sweb.eval.x86_64.project_repo-{1000 + number}:latest",
         image_digest=f"sha256:{digit * 64}",
         image_id=f"sha256:{chr(ord(digit) + 1) * 64}",
+        test_command_profile="pytest-v1",
     )
 
 
@@ -123,6 +125,7 @@ def test_rejects_ambiguous_case_or_instance(tmp_path: Path) -> None:
         image_tag="swebench/second:latest",
         image_digest=f"sha256:{'e' * 64}",
         image_id=f"sha256:{'f' * 64}",
+        test_command_profile="pytest-v1",
     )
     path = tmp_path / "ambiguous.json"
     path.write_bytes(
@@ -134,3 +137,30 @@ def test_rejects_ambiguous_case_or_instance(tmp_path: Path) -> None:
     )
     with pytest.raises(PolicyRejection, match="ambiguous"):
         load_instance_runtime_manifest(path)
+
+
+def test_sympy_family_requires_exact_bin_test_profile(tmp_path: Path) -> None:
+    entry = _entry(16, "c")
+    sympy = replace(entry, instance_id="sympy__sympy-15345")
+    path = tmp_path / "wrong-sympy-profile.json"
+    path.write_bytes(
+        instance_runtime_manifest_bytes(
+            harness_git_sha="a" * 40,
+            harness_specs_sha256="b" * 64,
+            entries=(sympy,),
+        )
+    )
+    with pytest.raises(PolicyRejection, match="profile differs"):
+        load_instance_runtime_manifest(path)
+
+    valid = replace(sympy, test_command_profile="sympy-bin-test-v1")
+    path.write_bytes(
+        instance_runtime_manifest_bytes(
+            harness_git_sha="a" * 40,
+            harness_specs_sha256="b" * 64,
+            entries=(valid,),
+        )
+    )
+    assert (
+        load_instance_runtime_manifest(path).entries[0].test_command_profile == "sympy-bin-test-v1"
+    )
