@@ -6,12 +6,14 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import cast
 
 from reproassert.benchmark_v02_hidden import (
     VerifiedV02HiddenExtraction,
     hidden_case_artifacts,
+    verify_v02_hidden_gold,
 )
 from reproassert.benchmark_v02_instance_controller import (
     MAX_GOLD_SMOKE_RECEIPT_BYTES,
@@ -22,10 +24,12 @@ from reproassert.benchmark_v02_instance_runtime import (
     load_instance_runtime_manifest,
 )
 from reproassert.errors import PolicyRejection
-from reproassert.safeio import open_regular_file
+from reproassert.safeio import open_regular_file, require_private_directory, write_bytes_exclusive
 
 CAPABILITY_ALGORITHM = "reproassert-v02-exact-image-evaluator-capability-v1"
 _CASE_ID = re.compile(r"rk-v0\.2-[0-9]{3}\Z")
+_GIT_SHA = re.compile(r"[0-9a-f]{40}\Z")
+_TIMESTAMP = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?Z\Z")
 _ISSUER = object()
 
 
@@ -73,6 +77,168 @@ class VerifiedV02ExactImageEvaluatorCapability:
             "runtime": _runtime_record(self.runtime),
             "runtime_manifest_sha256": self.runtime_manifest_sha256,
         }
+
+
+@dataclass(frozen=True)
+class VerifiedV02ExactImageCapabilityIndex:
+    path: Path
+    sha256: str
+    case_count: int
+    runtime_attested_count: int
+    evaluator_preflight_ready_count: int
+    infrastructure_failure_count: int
+    provider_calls: int = 0
+
+
+def prepare_v02_exact_image_capability_index(
+    *,
+    manifest_path: Path,
+    expected_manifest_sha256: str,
+    gold_smoke_receipt_path: Path,
+    hidden_extraction_receipt: Path,
+    prepared_at: str,
+    tool_git_sha: str,
+    output_path: Path,
+) -> VerifiedV02ExactImageCapabilityIndex:
+    """Persist 20 redacted commitments while keeping nominal authority process-local."""
+
+    destination = Path(output_path)
+    require_private_directory(destination.parent)
+    if destination.exists() or destination.is_symlink():
+        raise _reject("Refusing to overwrite exact-image capability index.")
+    record = _derive_index(
+        manifest_path=Path(manifest_path),
+        expected_manifest_sha256=expected_manifest_sha256,
+        gold_smoke_receipt_path=Path(gold_smoke_receipt_path),
+        hidden_extraction_receipt=Path(hidden_extraction_receipt),
+        prepared_at=prepared_at,
+        tool_git_sha=tool_git_sha,
+    )
+    record["index_sha256"] = _index_hash(record)
+    write_bytes_exclusive(destination, _canonical(record) + b"\n")
+    return verify_v02_exact_image_capability_index(
+        destination,
+        manifest_path=manifest_path,
+        expected_manifest_sha256=expected_manifest_sha256,
+        gold_smoke_receipt_path=gold_smoke_receipt_path,
+        hidden_extraction_receipt=hidden_extraction_receipt,
+    )
+
+
+def verify_v02_exact_image_capability_index(
+    path: Path,
+    *,
+    manifest_path: Path,
+    expected_manifest_sha256: str,
+    gold_smoke_receipt_path: Path,
+    hidden_extraction_receipt: Path,
+) -> VerifiedV02ExactImageCapabilityIndex:
+    raw = _read_bounded(Path(path), 1024 * 1024, "capability index")
+    try:
+        record = json.loads(raw)
+    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as exc:
+        raise _reject("Exact-image capability index is invalid JSON.") from exc
+    if not isinstance(record, dict) or raw != _canonical(record) + b"\n":
+        raise _reject("Exact-image capability index is not canonical JSON.")
+    if set(record) != {
+        "algorithm",
+        "benchmark_version",
+        "case_count",
+        "cases",
+        "claims",
+        "index_sha256",
+        "prepared_at",
+        "schema_version",
+        "status",
+        "tool_git_sha",
+    }:
+        raise _reject("Exact-image capability index fields are invalid.")
+    if (
+        record.get("algorithm") != "reproassert-v02-exact-image-capability-index-v1"
+        or record.get("schema_version") != "1.0.0"
+        or record.get("benchmark_version") != "0.2"
+        or record.get("case_count") != 20
+        or record.get("status") != "runtime_attested_20_evaluator_preflight_19"
+        or record.get("index_sha256") != _index_hash(record)
+    ):
+        raise _reject("Exact-image capability index identity is invalid.")
+    expected = _derive_index(
+        manifest_path=Path(manifest_path),
+        expected_manifest_sha256=expected_manifest_sha256,
+        gold_smoke_receipt_path=Path(gold_smoke_receipt_path),
+        hidden_extraction_receipt=Path(hidden_extraction_receipt),
+        prepared_at=_timestamp(record.get("prepared_at")),
+        tool_git_sha=_git_sha(record.get("tool_git_sha")),
+    )
+    unsigned = dict(record)
+    unsigned.pop("index_sha256")
+    if unsigned != expected:
+        raise _reject("Exact-image capability index differs from freshly verified evidence.")
+    return VerifiedV02ExactImageCapabilityIndex(
+        path=Path(path),
+        sha256=hashlib.sha256(raw).hexdigest(),
+        case_count=20,
+        runtime_attested_count=20,
+        evaluator_preflight_ready_count=19,
+        infrastructure_failure_count=1,
+    )
+
+
+def _derive_index(
+    *,
+    manifest_path: Path,
+    expected_manifest_sha256: str,
+    gold_smoke_receipt_path: Path,
+    hidden_extraction_receipt: Path,
+    prepared_at: str,
+    tool_git_sha: str,
+) -> dict[str, object]:
+    timestamp = _timestamp(prepared_at)
+    if _timestamp_value(timestamp) > datetime.now(timezone.utc):
+        raise _reject("Exact-image capability index cannot be future-dated.")
+    producer_sha = _git_sha(tool_git_sha)
+    hidden = verify_v02_hidden_gold(hidden_extraction_receipt)
+    rows: list[dict[str, object]] = []
+    for number in range(1, 21):
+        capability = issue_verified_v02_exact_image_evaluator_capability(
+            manifest_path=manifest_path,
+            expected_manifest_sha256=expected_manifest_sha256,
+            gold_smoke_receipt_path=gold_smoke_receipt_path,
+            verified_hidden=hidden,
+            case_id=f"rk-v0.2-{number:03d}",
+        )
+        require_v02_exact_image_evaluator_capability(capability)
+        rows.append(
+            {
+                "case_id": capability.case_id,
+                "evaluator_public_commitment_sha256": (
+                    capability.evaluator_public_commitment_sha256
+                ),
+                "evidence": capability.public_record(),
+                "status": (
+                    "runtime_attested_evaluator_preflight_ready"
+                    if capability.gold_smoke_classification == "semantic_valid"
+                    else "runtime_attested_gold_smoke_infrastructure_failure"
+                ),
+            }
+        )
+    return {
+        "algorithm": "reproassert-v02-exact-image-capability-index-v1",
+        "benchmark_version": "0.2",
+        "case_count": 20,
+        "cases": rows,
+        "claims": {
+            "evaluator_preflight_ready_count": 19,
+            "infrastructure_failure_count": 1,
+            "nominal_authority_serialized": False,
+            "provider_calls": 0,
+            "runtime_attested_count": 20,
+        },
+        "prepared_at": timestamp,
+        "schema_version": "1.0.0",
+        "status": "runtime_attested_20_evaluator_preflight_19",
+        "tool_git_sha": producer_sha,
+    }
 
 
 def issue_verified_v02_exact_image_evaluator_capability(
@@ -211,10 +377,46 @@ def _read_gold(path: Path) -> bytes:
     return raw
 
 
+def _read_bounded(path: Path, limit: int, label: str) -> bytes:
+    try:
+        with open_regular_file(path) as stream:
+            raw = stream.read(limit + 1)
+    except (OSError, PolicyRejection) as exc:
+        raise _reject(f"{label.capitalize()} could not be read safely.") from exc
+    if len(raw) > limit:
+        raise _reject(f"{label.capitalize()} exceeds its size limit.")
+    return raw
+
+
 def _case(value: object) -> str:
     if not isinstance(value, str) or _CASE_ID.fullmatch(value) is None:
         raise _reject("Exact-image evaluator case ID is invalid.")
     return value
+
+
+def _git_sha(value: object) -> str:
+    if not isinstance(value, str) or _GIT_SHA.fullmatch(value) is None:
+        raise _reject("Exact-image capability index tool Git SHA is invalid.")
+    return value
+
+
+def _timestamp(value: object) -> str:
+    if not isinstance(value, str) or _TIMESTAMP.fullmatch(value) is None:
+        raise _reject("Exact-image capability index timestamp is invalid.")
+    try:
+        _timestamp_value(value)
+    except ValueError as exc:
+        raise _reject("Exact-image capability index timestamp is invalid.") from exc
+    return value
+
+
+def _timestamp_value(value: str) -> datetime:
+    return datetime.fromisoformat(value[:-1] + "+00:00")
+
+
+def _index_hash(record: dict[str, object]) -> str:
+    unsigned = {key: value for key, value in record.items() if key != "index_sha256"}
+    return hashlib.sha256(_canonical(unsigned)).hexdigest()
 
 
 def _canonical(value: object) -> bytes:

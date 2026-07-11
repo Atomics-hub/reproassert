@@ -5,9 +5,12 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import jsonschema
 import pytest
+from click.testing import CliRunner
 
 import reproassert.benchmark_v02_exact_capability as capability
+import reproassert.cli as cli
 from reproassert.benchmark_v02_instance_controller import GoldSmokeReceipt
 from reproassert.benchmark_v02_instance_runtime import (
     InstanceRuntime,
@@ -15,6 +18,7 @@ from reproassert.benchmark_v02_instance_runtime import (
     load_instance_runtime_manifest,
 )
 from reproassert.benchmark_v02_package import VerifiedV02EvaluatorCapability
+from reproassert.cli import main
 from reproassert.errors import PolicyRejection
 
 
@@ -177,3 +181,107 @@ def test_issuer_rejects_tampered_denominator_and_hidden_commitment(
             verified_hidden=hidden,  # type: ignore[arg-type]
             case_id="rk-v0.2-001",
         )
+
+
+def test_capability_index_persists_20_redacted_commitments_not_authority(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest, manifest_sha, gold, hidden = _inputs(tmp_path)
+    _install_verifiers(monkeypatch, gold)
+    hidden_receipt = tmp_path / "hidden.json"
+    hidden_receipt.write_text("{}")
+    monkeypatch.setattr(capability, "verify_v02_hidden_gold", lambda _path: hidden)
+    output = tmp_path / "capability-index.json"
+
+    verified = capability.prepare_v02_exact_image_capability_index(
+        manifest_path=manifest,
+        expected_manifest_sha256=manifest_sha,
+        gold_smoke_receipt_path=gold,
+        hidden_extraction_receipt=hidden_receipt,
+        prepared_at="2026-07-11T09:00:00Z",
+        tool_git_sha="a" * 40,
+        output_path=output,
+    )
+
+    assert verified.runtime_attested_count == 20
+    assert verified.evaluator_preflight_ready_count == 19
+    assert verified.infrastructure_failure_count == 1
+    record = json.loads(output.read_text())
+    assert record["claims"]["nominal_authority_serialized"] is False
+    assert record["cases"][13]["status"] == ("runtime_attested_gold_smoke_infrastructure_failure")
+    assert len({row["evaluator_public_commitment_sha256"] for row in record["cases"]}) == 20
+    public_schema = Path("schemas/benchmark-v02-exact-image-capability-index.schema.json")
+    packaged_schema = Path(
+        "src/reproassert/schemas/benchmark-v02-exact-image-capability-index.schema.json"
+    )
+    assert public_schema.read_bytes() == packaged_schema.read_bytes()
+    jsonschema.validate(record, json.loads(public_schema.read_text()))
+
+    record["cases"][0]["evaluator_public_commitment_sha256"] = "0" * 64
+    record["index_sha256"] = capability._index_hash(record)
+    output.write_bytes(capability._canonical(record) + b"\n")
+    with pytest.raises(PolicyRejection, match="freshly verified"):
+        capability.verify_v02_exact_image_capability_index(
+            output,
+            manifest_path=manifest,
+            expected_manifest_sha256=manifest_sha,
+            gold_smoke_receipt_path=gold,
+            hidden_extraction_receipt=hidden_receipt,
+        )
+
+
+def test_capability_index_cli_prepares_and_verifies(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    inputs = []
+    for name in ("manifest.json", "gold.json", "hidden.json", "index.json"):
+        path = tmp_path / name
+        path.write_text("{}")
+        inputs.append(path)
+    manifest, gold, hidden, index = inputs
+    verified = capability.VerifiedV02ExactImageCapabilityIndex(
+        path=index,
+        sha256="a" * 64,
+        case_count=20,
+        runtime_attested_count=20,
+        evaluator_preflight_ready_count=19,
+        infrastructure_failure_count=1,
+    )
+    monkeypatch.setattr(cli, "prepare_v02_exact_image_capability_index", lambda **_kwargs: verified)
+    monkeypatch.setattr(
+        cli, "verify_v02_exact_image_capability_index", lambda *_args, **_kwargs: verified
+    )
+    common = [
+        "--instance-runtime-manifest",
+        str(manifest),
+        "--expected-manifest-sha256",
+        "b" * 64,
+        "--gold-smoke-receipt",
+        str(gold),
+        "--hidden-extraction-receipt",
+        str(hidden),
+    ]
+    runner = CliRunner()
+    prepared = runner.invoke(
+        main,
+        [
+            "benchmark",
+            "prepare-v02-exact-capabilities",
+            *common,
+            "--prepared-at",
+            "2026-07-11T09:00:00Z",
+            "--tool-git-sha",
+            "a" * 40,
+            "--output",
+            str(tmp_path / "output.json"),
+        ],
+    )
+    assert prepared.exit_code == 0, prepared.output
+    assert json.loads(prepared.output)["runtime_attested_count"] == 20
+
+    checked = runner.invoke(
+        main,
+        ["benchmark", "verify-v02-exact-capabilities", str(index), *common],
+    )
+    assert checked.exit_code == 0, checked.output
+    assert json.loads(checked.output)["verified"] is True

@@ -277,6 +277,10 @@ def test_schema_command_prints_preparation_receipt_schemas() -> None:
             "benchmark-v02-exact-image-authorization",
             "benchmark-v02-exact-image-authorization.schema.json",
         ),
+        (
+            "benchmark-v02-exact-image-capability-index",
+            "benchmark-v02-exact-image-capability-index.schema.json",
+        ),
         ("dependency-execution-receipt", "dependency-execution-receipt.schema.json"),
     ):
         result = CliRunner().invoke(main, ["schema", "--name", name])

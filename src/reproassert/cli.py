@@ -47,6 +47,10 @@ from reproassert.benchmark_v02_chronology import (
     prepare_v02_chronology_evidence,
     verify_v02_chronology_evidence,
 )
+from reproassert.benchmark_v02_exact_capability import (
+    prepare_v02_exact_image_capability_index,
+    verify_v02_exact_image_capability_index,
+)
 from reproassert.benchmark_v02_execution_freeze import (
     authorize_v02_exact_image_execution,
     exact_approval_statement,
@@ -577,6 +581,95 @@ def benchmark_verify_v02_hidden_gold(preparation_receipt: Path) -> None:
             sort_keys=True,
         )
     )
+
+
+@benchmark_group.command("prepare-v02-exact-capabilities")
+@click.option(
+    "--instance-runtime-manifest",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option("--expected-manifest-sha256", required=True)
+@click.option(
+    "--gold-smoke-receipt",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--hidden-extraction-receipt",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option("--prepared-at", required=True)
+@click.option("--tool-git-sha", required=True)
+@click.option("--output", type=click.Path(path_type=Path, dir_okay=False), required=True)
+def benchmark_prepare_v02_exact_capabilities(
+    instance_runtime_manifest: Path,
+    expected_manifest_sha256: str,
+    gold_smoke_receipt: Path,
+    hidden_extraction_receipt: Path,
+    prepared_at: str,
+    tool_git_sha: str,
+    output: Path,
+) -> None:
+    """Persist 20 exact-image commitments while keeping authority process-local."""
+
+    try:
+        _ensure_private_output_root(output.parent)
+        verified = prepare_v02_exact_image_capability_index(
+            manifest_path=instance_runtime_manifest,
+            expected_manifest_sha256=expected_manifest_sha256,
+            gold_smoke_receipt_path=gold_smoke_receipt,
+            hidden_extraction_receipt=hidden_extraction_receipt,
+            prepared_at=prepared_at,
+            tool_git_sha=tool_git_sha,
+            output_path=output,
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(json.dumps(asdict(verified), indent=2, sort_keys=True, default=str))
+
+
+@benchmark_group.command("verify-v02-exact-capabilities")
+@click.argument("index", type=click.Path(path_type=Path, exists=True, dir_okay=False))
+@click.option(
+    "--instance-runtime-manifest",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option("--expected-manifest-sha256", required=True)
+@click.option(
+    "--gold-smoke-receipt",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--hidden-extraction-receipt",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+def benchmark_verify_v02_exact_capabilities(
+    index: Path,
+    instance_runtime_manifest: Path,
+    expected_manifest_sha256: str,
+    gold_smoke_receipt: Path,
+    hidden_extraction_receipt: Path,
+) -> None:
+    """Rederive a redacted exact-image capability commitment index."""
+
+    try:
+        verified = verify_v02_exact_image_capability_index(
+            index,
+            manifest_path=instance_runtime_manifest,
+            expected_manifest_sha256=expected_manifest_sha256,
+            gold_smoke_receipt_path=gold_smoke_receipt,
+            hidden_extraction_receipt=hidden_extraction_receipt,
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    result = asdict(verified)
+    result["verified"] = True
+    click.echo(json.dumps(result, indent=2, sort_keys=True, default=str))
 
 
 @benchmark_group.command("capture-v02-chronology")
