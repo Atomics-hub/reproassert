@@ -5,7 +5,7 @@ import hashlib
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from click.testing import CliRunner
@@ -71,6 +71,62 @@ def _cases() -> list[PreregisteredV02Case]:
         )
         for index in range(1, 21)
     ]
+
+
+def _exact_preregistration(cases: list[PreregisteredV02Case]) -> dict[str, Any]:
+    rows: list[dict[str, Any]] = []
+    for index, case in enumerate(cases, start=1):
+        contract = v02_candidate_contract(case_id=case.id, issue_number=index)
+        row: dict[str, Any] = {
+            "base_sha": case.base_sha,
+            "candidate_profile": contract.profile,
+            "case_id": case.id,
+            "difficulty": case.difficulty,
+            "evaluator_commitment_sha256": case.evaluator_commitment_sha256,
+            "evaluator_status": (
+                "runtime_attested_gold_smoke_infrastructure_failure"
+                if index == 14
+                else "runtime_attested_evaluator_preflight_ready"
+            ),
+            "generator_projection_sha256": case.generator_projection_sha256,
+            "instance_id": f"instance-{index:03d}",
+            "issue_url": case.issue_url,
+            "mapping_selected_hunks_sha256": f"{index + 2100:064x}",
+            "outbound_request_sha256": f"{index + 2200:064x}",
+            "rendered_input_sha256": f"{index + 2300:064x}",
+            "repo": case.repo,
+            "request_envelope_sha256": f"{index + 2400:064x}",
+            "smoke": case.smoke,
+            "source_projection_commitment_sha256": case.source_context_sha256,
+            "test_command_profile": (
+                "sympy-bin-test-v1" if contract.profile == "sympy-native-v1" else "pytest-v1"
+            ),
+        }
+        row["case_commitment_sha256"] = campaign._json_sha256(row)
+        rows.append(row)
+    record: dict[str, Any] = {
+        "algorithm": "reproassert-v02-exact-image-preregistration-v1",
+        "benchmark_version": "0.2",
+        "case_count": 20,
+        "case_set_sha256": campaign._json_sha256(
+            {
+                "algorithm": "reproassert-v02-exact-preregistered-case-set-v1",
+                "case_commitments": [row["case_commitment_sha256"] for row in rows],
+            }
+        ),
+        "cases": rows,
+        "claims": {},
+        "cohort_sha256": "a" * 64,
+        "evidence": {},
+        "frozen_at": AT,
+        "policy": {},
+        "request_set_sha256": "b" * 64,
+        "schema_version": "1.0.0",
+        "status": "frozen_preinference_exact_image",
+        "tool_git_sha": "1" * 40,
+    }
+    record["preregistration_sha256"] = campaign._json_sha256(record)
+    return record
 
 
 def _write(path: Path, value: object, *, canonical: bool = True) -> None:
@@ -297,7 +353,9 @@ def _semantic_review(
     )
 
 
-def _prepare(tmp_path: Path, *, no_candidate: set[int] | None = None) -> _Artifacts:
+def _prepare(
+    tmp_path: Path, *, no_candidate: set[int] | None = None, exact: bool = False
+) -> _Artifacts:
     tmp_path.mkdir(parents=True, exist_ok=True)
     tmp_path.chmod(0o700)
     no_candidate = no_candidate or {20}
@@ -305,7 +363,9 @@ def _prepare(tmp_path: Path, *, no_candidate: set[int] | None = None) -> _Artifa
     preregistration = tmp_path / "preregistration.json"
     _write(
         preregistration,
-        build_v02_preregistration(
+        _exact_preregistration(cases)
+        if exact
+        else build_v02_preregistration(
             cases,
             frozen_at=AT,
             tool_name="reproassert",
@@ -399,7 +459,11 @@ def _prepare(tmp_path: Path, *, no_candidate: set[int] | None = None) -> _Artifa
                     "artifact_path": "generation-transaction.json",
                     "generation_artifact_sha256": f"{index + 700:064x}",
                     "generation_artifact_bytes": candidate["bytes"] + 100,
-                    "test_function": f"test_issue_{index}_reproduction",
+                    "test_function": v02_candidate_contract(
+                        case_id=case.id, issue_number=index
+                    ).test_function
+                    if exact
+                    else f"test_issue_{index}_reproduction",
                     "generation_call_id": f"call_{index:032x}",
                     "oracle_consulted": False,
                     "submitted_at": DISPOSITION_AT,
@@ -483,10 +547,14 @@ def _prepare(tmp_path: Path, *, no_candidate: set[int] | None = None) -> _Artifa
                     "evidence": {},
                 },
             )
-        mechanical = index <= 6
+        mechanical = index <= 6 and not exact
         outcome = (
             "no_output"
             if candidate is None
+            else "benchmark_infrastructure_error"
+            if exact and index == 14
+            else "rejected_reproduction"
+            if exact
             else "differential_reproduction"
             if mechanical
             else "fail_on_fix"
@@ -494,6 +562,8 @@ def _prepare(tmp_path: Path, *, no_candidate: set[int] | None = None) -> _Artifa
         claim = (
             "rejected"
             if candidate is None
+            else "rejected"
+            if exact
             else "differential_reproduction"
             if mechanical
             else "repeatable_base_failure"
@@ -519,6 +589,31 @@ def _prepare(tmp_path: Path, *, no_candidate: set[int] | None = None) -> _Artifa
                     "image_id": None,
                 },
                 "semantic_status": "not_reviewed_mechanical_result_only",
+            }
+        )
+        exact_evaluation = (
+            {
+                "accepted": False,
+                "classification": "no_output",
+                "kind": "no_candidate",
+                "reason": "generation_produced_no_candidate",
+                "receipt_sha256": None,
+            }
+            if candidate is None
+            else {
+                "accepted": False,
+                "classification": "network_dependency",
+                "kind": "infrastructure_failure",
+                "reason": "network_required_but_sandbox_network_is_disabled",
+                "receipt_sha256": None,
+            }
+            if index == 14
+            else {
+                "accepted": False,
+                "classification": "rejected_reproduction",
+                "kind": "exact_image_receipt",
+                "reason": None,
+                "receipt_sha256": f"{index + 2500:064x}",
             }
         )
         costs = {name: 1 for name in campaign._COST_CATEGORIES}
@@ -576,10 +671,56 @@ def _prepare(tmp_path: Path, *, no_candidate: set[int] | None = None) -> _Artifa
                 "private_result_commitment": "withheld_until_campaign_terminal",
             },
         }
+        if exact:
+            assert candidate is None or isinstance(candidate, dict)
+            exact_candidate = (
+                None
+                if candidate is None
+                else {
+                    "bytes": candidate["bytes"],
+                    "path": candidate["path"],
+                    "sha256": candidate["sha256"],
+                    "test_function": v02_candidate_contract(
+                        case_id=case.id, issue_number=index
+                    ).test_function,
+                }
+            )
+            exact_common = {
+                "algorithm": campaign.EXACT_RESULT_ALGORITHM,
+                "attempt_id": attempt_id,
+                "benchmark_version": "0.2",
+                "campaign_id": freeze.campaign_id,
+                "candidate": exact_candidate,
+                "case": asdict(case),
+                "claims": {
+                    "causal_controls_complete": False,
+                    "hidden_bytes_emitted": False,
+                    "network_enabled": False,
+                    "provider_calls_during_evaluation": 0,
+                    "semantic_review_complete": False,
+                },
+                "cost": {"complete": True, "total_attributable_microusd": 4},
+                "evaluation": exact_evaluation,
+                "exact_case_commitment_sha256": _exact_preregistration(cases)["cases"][
+                    index - 1
+                ]["case_commitment_sha256"],
+                "exact_preregistration_sha256": freeze.preregistration_sha256,
+                "ledger_head_before_result_sha256": f"{index + 1000:064x}",
+                "runner_input_sha256": f"{index + 500:064x}",
+                "schema_version": "1.0.0",
+            }
+            private = {**exact_common, "visibility": "private_controller_only"}
+            public = {**exact_common, "visibility": "public_safe_embargoed"}
         directory = attempts_root / case.id
         directory.mkdir(mode=0o700)
-        private_path = directory / campaign.PRIVATE_RESULT_FILENAME
-        public_path = directory / campaign.EMBARGOED_RESULT_FILENAME
+        private_path = directory / (
+            campaign.EXACT_PRIVATE_RESULT_FILENAME if exact else campaign.PRIVATE_RESULT_FILENAME
+        )
+        public_path = directory / (
+            campaign.EXACT_EMBARGOED_RESULT_FILENAME
+            if exact
+            else campaign.EMBARGOED_RESULT_FILENAME
+        )
         _write(private_path, private)
         _write(public_path, public)
         private_records[case.id] = private
@@ -643,7 +784,11 @@ def _prepare(tmp_path: Path, *, no_candidate: set[int] | None = None) -> _Artifa
             continue
         evaluation = private_records[case.id]["evaluation"]
         assert isinstance(evaluation, dict)
-        fixed_evidence = campaign._fixed_pass_evidence_sha256(evaluation)
+        fixed_evidence = (
+            cast(str, private_records[case.id]["exact_case_commitment_sha256"])
+            if exact and index == 14
+            else campaign._fixed_pass_evidence_sha256(evaluation)
+        )
         decoy_id = "decoy_alternative_fix"
         controls = (
             _control_run(
@@ -718,6 +863,19 @@ def _prepare(tmp_path: Path, *, no_candidate: set[int] | None = None) -> _Artifa
                 )
             )
             continue
+        if exact and index == 14:
+            review_cases.append(
+                campaign.V02SemanticReviewCase(
+                    case_id=case.id,
+                    candidate_sha256=None,
+                    causal_control_receipt_sha256=control_receipt,
+                    reviewer_role_seal_sha256=None,
+                    mapping_reviewer_ids=(),
+                    authorized_semantic_reviewer_ids=(),
+                    reviews=(),
+                )
+            )
+            continue
         evaluation = private_records[case.id]["evaluation"]
         assert isinstance(evaluation, dict)
         fixed_evidence = campaign._fixed_pass_evidence_sha256(evaluation)
@@ -753,9 +911,7 @@ def _prepare(tmp_path: Path, *, no_candidate: set[int] | None = None) -> _Artifa
             )
         )
     review_path = tmp_path / "semantic-reviews.json"
-    _write(
-        review_path,
-        campaign.build_v02_semantic_review_set(
+    review_set = campaign.build_v02_semantic_review_set(
             freeze_path,
             preregistration,
             review_cases,
@@ -763,8 +919,23 @@ def _prepare(tmp_path: Path, *, no_candidate: set[int] | None = None) -> _Artifa
             tool_name="reproassert",
             tool_version="0.2-test",
             tool_git_sha="1" * 40,
-        ),
-    )
+        )
+    if exact:
+        infrastructure = review_set["cases"][13]
+        infrastructure.update(
+            {
+                "candidate_sha256": candidates[cases[13].id]["sha256"],
+                "status": "not_applicable_infrastructure_failure",
+                "consensus_verdict": "inconclusive",
+            }
+        )
+        infrastructure["review_case_sha256"] = campaign._self_hash(
+            infrastructure, "review_case_sha256"
+        )
+        review_set["review_set_sha256"] = campaign._self_hash(
+            review_set, "review_set_sha256"
+        )
+    _write(review_path, review_set)
     return _Artifacts(
         preregistration=preregistration,
         freeze_path=freeze_path,
@@ -928,6 +1099,39 @@ def test_campaign_finalizes_exact_20_with_abstention_and_rerunnable_public_proof
     # Exact existing bytes are then accepted idempotently.
     rerun = _finalize(artifacts, monkeypatch)
     assert rerun == result
+
+
+def test_exact_campaign_finalizes_20_mixed_profiles_and_rejects_tampering(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    artifacts = _prepare(tmp_path / "exact", exact=True, no_candidate={20})
+    result = _finalize(artifacts, monkeypatch)
+    public = json.loads(result.public_path.read_text())
+
+    assert len(public["cases"]) == 20
+    assert public["summary"]["candidate_count"] == 19
+    assert public["summary"]["mechanical_differential_count"] == 0
+    assert public["cases"][13]["mechanical_outcome"] == "benchmark_infrastructure_error"
+    assert public["cases"][13]["semantic_review_evidence"]["reviewer_count"] == 0
+    assert public["cases"][19]["candidate_status"] == "no_candidate"
+    sympy = public["cases"][15]["reproduction"]
+    assert "bin/test " in sympy["test_command"]
+    assert "junit" not in json.dumps(sympy).lower()
+
+    artifacts.output_root = tmp_path / "tampered-output"
+    artifacts.output_root.mkdir(mode=0o700)
+    record = artifacts.private_records["rk-v0.2-011"]
+    record["exact_case_commitment_sha256"] = "f" * 64
+    path = artifacts.attempts_root / "rk-v0.2-011" / campaign.EXACT_PRIVATE_RESULT_FILENAME
+    _write(path, record)
+    terminal = next(
+        event
+        for event in artifacts.events
+        if event["case_id"] == "rk-v0.2-011" and event["event_type"] == "attempt_finished"
+    )
+    terminal["payload"]["private_result_sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
+    with pytest.raises(PolicyRejection, match="exact result binding"):
+        _finalize(artifacts, monkeypatch)
 
 
 def test_emitted_campaign_artifacts_and_event_rows_match_strict_bundled_schemas(

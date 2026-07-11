@@ -343,6 +343,19 @@ def verify_exact_image_causal_control_receipt(path: Path) -> StructuralExactCaus
     return StructuralExactCausalControlReceipt(path, hashlib.sha256(raw).hexdigest(), case_id)
 
 
+def require_exact_causal_control_execution(
+    value: object,
+) -> VerifiedExactCausalControlExecution:
+    """Require the live authority issued by the production exact-image executor."""
+
+    if (
+        type(value) is not VerifiedExactCausalControlExecution
+        or value._issuer is not _EXECUTION_ISSUER
+    ):
+        raise _reject("Fresh executor-issued exact causal-control authority is required.")
+    return value
+
+
 def _run_control(
     *,
     name: Control,
