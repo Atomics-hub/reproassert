@@ -231,6 +231,10 @@ def _derive_index(
     if _timestamp_value(timestamp) > datetime.now(timezone.utc):
         raise _reject("Exact-image capability index cannot be future-dated.")
     producer_sha = _git_sha(tool_git_sha)
+    if amendment_authority is not None:
+        amendment = require_v02_benchmark_amendment(amendment_authority)
+        if amendment.tool_git_sha != producer_sha:
+            raise _reject("Benchmark amendment and capability index tool Git SHAs differ.")
     hidden = verify_v02_hidden_gold(hidden_extraction_receipt)
     rows: list[dict[str, object]] = []
     for number in range(1, 21):

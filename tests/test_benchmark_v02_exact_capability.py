@@ -139,6 +139,7 @@ def _amendment_authority(
         "review_status": "pending",
         "reviewer_ids": (),
         "provider_calls": 0,
+        "tool_git_sha": "a" * 40,
         "_issuer": amendment._ISSUER,
     }
     for name, field_value in fields.items():
@@ -321,6 +322,23 @@ def test_all_twenty_authority_rejects_unreviewed_gold_specs(
             gold_smoke_receipt_path=gold,
             verified_hidden=hidden,  # type: ignore[arg-type]
             case_id="rk-v0.2-014",
+        )
+
+
+def test_capability_index_rejects_stale_amendment_tool_revision(tmp_path: Path) -> None:
+    manifest, manifest_sha, gold, hidden = _inputs(tmp_path, all_ready=True)
+    authority = _amendment_authority(manifest_sha, gold, hidden)
+    object.__setattr__(authority, "tool_git_sha", "b" * 40)
+
+    with pytest.raises(PolicyRejection, match="tool Git SHAs differ"):
+        capability._derive_index(
+            manifest_path=manifest,
+            expected_manifest_sha256=manifest_sha,
+            gold_smoke_receipt_path=gold,
+            hidden_extraction_receipt=tmp_path / "hidden.json",
+            prepared_at="2026-07-11T09:00:00Z",
+            tool_git_sha="a" * 40,
+            amendment_authority=authority,
         )
 
 

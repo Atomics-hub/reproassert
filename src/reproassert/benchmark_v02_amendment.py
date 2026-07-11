@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import cast
 
-from reproassert.benchmark_v02_hidden import verify_v02_hidden_gold
+from reproassert.benchmark_v02_hidden import hidden_case_artifacts, verify_v02_hidden_gold
 from reproassert.benchmark_v02_instance_controller import (
     MAX_GOLD_SMOKE_RECEIPT_BYTES,
     MAX_GOLD_SPECS_BYTES,
@@ -18,7 +18,10 @@ from reproassert.benchmark_v02_instance_controller import (
     _load_gold_specs,
     verify_instance_gold_smoke_receipt,
 )
-from reproassert.benchmark_v02_instance_runtime import load_instance_runtime_manifest
+from reproassert.benchmark_v02_instance_runtime import (
+    InstanceRuntime,
+    load_instance_runtime_manifest,
+)
 from reproassert.errors import PolicyRejection
 from reproassert.safeio import open_regular_file, require_private_directory, write_bytes_exclusive
 
@@ -32,7 +35,6 @@ MAX_AMENDMENT_RECEIPT_BYTES = 128 * 1024
 _GIT_SHA = re.compile(r"[0-9a-f]{40}\Z")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _TIMESTAMP = re.compile(r"20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?Z\Z")
-_REVIEWER = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.@-]{2,127}\Z")
 _ISSUER = object()
 
 
@@ -48,6 +50,7 @@ class VerifiedV02BenchmarkAmendment:
     amended_gold_smoke_receipt_sha256: str
     review_status: str
     reviewer_ids: tuple[str, ...]
+    tool_git_sha: str
     provider_calls: int
     _issuer: object = field(repr=False, compare=False)
 
@@ -244,6 +247,7 @@ def verify_v02_benchmark_amendment(
         "amended_gold_smoke_receipt_sha256": expected_evidence["amended_gold_smoke_receipt_sha256"],
         "review_status": status,
         "reviewer_ids": reviewers,
+        "tool_git_sha": cast(str, record["tool_git_sha"]),
         "provider_calls": 0,
         "_issuer": _ISSUER,
     }.items():
@@ -304,15 +308,13 @@ def _verify_private_inputs(
         raise _reject("Original smoke changed after verification.")
     if hashlib.sha256(new_raw).hexdigest() != new_verified.sha256:
         raise _reject("Amended smoke changed after verification.")
-    old = cast(dict[str, object], json.loads(old_raw))
-    new = cast(dict[str, object], json.loads(new_raw))
-    _verify_smoke_pair(old, new, manifest_sha)
-
     verified_hidden = verify_v02_hidden_gold(hidden_extraction_receipt)
     hidden_raw = _read(hidden_extraction_receipt, 512 * 1024, "hidden extraction receipt")
     hidden_sha = hashlib.sha256(hidden_raw).hexdigest()
     if hidden_sha != verified_hidden.prepared.receipt_sha256:
         raise _reject("Hidden extraction receipt changed after verification.")
+    old = cast(dict[str, object], json.loads(old_raw))
+    new = cast(dict[str, object], json.loads(new_raw))
     old_inputs = cast(dict[str, object], old["inputs"])
     if old_inputs["hidden_extraction_receipt_sha256"] != hidden_sha:
         raise _reject("Smoke receipts do not bind the supplied hidden extraction receipt.")
@@ -322,6 +324,29 @@ def _verify_private_inputs(
         raise _reject("Hidden extraction receipt is invalid JSON.") from exc
     hidden_commitment = _sha256(
         hidden_record.get("receipt_sha256"), "hidden extraction internal commitment"
+    )
+    specs_by_instance = {spec.instance_id: spec for spec in original_specs}
+    amended_by_instance = {spec.instance_id: spec for spec in amended_specs}
+    hidden_bindings = {
+        entry.case_id: _hidden_binding(hidden_case_artifacts(verified_hidden, entry.case_id))
+        for entry in manifest.entries
+    }
+    target_counts = {
+        entry.case_id: (
+            len(specs_by_instance[entry.instance_id].fail_to_pass),
+            len(specs_by_instance[entry.instance_id].pass_to_pass),
+            len(amended_by_instance[entry.instance_id].fail_to_pass),
+            len(amended_by_instance[entry.instance_id].pass_to_pass),
+        )
+        for entry in manifest.entries
+    }
+    _verify_smoke_pair(
+        old,
+        new,
+        manifest_sha,
+        manifest_entries=manifest.entries,
+        hidden_bindings=hidden_bindings,
+        target_counts=target_counts,
     )
     return {
         "amended_executed_at": new["executed_at"],
@@ -363,7 +388,15 @@ def _verify_spec_delta(
         raise _reject("Gold-spec amendment must change exactly psf__requests-1921.")
 
 
-def _verify_smoke_pair(old: dict[str, object], new: dict[str, object], manifest_sha: str) -> None:
+def _verify_smoke_pair(
+    old: dict[str, object],
+    new: dict[str, object],
+    manifest_sha: str,
+    *,
+    manifest_entries: tuple[InstanceRuntime, ...],
+    hidden_bindings: dict[str, dict[str, object]],
+    target_counts: dict[str, tuple[int, int, int, int]],
+) -> None:
     for record, specs_sha, counts in (
         (old, LEGACY_GOLD_SPECS_SHA256, (19, 1)),
         (new, AMENDED_GOLD_SPECS_SHA256, (20, 0)),
@@ -402,21 +435,73 @@ def _verify_smoke_pair(old: dict[str, object], new: dict[str, object], manifest_
     new_time = _timestamp(cast(str, new["executed_at"]))
     if new_time <= old_time:
         raise _reject("Amended gold smoke must chronologically follow original smoke.")
+    old_rows = old.get("results")
+    new_rows = new.get("results")
+    if not isinstance(old_rows, list) or not isinstance(new_rows, list):
+        raise _reject("Gold-smoke pair lacks ordered per-case results.")
+    expected_cases = [f"rk-v0.2-{number:03d}" for number in range(1, 21)]
+    for rows in (old_rows, new_rows):
+        if [
+            row.get("case_id") if isinstance(row, dict) else None for row in rows
+        ] != expected_cases:
+            raise _reject("Gold-smoke pair result ordering is invalid.")
+    if len(manifest_entries) != 20:
+        raise _reject("Gold-smoke pair manifest denominator is invalid.")
+    for entry, old_row_value, new_row_value in zip(
+        manifest_entries, old_rows, new_rows, strict=True
+    ):
+        old_row = cast(dict[str, object], old_row_value)
+        new_row = cast(dict[str, object], new_row_value)
+        case_id = entry.case_id
+        common = {
+            "case_id": case_id,
+            "hidden_inputs": hidden_bindings[case_id],
+            "instance_id": entry.instance_id,
+            "selected": True,
+            "test_command_profile": entry.test_command_profile,
+        }
+        for name, expected in common.items():
+            if old_row.get(name) != expected or new_row.get(name) != expected:
+                raise _reject(f"Gold-smoke pair case binding differs for {case_id}.")
+        old_fail, old_pass, new_fail, new_pass = target_counts[case_id]
+        if old_row.get("test_counts") != {
+            "fail_to_pass": old_fail,
+            "pass_to_pass_not_executed": old_pass,
+        } or new_row.get("test_counts") != {
+            "fail_to_pass": new_fail,
+            "pass_to_pass_not_executed": new_pass,
+        }:
+            raise _reject(f"Gold-smoke target counts differ for {case_id}.")
+        expected_old = (
+            ("infrastructure_failure", "network_dependency")
+            if case_id == AMENDED_CASE_ID
+            else ("semantic_valid", "fails_on_base_passes_on_fixed")
+        )
+        if (
+            old_row.get("classification"),
+            old_row.get("reason"),
+        ) != expected_old or (
+            new_row.get("classification"),
+            new_row.get("reason"),
+        ) != ("semantic_valid", "fails_on_base_passes_on_fixed"):
+            raise _reject(f"Gold-smoke per-case transition is invalid for {case_id}.")
+
+
+def _hidden_binding(refs: dict[str, dict[str, object]]) -> dict[str, object]:
+    return {
+        "developer_tests_bytes": refs["developer_tests"]["bytes"],
+        "developer_tests_sha256": refs["developer_tests"]["sha256"],
+        "production_patch_bytes": refs["production_patch"]["bytes"],
+        "production_patch_sha256": refs["production_patch"]["sha256"],
+    }
 
 
 def _review(status: object, reviewer_ids: tuple[object, ...]) -> tuple[str, tuple[str, ...]]:
     if status == "pending" and reviewer_ids == ():
         return "pending", ()
-    if status != "approved" or len(reviewer_ids) not in {2, 3}:
-        raise _reject(
-            "Amendment review must be pending with no IDs or approved by two or three reviewers."
-        )
-    checked = tuple(
-        value for value in reviewer_ids if isinstance(value, str) and _REVIEWER.fullmatch(value)
+    raise _reject(
+        "Amendment approval cannot be caller-declared; a genuine consensus artifact is required."
     )
-    if len(checked) != len(reviewer_ids) or checked != tuple(sorted(set(checked))):
-        raise _reject("Amendment reviewer IDs must be unique, sorted, and valid.")
-    return "approved", checked
 
 
 def _read(path: Path, limit: int, label: str) -> bytes:

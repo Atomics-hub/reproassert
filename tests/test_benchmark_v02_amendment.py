@@ -34,6 +34,33 @@ def _amended_specs(original: tuple[GoldSmokeSpec, ...]) -> tuple[GoldSmokeSpec, 
 
 
 def _smoke(*, amended: bool, manifest_sha: str, hidden_sha: str) -> dict[str, object]:
+    hidden_binding = {
+        "developer_tests_bytes": 5,
+        "developer_tests_sha256": "1" * 64,
+        "production_patch_bytes": 3,
+        "production_patch_sha256": "2" * 64,
+    }
+    results = []
+    for number in range(1, 21):
+        case_id = f"rk-v0.2-{number:03d}"
+        old_infra = number == 14 and not amended
+        results.append(
+            {
+                "case_id": case_id,
+                "classification": "infrastructure_failure" if old_infra else "semantic_valid",
+                "hidden_inputs": hidden_binding,
+                "instance_id": (
+                    amendment.AMENDED_INSTANCE_ID if number == 14 else f"org__repo-{number}"
+                ),
+                "reason": ("network_dependency" if old_infra else "fails_on_base_passes_on_fixed"),
+                "selected": True,
+                "test_command_profile": "pytest-v1",
+                "test_counts": {
+                    "fail_to_pass": 1 if amended or number != 14 else 6,
+                    "pass_to_pass_not_executed": 1,
+                },
+            }
+        )
     return {
         "claims": {"model_or_provider_invoked": False, "provider_calls": 0},
         "counts": {
@@ -54,6 +81,7 @@ def _smoke(*, amended: bool, manifest_sha: str, hidden_sha: str) -> dict[str, ob
         },
         "policy": {"sandbox": {"network_mode": "none"}},
         "receipt_sha256": ("e" if amended else "d") * 64,
+        "results": results,
         "selection": "all",
         "status": "complete",
         "tool_git_sha": "a" * 40,
@@ -80,7 +108,11 @@ def _installed_inputs(
     )
     manifest_sha = "b" * 64
     entries = tuple(
-        SimpleNamespace(case_id=f"rk-v0.2-{number:03d}", instance_id=spec.instance_id)
+        SimpleNamespace(
+            case_id=f"rk-v0.2-{number:03d}",
+            instance_id=spec.instance_id,
+            test_command_profile="pytest-v1",
+        )
         for number, spec in enumerate(original_specs, start=1)
     )
     monkeypatch.setattr(
@@ -129,7 +161,40 @@ def _installed_inputs(
         "verify_v02_hidden_gold",
         lambda _path: SimpleNamespace(prepared=SimpleNamespace(receipt_sha256=hidden_sha)),
     )
+    monkeypatch.setattr(
+        amendment,
+        "hidden_case_artifacts",
+        lambda _hidden, _case: {
+            "developer_tests": {"bytes": 5, "sha256": "1" * 64},
+            "production_patch": {"bytes": 3, "sha256": "2" * 64},
+        },
+    )
     return paths, manifest_sha
+
+
+def _pair_context() -> dict[str, object]:
+    specs = _specs()
+    entries = tuple(
+        SimpleNamespace(
+            case_id=f"rk-v0.2-{number:03d}",
+            instance_id=spec.instance_id,
+            test_command_profile="pytest-v1",
+        )
+        for number, spec in enumerate(specs, start=1)
+    )
+    hidden = {
+        f"rk-v0.2-{number:03d}": {
+            "developer_tests_bytes": 5,
+            "developer_tests_sha256": "1" * 64,
+            "production_patch_bytes": 3,
+            "production_patch_sha256": "2" * 64,
+        }
+        for number in range(1, 21)
+    }
+    counts = {
+        f"rk-v0.2-{number:03d}": (6 if number == 14 else 1, 1, 1, 1) for number in range(1, 21)
+    }
+    return {"manifest_entries": entries, "hidden_bindings": hidden, "target_counts": counts}
 
 
 def _prepare(
@@ -230,7 +295,27 @@ def test_smoke_pair_rejects_swaps_tool_time_and_policy(mutation: str, message: s
     else:
         new["claims"]["provider_calls"] = 1  # type: ignore[index]
     with pytest.raises(PolicyRejection, match=message):
-        amendment._verify_smoke_pair(old, new, manifest_sha)
+        amendment._verify_smoke_pair(old, new, manifest_sha, **_pair_context())  # type: ignore[arg-type]
+
+
+def test_smoke_pair_rejects_aggregate_preserving_infrastructure_case_swap() -> None:
+    manifest_sha = "b" * 64
+    old = _smoke(amended=False, manifest_sha=manifest_sha, hidden_sha="c" * 64)
+    new = _smoke(amended=True, manifest_sha=manifest_sha, hidden_sha="c" * 64)
+    rows = old["results"]
+    assert isinstance(rows, list)
+    rows[0]["classification"] = "infrastructure_failure"
+    rows[0]["reason"] = "network_dependency"
+    rows[13]["classification"] = "semantic_valid"
+    rows[13]["reason"] = "fails_on_base_passes_on_fixed"
+
+    with pytest.raises(PolicyRejection, match="per-case transition"):
+        amendment._verify_smoke_pair(
+            old,
+            new,
+            manifest_sha,
+            **_pair_context(),  # type: ignore[arg-type]
+        )
 
 
 def test_verifier_rejects_selfhash_tool_time_and_input_toctou(
@@ -283,3 +368,21 @@ def test_amendment_cli_contract_is_exposed() -> None:
         assert result.exit_code == 0, result.output
         assert "--original-gold-specs" in result.output
         assert "--amended-gold-smoke-receipt" in result.output
+
+
+def test_controller_cannot_self_mint_approved_review_from_caller_ids(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    paths, manifest_sha = _installed_inputs(tmp_path, monkeypatch)
+    output = tmp_path / "forged-approved.json"
+    with pytest.raises(PolicyRejection, match="cannot be caller-declared"):
+        amendment.prepare_v02_benchmark_amendment(
+            **paths,
+            expected_runtime_manifest_sha256=manifest_sha,
+            prepared_at="2026-07-11T15:00:00Z",
+            tool_git_sha="d" * 40,
+            review_status="approved",
+            reviewer_ids=("reviewer.alpha", "reviewer.beta"),
+            output_path=output,
+        )
+    assert not output.exists()

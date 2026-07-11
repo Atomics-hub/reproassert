@@ -12,7 +12,7 @@
     "prepared_at": {"type": "string"},
     "receipt_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "tool_git_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
-    "status": {"enum": ["provider_free_packaging_ready_review_pending", "provider_free_packaging_ready_review_approved"]},
+    "status": {"const": "provider_free_packaging_ready_review_pending"},
     "change": {
       "type": "object", "additionalProperties": false,
       "required": ["added_fail_to_pass_targets", "amended_case_id", "amended_instance_id", "fail_to_pass_after", "fail_to_pass_before", "removed_fail_to_pass_targets", "scope"],
@@ -51,7 +51,7 @@
     },
     "review": {
       "type": "object", "additionalProperties": false, "required": ["reviewer_ids", "status"],
-      "properties": {"reviewer_ids": {"type": "array", "items": {"type": "string"}, "maxItems": 3, "uniqueItems": true}, "status": {"enum": ["pending", "approved"]}}
+      "properties": {"reviewer_ids": {"type": "array", "maxItems": 0}, "status": {"const": "pending"}}
     }
   }
 }

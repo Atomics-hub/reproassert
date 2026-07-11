@@ -816,7 +816,7 @@ def _amendment_common_options(function: Callable[..., Any]) -> Callable[..., Any
 @_amendment_common_options
 @click.option("--prepared-at", required=True)
 @click.option("--tool-git-sha", required=True)
-@click.option("--review-status", type=click.Choice(("pending", "approved")), required=True)
+@click.option("--review-status", type=click.Choice(("pending",)), required=True)
 @click.option("--reviewer-id", "reviewer_ids", multiple=True)
 @click.option("--output", type=click.Path(path_type=Path, dir_okay=False), required=True)
 def benchmark_prepare_v02_amendment(

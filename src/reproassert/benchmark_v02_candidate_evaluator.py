@@ -14,7 +14,12 @@ from typing import Literal, cast
 
 from defusedxml import ElementTree
 
+from reproassert.benchmark_v02_amendment import (
+    VerifiedV02BenchmarkAmendment,
+    require_approved_v02_benchmark_amendment,
+)
 from reproassert.benchmark_v02_exact_capability import (
+    CAPABILITY_ALGORITHM_V2,
     VerifiedV02ExactImageEvaluatorCapability,
     require_v02_exact_image_evaluator_capability,
 )
@@ -257,6 +262,31 @@ def _read_regular_bounded(path: Path, limit: int, label: str) -> bytes:
     return content
 
 
+def _require_candidate_execution_authority(
+    evaluator_capability: VerifiedV02ExactImageEvaluatorCapability,
+    *,
+    amendment_authority: VerifiedV02BenchmarkAmendment | None,
+) -> VerifiedV02ExactImageEvaluatorCapability:
+    """Fail before private resolution or sandbox construction on unapproved v0.2.1 evidence."""
+
+    capability = require_v02_exact_image_evaluator_capability(evaluator_capability)
+    algorithm = getattr(capability, "capability_algorithm", None)
+    if algorithm != CAPABILITY_ALGORITHM_V2:
+        if amendment_authority is not None:
+            raise _reject("Legacy candidate execution cannot accept amendment authority.")
+        return capability
+    amendment = require_approved_v02_benchmark_amendment(amendment_authority)
+    if (
+        capability.benchmark_amendment_receipt_sha256 != amendment.receipt_sha256
+        or capability.benchmark_amendment_review_status != amendment.review_status
+        or capability.runtime_manifest_sha256 != amendment.runtime_manifest_sha256
+        or capability.hidden_extraction_receipt_sha256 != amendment.hidden_extraction_receipt_sha256
+        or capability.gold_smoke_receipt_sha256 != amendment.amended_gold_smoke_receipt_sha256
+    ):
+        raise _reject("Fresh amendment authority does not bind candidate execution evidence.")
+    return capability
+
+
 def evaluate_instance_candidate(
     *,
     evaluator_capability: VerifiedV02ExactImageEvaluatorCapability,
@@ -271,6 +301,7 @@ def evaluate_instance_candidate(
     executed_at: str,
     tool_git_sha: str,
     executor_factory: ExecutorFactory | None = None,
+    amendment_authority: VerifiedV02BenchmarkAmendment | None = None,
 ) -> CandidateEvaluationReceipt:
     """Resolve private inputs from verified authority, then evaluate one candidate.
 
@@ -280,7 +311,9 @@ def evaluate_instance_candidate(
     """
 
     evaluator_started_monotonic = time.monotonic()
-    capability = require_v02_exact_image_evaluator_capability(evaluator_capability)
+    capability = _require_candidate_execution_authority(
+        evaluator_capability, amendment_authority=amendment_authority
+    )
     hidden = _resolve_hidden_evaluator_inputs(
         evaluator_capability=capability,
         verified_hidden=verified_hidden,
@@ -299,6 +332,7 @@ def evaluate_instance_candidate(
         tool_git_sha=tool_git_sha,
         executor_factory=executor_factory,
         evaluator_started_monotonic=evaluator_started_monotonic,
+        amendment_authority=amendment_authority,
     )
 
 
@@ -315,6 +349,7 @@ def _evaluate_instance_candidate_with_resolved_hidden(
     tool_git_sha: str,
     executor_factory: ExecutorFactory | None = None,
     evaluator_started_monotonic: float | None = None,
+    amendment_authority: VerifiedV02BenchmarkAmendment | None = None,
 ) -> CandidateEvaluationReceipt:
     """Execute with private inputs already resolved by the scored public boundary.
 
@@ -326,7 +361,9 @@ def _evaluate_instance_candidate_with_resolved_hidden(
     evaluator_started = (
         time.monotonic() if evaluator_started_monotonic is None else evaluator_started_monotonic
     )
-    capability = require_v02_exact_image_evaluator_capability(evaluator_capability)
+    capability = _require_candidate_execution_authority(
+        evaluator_capability, amendment_authority=amendment_authority
+    )
     checked_case = _case_id(case_id)
     if capability.case_id != checked_case:
         raise _reject("Exact-image evaluator capability is for a different case.")
