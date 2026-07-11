@@ -87,7 +87,7 @@ class FakeExecutor:
         assert targets == ("tests/reproassert/test_generated.py::test_bug",)
         if collect_only:
             code, output, junit = 0, "collected 1 item", None
-        elif self.base_plus or self.fixed_patch == PATCH:
+        elif self.base_plus or (workspace == "fixed" and self.fixed_patch == PATCH):
             code, output, junit = (
                 0,
                 "1 passed",
@@ -155,18 +155,62 @@ def test_executes_three_controls_in_nine_fresh_contexts() -> None:
     assert all(len(result["runs"]) == 3 for result in results)
 
 
-def test_patch_algebra_fails_closed_for_degenerate_inseparable_and_noncommutative() -> None:
+def test_patch_algebra_supports_all_selected_and_rejects_inseparable_or_noncommutative() -> None:
     inventory = controls.inventory_unified_diff(PATCH, case_id="rk-v0.2-001")
     ids = tuple(str(row["atomic_id"]) for row in inventory)
-    assert controls._partition_patch(PATCH, case_id="rk-v0.2-001", selected_ids=ids)[2] == (
-        "degenerate_fix_minus_empty"
+    selected, remainder, reason = controls._partition_patch(
+        PATCH, case_id="rk-v0.2-001", selected_ids=ids
     )
+    assert selected == PATCH
+    assert remainder == b""
+    assert reason is None
     assert (
         controls._partition_patch(
             PATCH, case_id="rk-v0.2-001", selected_ids=("rk-v0.2-001:h999:0000000000000000",)
         )[2]
         == "inseparable_mapping"
     )
+
+
+def test_all_selected_mapping_runs_fix_minus_control_on_true_buggy_base() -> None:
+    inventory = controls.inventory_unified_diff(PATCH, case_id="rk-v0.2-001")
+    ids = tuple(str(row["atomic_id"]) for row in inventory)
+    selected, remainder, reason = controls._partition_patch(
+        PATCH, case_id="rk-v0.2-001", selected_ids=ids
+    )
+    assert selected == PATCH and remainder == b"" and reason is None
+    profile = CandidateExecutionProfile(
+        "pytest-v1", "tests/reproassert/test_generated.py", "test_bug", "pytest-v1"
+    )
+    candidate = CandidateArtifact(
+        profile.staging_path, b"def test_bug(): assert True\n", "test_bug"
+    )
+    failure = FakeExecutor().run_pytest(
+        workspace="base", targets=(f"{profile.staging_path}::{profile.required_function}",)
+    )
+    fingerprint = _candidate_fingerprint_or_none(failure, profile=profile)
+    assert fingerprint is not None
+    created: list[FakeExecutor] = []
+
+    def factory(*_args: object) -> FakeExecutor:
+        executor = FakeExecutor()
+        created.append(executor)
+        return executor
+
+    result = controls._run_control(
+        name="fix_minus_selected",
+        manifest=_manifest(),
+        case_id="rk-v0.2-001",
+        profile=profile,
+        candidate=candidate,
+        full_patch=PATCH,
+        selected_patch=selected,
+        remainder_patch=remainder,
+        expected_failure_fingerprint=fingerprint,
+        executor_factory=factory,  # type: ignore[arg-type]
+    )
+    assert result["status"] == "conclusive_pass"
+    assert len(created) == 3
     same_file_ids = controls.inventory_unified_diff(SAME_FILE_PATCH, case_id="rk-v0.2-001")
     assert (
         controls._partition_patch(

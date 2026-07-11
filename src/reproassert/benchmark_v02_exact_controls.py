@@ -290,8 +290,15 @@ def _run_control(
     runs: list[dict[str, object]] = []
     expected = "fail_same_fingerprint" if name == "fix_minus_selected" else "pass"
     for _ in range(RUNS_PER_CONTROL):
-        fixed_patch = remainder_patch if name == "fix_minus_selected" else full_patch
-        workspace: Literal["base", "fixed"] = "base" if name == "base_plus_selected" else "fixed"
+        if name == "fix_minus_selected" and not remainder_patch:
+            # When every production hunk is issue-relevant, subtracting the selected set is the
+            # exact buggy base.  Execute that real endpoint instead of making one-hunk fixes
+            # structurally ineligible for causal validation.
+            fixed_patch = full_patch
+            workspace: Literal["base", "fixed"] = "base"
+        else:
+            fixed_patch = remainder_patch if name == "fix_minus_selected" else full_patch
+            workspace = "base" if name == "base_plus_selected" else "fixed"
         with executor_factory(
             manifest,
             case_id,
@@ -367,8 +374,6 @@ def _partition_patch(
     all_ids = tuple(cast(str, row["atomic_id"]) for row in inventory)
     if not selected_ids or not set(selected_ids).issubset(all_ids):
         return None, None, "inseparable_mapping"
-    if set(selected_ids) == set(all_ids):
-        return None, None, "degenerate_fix_minus_empty"
     selected = set(selected_ids)
     # Splitting one file across both subsets can make offsets/order matter under git apply.
     for left, right in pairwise(inventory):
