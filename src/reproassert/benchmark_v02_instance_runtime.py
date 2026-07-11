@@ -41,11 +41,12 @@ _ENTRY_KEYS = {
 }
 _TEST_COMMAND_PROFILES = frozenset({"pytest-v1", "sympy-bin-test-v1"})
 _POLICY = {
-    "capabilities": "drop_all",
+    "capabilities": "tests_drop_all_controller_copy_chown_only",
     "commands": "reproassert-controller-allowlist-v1",
     "controller_user": "0:0",
     "credentials": "none",
     "docker_socket": False,
+    "environment": "controller_HOME_only_tests_HOME_plus_workspace_and_src_PYTHONPATH",
     "host_bind_mounts": False,
     "network_mode": "none",
     "no_new_privileges": True,

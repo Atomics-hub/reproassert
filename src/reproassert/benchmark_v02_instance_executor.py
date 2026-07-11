@@ -36,13 +36,21 @@ _CONTAINER_TMP = "/tmp"  # noqa: S108 - isolated container path, never a host pa
 
 _COPY_TESTBED_SCRIPT = """set -eu
 cp -a /testbed/. /workspace/
-chmod -R a+rwX /workspace
+chown -R 65532:65532 /workspace
 mkdir -p "$HOME"
+git config --global --add safe.directory /testbed
 git config --global --add safe.directory /workspace
 cd /workspace
 test "$(git rev-parse HEAD)" = "$1"
 test "$(git rev-parse 'HEAD^{tree}')" = "$2"
-test -z "$(git status --porcelain --untracked-files=no)"
+source_diff="$(git -C /testbed diff --no-ext-diff --binary HEAD | sha256sum | cut -d ' ' -f 1)"
+workspace_diff="$(git diff --no-ext-diff --binary HEAD | sha256sum | cut -d ' ' -f 1)"
+test "$source_diff" = "$workspace_diff"
+source_status="$(
+    git -C /testbed status --porcelain --untracked-files=no | sha256sum | cut -d ' ' -f 1
+)"
+workspace_status="$(git status --porcelain --untracked-files=no | sha256sum | cut -d ' ' -f 1)"
+test "$source_status" = "$workspace_status"
 """.strip()
 
 _APPLY_PATCH_SCRIPT = """set -eu
@@ -66,13 +74,13 @@ test "$(sha256sum "$2" | cut -d ' ' -f 1)" = "$1"
 
 _PYTEST_SCRIPT = """set -eu
 cd /workspace
-exec /opt/miniconda3/envs/testbed/bin/python -I -m pytest "$@"
+exec /opt/miniconda3/envs/testbed/bin/python -m pytest "$@"
 """.strip()
 
 _SYMPY_TEST_SCRIPT = """set -eu
 cd /workspace
 export PYTHONWARNINGS='ignore::UserWarning,ignore::SyntaxWarning'
-exec /opt/miniconda3/envs/testbed/bin/python -I bin/test -C --verbose "$@"
+exec /opt/miniconda3/envs/testbed/bin/python bin/test -C --verbose "$@"
 """.strip()
 
 
@@ -269,6 +277,7 @@ class InstanceRuntimeExecutor:
             command,
             role=f"test-{workspace}",
             user="65532:65532",
+            workspace_pythonpath=True,
         )
         try:
             result = self._run(
@@ -312,7 +321,9 @@ class InstanceRuntimeExecutor:
             self.runtime.base_sha,
             self.runtime.base_tree_oid,
         ]
-        name = self._create_sandbox_container(role, command, role=f"copy-{role}")
+        name = self._create_sandbox_container(
+            role, command, role=f"copy-{role}", cap_add=("CHOWN",)
+        )
         try:
             self._run(["start", "--attach", name], timeout=300)
         finally:
@@ -387,6 +398,8 @@ class InstanceRuntimeExecutor:
         read_only: bool = True,
         input_volume: str | None = None,
         user: str = "0:0",
+        cap_add: tuple[str, ...] = (),
+        workspace_pythonpath: bool = False,
     ) -> str:
         volume = self._volumes[workspace]
         name = f"reproassert-{self._token}-{role}-{uuid.uuid4().hex[:8]}"
@@ -423,6 +436,12 @@ class InstanceRuntimeExecutor:
             "--mount",
             f"type=volume,src={volume},dst=/workspace",
         ]
+        if workspace_pythonpath:
+            args.extend(["--env", "PYTHONPATH=/workspace:/workspace/src"])
+        for capability in cap_add:
+            if capability != "CHOWN":
+                raise self._reject("Controller capability is outside the instance policy.")
+            args.extend(["--cap-add", capability])
         if input_volume is not None:
             args.extend(["--mount", f"type=volume,src={input_volume},dst=/input"])
         if read_only:
@@ -440,6 +459,8 @@ class InstanceRuntimeExecutor:
             read_only=read_only,
             input_volume=input_volume,
             user=user,
+            cap_add=cap_add,
+            workspace_pythonpath=workspace_pythonpath,
         )
         return name
 
@@ -452,6 +473,8 @@ class InstanceRuntimeExecutor:
         read_only: bool,
         input_volume: str | None,
         user: str,
+        cap_add: tuple[str, ...],
+        workspace_pythonpath: bool,
     ) -> None:
         payload = self._inspect_one(["container", "inspect", name], "container")
         config = _mapping(payload.get("Config"), "container config")
@@ -464,6 +487,20 @@ class InstanceRuntimeExecutor:
                 f"size={self.policy.tmpfs_bytes},nr_inodes={self.policy.tmpfs_inodes}"
             )
         }
+        environment = config.get("Env")
+        expected_controller_environment = {"HOME=/tmp/home"}
+        if workspace_pythonpath:
+            expected_controller_environment.add("PYTHONPATH=/workspace:/workspace/src")
+        observed_controller_environment = (
+            {
+                value
+                for value in environment
+                if isinstance(value, str)
+                and (value.startswith("HOME=") or value.startswith("PYTHONPATH="))
+            }
+            if isinstance(environment, list)
+            else set()
+        )
         expected_nano_cpus = int(self.policy.cpus * 1_000_000_000)
         expected_mounts = {(volume, "/workspace")}
         if input_volume is not None:
@@ -484,13 +521,13 @@ class InstanceRuntimeExecutor:
         if not (
             payload.get("Image") == self.runtime.image_id
             and config.get("User") == user
-            and isinstance(config.get("Env"), list)
-            and "HOME=/tmp/home" in cast(list[object], config.get("Env"))
+            and observed_controller_environment == expected_controller_environment
             and config.get("Entrypoint") == [command[0]]
             and config.get("Cmd") == command[1:]
             and host.get("NetworkMode") == "none"
             and host.get("ReadonlyRootfs") is read_only
             and host.get("CapDrop") == ["ALL"]
+            and (host.get("CapAdd") or []) == list(cap_add)
             and isinstance(security_options, list)
             and "no-new-privileges" in security_options
             and host.get("PidsLimit") == self.policy.pids

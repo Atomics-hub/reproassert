@@ -87,15 +87,21 @@ class FakeDocker:
             ]
             image_id = self.runtime.image_id
             image_index = args.index(image_id)
+            controller_env = [
+                args[index + 1] for index, value in enumerate(args) if value == "--env"
+            ]
             self.containers[name] = {
                 "Config": {
                     "Cmd": args[image_index + 1 :],
                     "Entrypoint": [args[args.index("--entrypoint") + 1]],
-                    "Env": ["PATH=/usr/bin:/bin", "HOME=/tmp/home"],
+                    "Env": ["PATH=/usr/bin:/bin", *controller_env],
                     "User": args[args.index("--user") + 1],
                 },
                 "HostConfig": {
                     "Binds": None,
+                    "CapAdd": [
+                        args[index + 1] for index, value in enumerate(args) if value == "--cap-add"
+                    ],
                     "CapDrop": ["ALL"],
                     "Memory": self.policy.memory_bytes,
                     "MemorySwap": self.policy.memory_bytes,
@@ -199,11 +205,19 @@ def test_prepares_two_fresh_workspaces_and_runs_bounded_pytest() -> None:
     pytest_create = next(command for command in creates if "test-base" in " ".join(command))
     assert "--collect-only" in pytest_create
     assert "tests/test_reproassert_issue_14305.py::test_case[param-1]" in pytest_create
-    assert "/opt/miniconda3/envs/testbed/bin/python -I -m pytest" in " ".join(pytest_create)
+    assert "/opt/miniconda3/envs/testbed/bin/python -m pytest" in " ".join(pytest_create)
     assert "HOME=/tmp/home" in pytest_create
+    assert "PYTHONPATH=/workspace:/workspace/src" in pytest_create
     assert pytest_create[pytest_create.index("--user") + 1] == "65532:65532"
     controller_creates = [command for command in creates if command is not pytest_create]
     assert all(command[command.index("--user") + 1] == "0:0" for command in controller_creates)
+    assert all("PYTHONPATH=" not in " ".join(command) for command in controller_creates)
+    assert all(
+        "=" in command[index + 1]
+        for command in creates
+        for index, value in enumerate(command)
+        if value == "--env"
+    )
 
     executor.cleanup()
     assert not fake.containers
@@ -254,7 +268,16 @@ def test_git_operations_use_isolated_home_and_safe_directory() -> None:
         if command[0] == "exec" and "reproassert-patch" in " ".join(command)
     )
     assert "git config --global --add safe.directory /workspace" in " ".join(copy_command)
+    assert "git config --global --add safe.directory /testbed" in " ".join(copy_command)
     assert "git config --global --add safe.directory /workspace" in " ".join(patch_command)
+    assert "chmod -R" not in " ".join(copy_command)
+    assert "chown -R 65532:65532 /workspace" in " ".join(copy_command)
+    assert "source_diff=" in " ".join(copy_command)
+    assert "workspace_diff=" in " ".join(copy_command)
+    assert 'test -z "$(git status' not in " ".join(copy_command)
+    assert copy_command[copy_command.index("--cap-add") + 1] == "CHOWN"
+    non_copy_creates = [command for command in creates if "copy-" not in " ".join(command)]
+    assert all("--cap-add" not in command for command in non_copy_creates)
 
 
 def test_public_patch_api_can_stage_developer_tests_on_both_workspaces() -> None:
@@ -299,9 +322,10 @@ def test_sympy_profile_runs_only_frozen_bin_test_as_nonroot() -> None:
         if command[0] == "create" and "test-base" in " ".join(command)
     )
     rendered = " ".join(test_create)
-    assert "/opt/miniconda3/envs/testbed/bin/python -I bin/test -C --verbose" in rendered
+    assert "/opt/miniconda3/envs/testbed/bin/python bin/test -C --verbose" in rendered
     assert "PYTHONWARNINGS=" in rendered
     assert test_create[test_create.index("--user") + 1] == "65532:65532"
+    assert "PYTHONPATH=/workspace:/workspace/src" in test_create
     with pytest.raises(ReproAssertError, match="does not use the pytest"):
         executor.run_pytest(workspace="base", targets=("sympy/core/tests/test_basic.py",))
 
