@@ -3,13 +3,14 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
 
-from reproassert import benchmark_v02_cases as cases
+import reproassert.benchmark_v02_cases as cases
 from reproassert.benchmark_v02_runner import V02PricingSnapshot
 from reproassert.errors import PolicyRejection
 from reproassert.git_objects import VerifiedGitObjectPlan
@@ -283,6 +284,45 @@ def test_verifier_accepts_exact_provider_disabled_tree(prepared_tree: dict[str, 
     prepared = cases.verify_v02_cases(prepared_tree["prepared"].receipt_path)
     assert prepared.case_count == 20
     assert prepared.provider_calls == 0
+
+
+def test_prepare_controller_builds_all_twenty_provider_disabled_packets(
+    prepared_tree: dict[str, Any],
+) -> None:
+    prepared = prepared_tree["prepared"]
+    root = prepared.root
+    parent = root.parent
+    cohort_input = parent / "cohort-input.json"
+    pricing_input = parent / "pricing-input.json"
+    cohort_input.write_bytes((root / "inputs/cohort-plan.json").read_bytes())
+    pricing_input.write_bytes((root / "inputs/pricing-snapshot.json").read_bytes())
+    os.chmod(cohort_input, 0o600)
+    os.chmod(pricing_input, 0o600)
+    inputs = cast(dict[str, object], prepared_tree["record"]["inputs"])
+    dataset = cast(dict[str, object], inputs["dataset_preparation"])
+    hidden = cast(dict[str, object], inputs["hidden_extraction"])
+    sources = cast(dict[str, object], inputs["object_sources_root"])
+    shutil.rmtree(root)
+
+    result = cases.prepare_v02_cases(
+        cohort_plan_path=cohort_input,
+        dataset_preparation_receipt=Path(cast(str, dataset["path"])),
+        hidden_extraction_receipt=Path(cast(str, hidden["path"])),
+        object_sources_root=Path(cast(str, sources["path"])),
+        output_root=parent,
+        pricing_snapshot_path=pricing_input,
+        tool_git_sha="4" * 40,
+        prepared_at="2026-07-10T12:00:00Z",
+    )
+
+    assert result.case_count == 20
+    assert result.dependency_ready_count == 0
+    assert result.campaign_ready_count == 0
+    assert result.provider_calls == 0
+    receipt = json.loads(result.receipt_path.read_text())
+    assert receipt["claims"]["campaign_ready_count"] == 0
+    assert receipt["provider_execution_enabled"] is False
+    assert len(receipt["packages"]) == 20
 
 
 def test_verifier_rejects_ready_package_index(prepared_tree: dict[str, Any]) -> None:

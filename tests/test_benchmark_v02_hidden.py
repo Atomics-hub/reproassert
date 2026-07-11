@@ -200,6 +200,120 @@ def test_worker_failure_is_silent(
     assert captured.out == "" and captured.err == ""
 
 
+def test_worker_main_success_usage_and_text_bounds(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(worker.sys, "argv", ["worker"])
+    assert worker.main() == 2
+    called: list[tuple[Path, Path, Path]] = []
+    monkeypatch.setattr(worker, "_limits", lambda: None)
+    monkeypatch.setattr(worker, "_derive", lambda *paths: called.append(paths))
+    monkeypatch.setattr(worker.sys, "argv", ["worker", "dataset", "request", "output"])
+    assert worker.main() == 0
+    assert called == [(Path("dataset"), Path("request"), Path("output"))]
+    assert worker._text("value", "field", allow_empty=False, maximum=5) == b"value"
+    with pytest.raises(ValueError, match="type mismatch"):
+        worker._text(None, "field", allow_empty=True, maximum=5)
+    with pytest.raises(ValueError, match="size mismatch"):
+        worker._text("", "field", allow_empty=False, maximum=5)
+    with pytest.raises(ValueError, match="size mismatch"):
+        worker._text("longer", "field", allow_empty=True, maximum=5)
+
+
+def test_worker_request_rejects_wrong_count_and_repeated_instances(tmp_path: Path) -> None:
+    request = tmp_path / "request.json"
+    request.write_bytes(
+        worker._canonical({"cases": [], "protocol": worker.REQUEST_PROTOCOL}) + b"\n"
+    )
+    with pytest.raises(ValueError, match="case count mismatch"):
+        worker._load_request(request)
+    repeated = [
+        {"case_id": f"rk-v0.2-{ordinal:03d}", "instance_id": "owner__repo-1"}
+        for ordinal in range(1, 21)
+    ]
+    request.write_bytes(
+        worker._canonical({"cases": repeated, "protocol": worker.REQUEST_PROTOCOL}) + b"\n"
+    )
+    with pytest.raises(ValueError, match="instances repeat"):
+        worker._load_request(request)
+
+
+def test_worker_derives_twenty_private_artifact_sets(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    dataset = b"synthetic parquet bytes"
+    monkeypatch.setattr(worker, "PARQUET_BYTES", len(dataset))
+    monkeypatch.setattr(worker, "PARQUET_SHA256", hashlib.sha256(dataset).hexdigest())
+    dataset_path = tmp_path / "dataset.parquet"
+    dataset_path.write_bytes(dataset)
+    cases = [
+        {
+            "case_id": f"rk-v0.2-{ordinal:03d}",
+            "instance_id": f"owner__repo-{ordinal}",
+        }
+        for ordinal in range(1, 21)
+    ]
+    request_path = tmp_path / "request.json"
+    request_path.write_bytes(
+        worker._canonical({"cases": cases, "protocol": worker.REQUEST_PROTOCOL}) + b"\n"
+    )
+    rows: list[dict[str, object]] = [
+        {
+            "base_commit": f"{ordinal:040x}",
+            "created_at": "2020-01-01T00:00:00Z",
+            "difficulty": "<15 min fix",
+            "environment_setup_commit": f"{ordinal + 100:040x}",
+            "instance_id": f"owner__repo-{ordinal}",
+            "patch": f"production patch {ordinal}\n",
+            "repo": "owner/repo",
+            "test_patch": f"developer patch {ordinal}\n",
+            "version": "1.0",
+        }
+        for ordinal in range(1, 21)
+    ]
+    rows.extend(
+        {
+            "instance_id": f"unused__row-{ordinal}",
+        }
+        for ordinal in range(21, worker.ROW_COUNT + 1)
+    )
+
+    class FakeTable:
+        num_rows = worker.ROW_COUNT
+
+        def to_pylist(self) -> list[dict[str, object]]:
+            return rows
+
+    class FakeArrow:
+        __version__ = worker.PYARROW_VERSION
+
+        @staticmethod
+        def BufferReader(content: bytes) -> bytes:
+            return content
+
+    class FakeParquet:
+        @staticmethod
+        def read_table(_reader: bytes, *, use_threads: bool) -> FakeTable:
+            assert use_threads is False
+            return FakeTable()
+
+    monkeypatch.setattr(
+        worker.importlib,
+        "import_module",
+        lambda name: FakeArrow if name == "pyarrow" else FakeParquet,
+    )
+    monkeypatch.setenv("REPROASSERT_HIDDEN_CONTAINER", "attested-v1")
+    output = tmp_path / "output"
+    output.mkdir(mode=0o700)
+
+    worker._derive(dataset_path, request_path, output)
+
+    manifest = json.loads((output / "manifest.json").read_text())
+    assert manifest["case_count"] == 20
+    assert len(manifest["artifacts"]) == 20
+    assert (output / "rk-v0.2-001/production.patch").read_text() == "production patch 1\n"
+    assert (output / "rk-v0.2-020/developer-tests.patch").read_text() == ("developer patch 20\n")
+    assert oct((output / "manifest.json").stat().st_mode & 0o777) == "0o600"
+
+
 def test_container_contract_is_no_network_read_only_and_cap_dropped(tmp_path: Path) -> None:
     policy = hidden.DatasetParserContainerPolicy(
         image_digest=hidden.FROZEN_V02_DATASET_PARSER_IMAGE_ID
