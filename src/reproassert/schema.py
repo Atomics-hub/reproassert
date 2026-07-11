@@ -36,6 +36,9 @@ SCHEMA_FILENAMES = {
     "benchmark-v02-exact-image-capability-index": (
         "benchmark-v02-exact-image-capability-index.schema.json"
     ),
+    "benchmark-v02-exact-image-causal-controls": (
+        "benchmark-v02-exact-image-causal-controls.schema.json"
+    ),
     "benchmark-v02-execution-request-bindings": (
         "benchmark-v02-execution-request-bindings.schema.json"
     ),
