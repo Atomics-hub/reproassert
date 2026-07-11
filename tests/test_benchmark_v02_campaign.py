@@ -703,9 +703,9 @@ def _prepare(
                 },
                 "cost": {"complete": True, "total_attributable_microusd": 4},
                 "evaluation": exact_evaluation,
-                "exact_case_commitment_sha256": _exact_preregistration(cases)["cases"][
-                    index - 1
-                ]["case_commitment_sha256"],
+                "exact_case_commitment_sha256": _exact_preregistration(cases)["cases"][index - 1][
+                    "case_commitment_sha256"
+                ],
                 "exact_preregistration_sha256": freeze.preregistration_sha256,
                 "ledger_head_before_result_sha256": f"{index + 1000:064x}",
                 "runner_input_sha256": f"{index + 500:064x}",
@@ -914,14 +914,14 @@ def _prepare(
         )
     review_path = tmp_path / "semantic-reviews.json"
     review_set = campaign.build_v02_semantic_review_set(
-            freeze_path,
-            preregistration,
-            review_cases,
-            sealed_at=SEALED_AT,
-            tool_name="reproassert",
-            tool_version="0.2-test",
-            tool_git_sha="1" * 40,
-        )
+        freeze_path,
+        preregistration,
+        review_cases,
+        sealed_at=SEALED_AT,
+        tool_name="reproassert",
+        tool_version="0.2-test",
+        tool_git_sha="1" * 40,
+    )
     if exact:
         infrastructure = review_set["cases"][13]
         infrastructure.update(
@@ -934,9 +934,7 @@ def _prepare(
         infrastructure["review_case_sha256"] = campaign._self_hash(
             infrastructure, "review_case_sha256"
         )
-        review_set["review_set_sha256"] = campaign._self_hash(
-            review_set, "review_set_sha256"
-        )
+        review_set["review_set_sha256"] = campaign._self_hash(review_set, "review_set_sha256")
     _write(review_path, review_set)
     return _Artifacts(
         preregistration=preregistration,
@@ -1272,9 +1270,7 @@ def test_legacy_aggregate_rejects_exact_candidate_shape_downgrade(
         "sha256": legacy_candidate["sha256"],
         "test_function": "test_issue_1_reproduction",
     }
-    public["public_aggregate_sha256"] = campaign._self_hash(
-        public, "public_aggregate_sha256"
-    )
+    public["public_aggregate_sha256"] = campaign._self_hash(public, "public_aggregate_sha256")
     public_path = tmp_path / "legacy-downgraded-public.json"
     _write(public_path, public)
     private = json.loads(result.private_path.read_text())

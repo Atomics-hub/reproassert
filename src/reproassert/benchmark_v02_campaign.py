@@ -1629,8 +1629,7 @@ def _verify_exact_common_result(
     cost = _mapping(record["cost"], "exact result cost")
     _exact_keys(cost, {"complete", "total_attributable_microusd"}, "exact result cost")
     expected_total = sum(
-        cast(Mapping[str, int], state["costs"])[name]
-        for name in _ATTRIBUTABLE_COST_CATEGORIES
+        cast(Mapping[str, int], state["costs"])[name] for name in _ATTRIBUTABLE_COST_CATEGORIES
     )
     if (
         cost["complete"] is not True
@@ -1641,9 +1640,7 @@ def _verify_exact_common_result(
         raise _reject("v02_campaign_cost", f"Case {case.id} exact result cost is not reconciled.")
 
 
-def _verify_result_candidate(
-    value: object, case: PreregisteredV02Case
-) -> Mapping[str, Any] | None:
+def _verify_result_candidate(value: object, case: PreregisteredV02Case) -> Mapping[str, Any] | None:
     if value is None:
         return None
     candidate = _mapping(value, "exact candidate")
@@ -1944,9 +1941,7 @@ def _verify_review_set(
             isinstance(raw_candidate_evaluation, Mapping)
             and raw_candidate_evaluation.get("kind") == "infrastructure_failure"
         )
-        _verify_semantic_review_case_record(
-            review_case, allow_exact_infrastructure=infrastructure
-        )
+        _verify_semantic_review_case_record(review_case, allow_exact_infrastructure=infrastructure)
         case_id = cast(str, review_case["case_id"])
         if case_id in by_case or case_id not in public_results:
             raise _reject("v02_semantic_review", "Semantic review case is duplicate or unknown.")
@@ -2497,11 +2492,11 @@ def _verify_public_aggregate_case(
             raise _reject("v02_campaign_publication", "No-candidate public case is inconsistent.")
     else:
         exact_shape = isinstance(candidate, Mapping) and set(candidate) == {
-                "bytes",
-                "path",
-                "sha256",
-                "test_function",
-            }
+            "bytes",
+            "path",
+            "sha256",
+            "test_function",
+        }
         if exact_mode is not exact_shape:
             raise _reject(
                 "v02_campaign_candidate",
