@@ -851,8 +851,12 @@ def test_exact_scored_entry_evaluates_pytest_and_sympy_after_exact_barrier(
     )
 
     def evaluate(**kwargs: object) -> Any:
-        observed.append(kwargs["candidate"])
-        cast(Path, kwargs["output_path"]).write_text("{}")
+        artifact = cast(Any, kwargs["candidate"])
+        observed.append(artifact)
+        candidate_sha = hashlib.sha256(artifact.content).hexdigest()
+        cast(Path, kwargs["output_path"]).write_bytes(
+            exact_scored._canonical({"candidate": {"sha256": candidate_sha}})
+        )
         return receipt
 
     monkeypatch.setattr(exact_scored.runner, "_prepare_recovery_context", lambda **_kw: run)
@@ -1120,7 +1124,7 @@ def test_exact_scored_case014_preserves_offline_network_failure(
     assert evaluator_calls == 0
     assert result.evaluation_kind == "infrastructure_failure"
     assert result.outcome == "benchmark_infrastructure_error"
-    public = exact_scored.verify_v02_exact_scored_result(result.public_result_path)
+    public = exact_scored.verify_v02_exact_scored_result(result.public_result_path).record
     assert public["evaluation"]["classification"] == "network_dependency"  # type: ignore[index]
     assert public["claims"]["network_enabled"] is False  # type: ignore[index]
 

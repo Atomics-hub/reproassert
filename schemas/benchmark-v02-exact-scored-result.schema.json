@@ -4,20 +4,23 @@
   "title": "ReproAssert v0.2 exact-image scored result",
   "type": "object",
   "additionalProperties": false,
-  "required": ["algorithm", "attempt_id", "benchmark_version", "campaign_id", "candidate", "case", "claims", "cost", "evaluation", "exact_case_commitment_sha256", "exact_preregistration_sha256", "ledger_head_before_result_sha256", "runner_input_sha256", "schema_version", "visibility"],
+  "required": ["algorithm", "attempt_id", "benchmark_version", "campaign_id", "candidate", "case", "claim_level", "claims", "cost", "evaluation", "exact_case_commitment_sha256", "exact_preregistration_sha256", "ledger_head_before_result_sha256", "outcome", "result_sha256", "runner_input_sha256", "schema_version", "visibility"],
   "properties": {
     "algorithm": {"const": "reproassert-v02-exact-image-scored-result-v1"},
     "attempt_id": {"$ref": "#/$defs/identifier"},
     "benchmark_version": {"const": "0.2"},
     "campaign_id": {"$ref": "#/$defs/identifier"},
+    "claim_level": {"enum": ["differential_reproduction", "rejected"]},
     "candidate": {"oneOf": [{"$ref": "#/$defs/candidate"}, {"type": "null"}]},
-    "case": {"type": "object"},
+    "case": {"$ref": "#/$defs/case"},
     "claims": {"const": {"causal_controls_complete": false, "hidden_bytes_emitted": false, "network_enabled": false, "provider_calls_during_evaluation": 0, "semantic_review_complete": false}},
     "cost": {"type": "object", "additionalProperties": false, "required": ["complete", "total_attributable_microusd"], "properties": {"complete": {"type": "boolean"}, "total_attributable_microusd": {"type": ["integer", "null"], "minimum": 0}}},
     "evaluation": {"oneOf": [{"$ref": "#/$defs/exact"}, {"$ref": "#/$defs/infra"}, {"$ref": "#/$defs/no_candidate"}]},
     "exact_case_commitment_sha256": {"$ref": "#/$defs/sha256"},
     "exact_preregistration_sha256": {"$ref": "#/$defs/sha256"},
     "ledger_head_before_result_sha256": {"$ref": "#/$defs/sha256"},
+    "outcome": {"enum": ["verified_reproduction", "rejected_reproduction", "benchmark_infrastructure_error", "no_output"]},
+    "result_sha256": {"$ref": "#/$defs/sha256"},
     "runner_input_sha256": {"$ref": "#/$defs/sha256"},
     "schema_version": {"const": "1.0.0"},
     "visibility": {"enum": ["private_controller_only", "public_safe_embargoed"]}
@@ -25,10 +28,10 @@
   "$defs": {
     "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "identifier": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{2,127}$"},
+    "case": {"type": "object", "additionalProperties": false, "required": ["base_sha", "difficulty", "evaluator_commitment_sha256", "generator_projection_sha256", "id", "issue_url", "repo", "smoke", "source_context_sha256"], "properties": {"base_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"}, "difficulty": {"type": "string", "minLength": 1}, "evaluator_commitment_sha256": {"$ref": "#/$defs/sha256"}, "generator_projection_sha256": {"$ref": "#/$defs/sha256"}, "id": {"type": "string", "pattern": "^rk-v0\\.2-[0-9]{3}$"}, "issue_url": {"type": "string", "pattern": "^https://github\\.com/"}, "repo": {"type": "string", "minLength": 3}, "smoke": {"type": "boolean"}, "source_context_sha256": {"$ref": "#/$defs/sha256"}}},
     "candidate": {"type": "object", "additionalProperties": false, "required": ["bytes", "path", "sha256", "test_function"], "properties": {"bytes": {"type": "integer", "minimum": 1, "maximum": 32768}, "path": {"type": "string", "pattern": "^(?:tests/reproassert/test_issue_[1-9][0-9]*|sympy/reproassert/tests/test_issue_01[67])\\.py$"}, "sha256": {"$ref": "#/$defs/sha256"}, "test_function": {"$ref": "#/$defs/identifier"}}},
     "exact": {"type": "object", "additionalProperties": false, "required": ["accepted", "classification", "kind", "reason", "receipt_sha256"], "properties": {"accepted": {"type": "boolean"}, "classification": {"type": "string", "minLength": 2, "maxLength": 100}, "kind": {"const": "exact_image_receipt"}, "reason": {"type": "null"}, "receipt_sha256": {"$ref": "#/$defs/sha256"}}},
     "infra": {"type": "object", "additionalProperties": false, "required": ["accepted", "classification", "kind", "reason", "receipt_sha256"], "properties": {"accepted": {"const": false}, "classification": {"const": "network_dependency"}, "kind": {"const": "infrastructure_failure"}, "reason": {"const": "network_required_but_sandbox_network_is_disabled"}, "receipt_sha256": {"type": "null"}}},
     "no_candidate": {"type": "object", "additionalProperties": false, "required": ["accepted", "classification", "kind", "reason", "receipt_sha256"], "properties": {"accepted": {"const": false}, "classification": {"type": "string", "minLength": 2, "maxLength": 100}, "kind": {"const": "no_candidate"}, "reason": {"const": "generation_produced_no_candidate"}, "receipt_sha256": {"type": "null"}}}
   }
 }
-

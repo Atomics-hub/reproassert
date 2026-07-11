@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import time
 from collections.abc import Mapping
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import cast
 
@@ -42,10 +43,13 @@ PRIVATE_FILENAME = "reproassert-v02-exact-private-result.json"
 PUBLIC_FILENAME = "reproassert-v02-exact-public-embargoed-result.json"
 RECEIPT_FILENAME = "reproassert-v02-exact-candidate-evaluation.json"
 MAX_BYTES = 2 * 1024 * 1024
+_EXECUTION_ISSUER = object()
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, init=False)
 class V02ExactScoredResult:
+    """Nominal live result issued only by the exact scored execution path."""
+
     campaign_id: str
     attempt_id: str
     case_id: str
@@ -58,6 +62,18 @@ class V02ExactScoredResult:
     private_result_path: Path
     public_result_path: Path
     terminal_event_sha256: str
+    _issuer: object = field(repr=False, compare=False)
+
+    def __init__(self, *_args: object, **_kwargs: object) -> None:
+        raise TypeError("V02ExactScoredResult is exact-executor-issued only")
+
+
+@dataclass(frozen=True)
+class StructuralV02ExactScoredResult:
+    path: Path
+    sha256: str
+    record: Mapping[str, object] = field(repr=False)
+    verification_scope: str = "structural_only_no_trusted_verdict"
 
 
 def evaluate_v02_exact_frozen_case(
@@ -80,7 +96,53 @@ def evaluate_v02_exact_frozen_case(
     executed_at: str,
     tool_git_sha: str,
     policy: runner.V02ScoredRunPolicy,
-    executor_factory: ExecutorFactory | None = None,
+) -> V02ExactScoredResult:
+    """Evaluate with the production exact-image executor only."""
+
+    return _evaluate_v02_exact_frozen_case_with_factory(
+        preregistration_path=preregistration_path,
+        exact_preregistration=exact_preregistration,
+        case_id=case_id,
+        generator_projection_path=generator_projection_path,
+        generator_source_context=generator_source_context,
+        campaign_barrier=campaign_barrier,
+        evaluator_capability=evaluator_capability,
+        verified_hidden=verified_hidden,
+        manifest_path=manifest_path,
+        expected_manifest_sha256=expected_manifest_sha256,
+        gold_smoke_receipt_path=gold_smoke_receipt_path,
+        gold_specs_path=gold_specs_path,
+        ledger_path=ledger_path,
+        attempt_directory=attempt_directory,
+        attempt_id=attempt_id,
+        executed_at=executed_at,
+        tool_git_sha=tool_git_sha,
+        policy=policy,
+        executor_factory=None,
+    )
+
+
+def _evaluate_v02_exact_frozen_case_with_factory(
+    *,
+    preregistration_path: Path,
+    exact_preregistration: VerifiedV02ExactPreregistration,
+    case_id: str,
+    generator_projection_path: Path,
+    generator_source_context: VerifiedV02GeneratorSourceContext,
+    campaign_barrier: runner.VerifiedV02CampaignGenerationBarrier,
+    evaluator_capability: VerifiedV02ExactImageEvaluatorCapability | None,
+    verified_hidden: VerifiedV02HiddenExtraction | None,
+    manifest_path: Path,
+    expected_manifest_sha256: str,
+    gold_smoke_receipt_path: Path,
+    gold_specs_path: Path,
+    ledger_path: Path,
+    attempt_directory: Path,
+    attempt_id: str,
+    executed_at: str,
+    tool_git_sha: str,
+    policy: runner.V02ScoredRunPolicy,
+    executor_factory: ExecutorFactory | None,
 ) -> V02ExactScoredResult:
     """Evaluate one frozen candidate in its exact image; never invokes a provider."""
 
@@ -271,7 +333,7 @@ def evaluate_v02_exact_frozen_case(
         runner._release_recovery_lock(lock)
 
 
-def verify_v02_exact_scored_result(path: Path) -> Mapping[str, object]:
+def verify_v02_exact_scored_result(path: Path) -> StructuralV02ExactScoredResult:
     with open_regular_file(path) as stream:
         raw = stream.read(MAX_BYTES + 1)
     if len(raw) > MAX_BYTES:
@@ -297,17 +359,28 @@ def verify_v02_exact_scored_result(path: Path) -> Mapping[str, object]:
             "exact_case_commitment_sha256",
             "exact_preregistration_sha256",
             "ledger_head_before_result_sha256",
+            "outcome",
+            "claim_level",
+            "result_sha256",
             "runner_input_sha256",
             "schema_version",
             "visibility",
         }
         or value.get("algorithm") != ALGORITHM
         or value.get("schema_version") != SCHEMA_VERSION
+        or value.get("benchmark_version") != "0.2"
+        or value.get("result_sha256") != _result_self_hash(value)
     ):
         raise _reject("Exact scored result fields or identity are invalid.")
-    for name in ("exact_case_commitment_sha256", "exact_preregistration_sha256"):
+    for name in (
+        "exact_case_commitment_sha256",
+        "exact_preregistration_sha256",
+        "ledger_head_before_result_sha256",
+        "runner_input_sha256",
+        "result_sha256",
+    ):
         digest = value.get(name)
-        if not isinstance(digest, str) or len(digest) != 64:
+        if not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None:
             raise _reject("Exact scored result preregistration binding is invalid.")
     evaluation = value.get("evaluation")
     if not isinstance(evaluation, dict) or set(evaluation) != {
@@ -327,6 +400,29 @@ def verify_v02_exact_scored_result(path: Path) -> Mapping[str, object]:
             or evaluation.get("reason") is not None
         ):
             raise _reject("Exact receipt result is incomplete.")
+        receipt_path = Path(path).parent / RECEIPT_FILENAME
+        verified_receipt = verify_instance_candidate_receipt(receipt_path)
+        receipt_record = cast(
+            dict[str, object], json.loads(_read_regular_bytes(receipt_path, MAX_BYTES))
+        )
+        receipt_candidate = receipt_record.get("candidate")
+        scored_case = value.get("case")
+        scored_candidate = value.get("candidate")
+        if (
+            verified_receipt.sha256 != receipt
+            or verified_receipt.accepted != evaluation.get("accepted")
+            or verified_receipt.classification != evaluation.get("classification")
+            or not isinstance(scored_case, dict)
+            or verified_receipt.case_id != scored_case.get("id")
+            or not isinstance(receipt_candidate, dict)
+            or not isinstance(scored_candidate, dict)
+            or receipt_candidate.get("sha256") != scored_candidate.get("sha256")
+        ):
+            raise _reject("Exact candidate receipt bytes disagree with the scored result.")
+        if (evaluation.get("accepted") is True) != (
+            evaluation.get("classification") == "verified_reproduction"
+        ):
+            raise _reject("Exact acceptance and classification disagree.")
     elif kind == "infrastructure_failure":
         if (
             receipt is not None
@@ -348,7 +444,92 @@ def verify_v02_exact_scored_result(path: Path) -> Mapping[str, object]:
         "semantic_review_complete": False,
     }:
         raise _reject("Exact scored result trust claims are invalid.")
-    return value
+    candidate = value.get("candidate")
+    if candidate is not None:
+        if not isinstance(candidate, dict) or set(candidate) != {
+            "bytes",
+            "path",
+            "sha256",
+            "test_function",
+        }:
+            raise _reject("Exact scored candidate binding is invalid.")
+        size = candidate.get("bytes")
+        if (
+            type(size) is not int
+            or not 1 <= size <= 32_768
+            or not isinstance(candidate.get("path"), str)
+            or not isinstance(candidate.get("test_function"), str)
+            or not isinstance(candidate.get("sha256"), str)
+            or re.fullmatch(r"[0-9a-f]{64}", cast(str, candidate["sha256"])) is None
+        ):
+            raise _reject("Exact scored candidate values are invalid.")
+    if kind == "no_candidate" and candidate is not None:
+        raise _reject("No-candidate result cannot bind candidate bytes.")
+    if kind != "no_candidate" and candidate is None:
+        raise _reject("Evaluated exact result must bind one candidate.")
+    cost = value.get("cost")
+    if not isinstance(cost, dict) or set(cost) != {"complete", "total_attributable_microusd"}:
+        raise _reject("Exact scored cost binding is invalid.")
+    complete = cost.get("complete")
+    total = cost.get("total_attributable_microusd")
+    if type(complete) is not bool or (
+        (complete is True and (type(total) is not int or total < 0))
+        or (complete is False and total is not None)
+    ):
+        raise _reject("Exact scored cost completeness is inconsistent.")
+    expected_relations = {
+        "exact_image_receipt": (
+            "verified_reproduction"
+            if evaluation.get("accepted") is True
+            else "rejected_reproduction",
+            "differential_reproduction" if evaluation.get("accepted") is True else "rejected",
+        ),
+        "infrastructure_failure": ("benchmark_infrastructure_error", "rejected"),
+        "no_candidate": ("no_output", "rejected"),
+    }
+    if (value.get("outcome"), value.get("claim_level")) != expected_relations[cast(str, kind)]:
+        raise _reject("Exact scored outcome and claim level disagree with evaluation evidence.")
+    case = value.get("case")
+    if not isinstance(case, dict) or set(case) != {
+        "base_sha",
+        "difficulty",
+        "evaluator_commitment_sha256",
+        "generator_projection_sha256",
+        "id",
+        "issue_url",
+        "repo",
+        "smoke",
+        "source_context_sha256",
+    }:
+        raise _reject("Exact scored case binding is invalid.")
+    if (
+        not isinstance(case.get("id"), str)
+        or re.fullmatch(r"rk-v0\.2-[0-9]{3}", cast(str, case["id"])) is None
+        or not isinstance(case.get("repo"), str)
+        or not isinstance(case.get("issue_url"), str)
+        or not isinstance(case.get("difficulty"), str)
+        or type(case.get("smoke")) is not bool
+    ):
+        raise _reject("Exact scored case values are invalid.")
+    for name in (
+        "base_sha",
+        "evaluator_commitment_sha256",
+        "generator_projection_sha256",
+        "source_context_sha256",
+    ):
+        expected_length = 40 if name == "base_sha" else 64
+        if (
+            not isinstance(case.get(name), str)
+            or re.fullmatch(rf"[0-9a-f]{{{expected_length}}}", cast(str, case[name])) is None
+        ):
+            raise _reject("Exact scored case digest binding is invalid.")
+    for name in ("attempt_id", "campaign_id"):
+        if (
+            not isinstance(value.get(name), str)
+            or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:-]{2,127}", cast(str, value[name])) is None
+        ):
+            raise _reject("Exact scored execution identity is invalid.")
+    return StructuralV02ExactScoredResult(Path(path), hashlib.sha256(raw).hexdigest(), value)
 
 
 def _preflight_receipt_recovery(
@@ -485,11 +666,15 @@ def _write_result(
         "exact_case_commitment_sha256": exact_case_commitment_sha256,
         "exact_preregistration_sha256": exact_preregistration_sha256,
         "ledger_head_before_result_sha256": snapshot.head_event_sha256,
+        "outcome": outcome,
+        "claim_level": claim_level,
         "runner_input_sha256": run.runner_input_sha256,
         "schema_version": SCHEMA_VERSION,
     }
-    private = {**common, "visibility": "private_controller_only"}
-    public = {**common, "visibility": "public_safe_embargoed"}
+    private = {**common, "result_sha256": "0" * 64, "visibility": "private_controller_only"}
+    public = {**common, "result_sha256": "0" * 64, "visibility": "public_safe_embargoed"}
+    private["result_sha256"] = _result_self_hash(private)
+    public["result_sha256"] = _result_self_hash(public)
     private_bytes = _canonical(private) + b"\n"
     public_bytes = _canonical(public) + b"\n"
     private_sha = hashlib.sha256(private_bytes).hexdigest()
@@ -525,7 +710,7 @@ def _write_result(
             "public_result_sha256": public_sha,
         },
     )
-    return V02ExactScoredResult(
+    return _issue_exact_result(
         campaign_id=cast(str, run.policy.campaign_id),
         attempt_id=run.attempt_id,
         case_id=run.case.id,
@@ -560,7 +745,7 @@ def _completed_result(
     payload = cast(Mapping[str, object], terminal["payload"])
     private_path = run.attempt_directory / PRIVATE_FILENAME
     public_path = run.attempt_directory / PUBLIC_FILENAME
-    private = verify_v02_exact_scored_result(private_path)
+    private = verify_v02_exact_scored_result(private_path).record
     verify_v02_exact_scored_result(public_path)
     private_sha = runner._sha256_file(private_path, MAX_BYTES)
     public_sha = runner._sha256_file(public_path, MAX_BYTES)
@@ -576,7 +761,7 @@ def _completed_result(
         raise _reject("Completed result differs from the exact preregistration bridge.")
     evaluation = cast(Mapping[str, object], private["evaluation"])
     candidate = private["candidate"]
-    return V02ExactScoredResult(
+    return _issue_exact_result(
         campaign_id=cast(str, run.policy.campaign_id),
         attempt_id=run.attempt_id,
         case_id=run.case.id,
@@ -630,10 +815,37 @@ def _bind_exact_preregistration_view(
     return loaded.raw_sha256, commitment
 
 
+def _issue_exact_result(**values: object) -> V02ExactScoredResult:
+    issued = object.__new__(V02ExactScoredResult)
+    for name, value in {**values, "_issuer": _EXECUTION_ISSUER}.items():
+        object.__setattr__(issued, name, value)
+    return issued
+
+
+def require_v02_exact_scored_execution(value: object) -> V02ExactScoredResult:
+    if type(value) is not V02ExactScoredResult or value._issuer is not _EXECUTION_ISSUER:
+        raise _reject("Fresh exact scored execution authority is required.")
+    return value
+
+
 def _canonical(value: object) -> bytes:
     return json.dumps(
         value, sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False
     ).encode("utf-8")
+
+
+def _result_self_hash(value: Mapping[str, object]) -> str:
+    unsigned = dict(value)
+    unsigned["result_sha256"] = "0" * 64
+    return hashlib.sha256(_canonical(unsigned)).hexdigest()
+
+
+def _read_regular_bytes(path: Path, limit: int) -> bytes:
+    with open_regular_file(path) as stream:
+        raw = stream.read(limit + 1)
+    if len(raw) > limit:
+        raise _reject("Exact scored bound receipt exceeds its size limit.")
+    return raw
 
 
 def _reject_duplicates(pairs: list[tuple[str, object]]) -> dict[str, object]:
