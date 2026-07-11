@@ -39,6 +39,15 @@ from reproassert.benchmark_v02_campaign import (
     verify_v02_causal_control_set,
     verify_v02_semantic_review_set,
 )
+from reproassert.benchmark_v02_object_source import (
+    prepare_v02_object_source_case,
+    verify_v02_object_source_receipt,
+)
+from reproassert.benchmark_v02_preparation import (
+    FROZEN_V02_DATASET_PARSER_IMAGE_ID,
+    prepare_v02_dataset_inputs,
+    verify_v02_dataset_preparation,
+)
 from reproassert.benchmark_v02_replay import run_v02_replay_bundle
 from reproassert.dependency_execution_receipt import load_dependency_execution_receipt
 from reproassert.errors import ReproAssertError
@@ -73,6 +82,16 @@ def _default_run_base() -> Path:
 def _default_benchmark_source_root() -> Path:
     state_home = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state"))
     return state_home / "reproassert" / "benchmark-sources" / "v0.1"
+
+
+def _default_v02_benchmark_source_root() -> Path:
+    state_home = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state"))
+    return state_home / "reproassert" / "benchmark-sources" / "v0.2"
+
+
+def _default_v02_private_preparation_root() -> Path:
+    state_home = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state"))
+    return state_home / "reproassert" / "benchmark-private" / "v0.2"
 
 
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
@@ -281,6 +300,214 @@ def benchmark_verify_object_source(
                 "archive_sha256": transport["sha256"],
                 "git_tree_oid": source["github_root_tree_oid"],
                 "tree_sha256": workspace["tree_sha256"],
+                "verified": True,
+                "campaign_readiness_changed": False,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+@benchmark_group.command("prepare-v02-dataset")
+@click.option(
+    "--tdd-id-list",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--source-dataset",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--upstream-object-witness",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--cohort-plan",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--image-digest",
+    default=FROZEN_V02_DATASET_PARSER_IMAGE_ID,
+    show_default=True,
+    help="Exact frozen local dataset-parser image ID.",
+)
+@click.option("--prepared-at", required=True, help="UTC preparation timestamp.")
+@click.option(
+    "--output-root",
+    type=click.Path(path_type=Path, file_okay=False),
+    default=_default_v02_private_preparation_root,
+    show_default="private user state directory",
+)
+def benchmark_prepare_v02_dataset(
+    tdd_id_list: Path,
+    source_dataset: Path,
+    upstream_object_witness: Path,
+    cohort_plan: Path,
+    image_digest: str,
+    prepared_at: str,
+    output_root: Path,
+) -> None:
+    """Attest the frozen dataset and write 20 safe projections without a provider."""
+
+    try:
+        _ensure_private_output_root(output_root)
+        prepared = prepare_v02_dataset_inputs(
+            output_root=output_root,
+            tdd_id_list_path=tdd_id_list,
+            source_dataset_path=source_dataset,
+            upstream_object_witness_path=upstream_object_witness,
+            cohort_plan_path=cohort_plan,
+            image_digest=image_digest,
+            prepared_at=prepared_at,
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(
+        json.dumps(
+            {
+                "case_count": prepared.case_count,
+                "parser_receipt_sha256": prepared.parser_receipt_sha256,
+                "preparation_receipt": str(prepared.receipt_path),
+                "preparation_receipt_sha256": prepared.receipt_sha256,
+                "provider_calls": prepared.provider_calls,
+                "status": "prepared_no_provider_invoked",
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+@benchmark_group.command("verify-v02-dataset")
+@click.argument(
+    "preparation_receipt",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+)
+def benchmark_verify_v02_dataset(preparation_receipt: Path) -> None:
+    """Freshly rerun and verify an exact provider-free v0.2 dataset preparation."""
+
+    try:
+        prepared = verify_v02_dataset_preparation(preparation_receipt)
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(
+        json.dumps(
+            {
+                "case_count": prepared.case_count,
+                "parser_receipt_sha256": prepared.parser_receipt_sha256,
+                "preparation_receipt_sha256": prepared.receipt_sha256,
+                "provider_calls": prepared.provider_calls,
+                "verified": True,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+@benchmark_group.command("prepare-v02-object-source")
+@click.argument("case_id")
+@click.option(
+    "--cohort-plan",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option(
+    "--output-root",
+    type=click.Path(path_type=Path, file_okay=False),
+    default=_default_v02_benchmark_source_root,
+    show_default="private user state directory",
+)
+@click.option("--tool-git-sha", required=True, help="Exact 40-hex controller revision.")
+@click.option("--timeout-seconds", type=click.FloatRange(min=0, min_open=True), default=15.0)
+def benchmark_prepare_v02_object_source(
+    case_id: str,
+    cohort_plan: Path,
+    output_root: Path,
+    tool_git_sha: str,
+    timeout_seconds: float,
+) -> None:
+    """Prepare an exact Git-object source bound to the frozen v0.2 cohort."""
+
+    try:
+        _ensure_private_output_root(output_root)
+        receipt_path = prepare_v02_object_source_case(
+            cohort_plan,
+            case_id,
+            output_root,
+            tool_git_sha=tool_git_sha,
+            timeout_seconds=timeout_seconds,
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(
+        json.dumps(
+            {
+                "case_id": case_id,
+                "receipt": str(receipt_path),
+                "archive": str(receipt_path.parent / "source.tar.gz"),
+                "benchmark_version": "0.2.0",
+                "campaign_readiness_changed": False,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+@benchmark_group.command("verify-v02-object-source")
+@click.argument("receipt_path", type=click.Path(path_type=Path, exists=True, dir_okay=False))
+@click.option(
+    "--cohort-plan",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    required=True,
+)
+@click.option("--case-id", required=True)
+@click.option("--expected-receipt-sha256")
+@click.option("--timeout-seconds", type=click.FloatRange(min=0, min_open=True), default=15.0)
+def benchmark_verify_v02_object_source(
+    receipt_path: Path,
+    cohort_plan: Path,
+    case_id: str,
+    expected_receipt_sha256: str | None,
+    timeout_seconds: float,
+) -> None:
+    """Freshly verify a v0.2 exact-object source and its preserved archive."""
+
+    try:
+        receipt = verify_v02_object_source_receipt(
+            receipt_path,
+            plan_path=cohort_plan,
+            expected_case_id=case_id,
+            expected_receipt_sha256=expected_receipt_sha256,
+            timeout_seconds=timeout_seconds,
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    source = receipt.get("source")
+    if not isinstance(source, dict):
+        raise ReproAssertError(
+            "benchmark_v02_object_source", "Verified v0.2 object-source record is invalid."
+        )
+    workspace = source.get("verified_workspace")
+    transport = source.get("transport")
+    if not isinstance(workspace, dict) or not isinstance(transport, dict):
+        raise ReproAssertError(
+            "benchmark_v02_object_source", "Verified v0.2 object-source evidence is invalid."
+        )
+    click.echo(
+        json.dumps(
+            {
+                "case_id": case_id,
+                "archive_sha256": transport["sha256"],
+                "git_tree_oid": source["github_root_tree_oid"],
+                "tree_sha256": workspace["tree_sha256"],
+                "benchmark_version": "0.2.0",
                 "verified": True,
                 "campaign_readiness_changed": False,
             },

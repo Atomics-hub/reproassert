@@ -387,6 +387,11 @@ class VerifiedV02EvaluatorCapability:
     public_commitment_sha256: str
     generator_projection_sha256: str
     dataset_evidence_sha256: str
+    difficulty: str
+    upstream_instance_id: str
+    fixing_pr_number: int
+    evaluator_commitment_nonce: str
+    verification_completed_at: str
     base_commit_sha: str
     base_root_tree_oid: str
     source_receipt_sha256: str
@@ -423,6 +428,11 @@ class VerifiedV02EvaluatorCapability:
         public_commitment_sha256: str,
         generator_projection_sha256: str,
         dataset_evidence_sha256: str,
+        difficulty: str,
+        upstream_instance_id: str,
+        fixing_pr_number: int,
+        evaluator_commitment_nonce: str,
+        verification_completed_at: str,
         base_commit_sha: str,
         base_root_tree_oid: str,
         source_receipt_sha256: str,
@@ -457,6 +467,11 @@ class VerifiedV02EvaluatorCapability:
             "public_commitment_sha256": public_commitment_sha256,
             "generator_projection_sha256": generator_projection_sha256,
             "dataset_evidence_sha256": dataset_evidence_sha256,
+            "difficulty": difficulty,
+            "upstream_instance_id": upstream_instance_id,
+            "fixing_pr_number": fixing_pr_number,
+            "evaluator_commitment_nonce": evaluator_commitment_nonce,
+            "verification_completed_at": verification_completed_at,
             "base_commit_sha": base_commit_sha,
             "base_root_tree_oid": base_root_tree_oid,
             "source_receipt_sha256": source_receipt_sha256,
@@ -488,6 +503,10 @@ class VerifiedV02EvaluatorCapability:
                 "dependency_plan_sha256",
                 "dependency_tree_sha256",
                 "dependency_runner_image_id",
+                "difficulty",
+                "upstream_instance_id",
+                "fixing_pr_number",
+                "verification_completed_at",
             }:
                 continue
             if name == "source_context_algorithm":
@@ -507,6 +526,10 @@ class VerifiedV02EvaluatorCapability:
                 _git_sha(value, f"capability {name}")
             else:
                 _sha256(value, f"capability {name}")
+        _ascii(upstream_instance_id, "capability upstream instance ID", _INSTANCE_ID)
+        _difficulty(difficulty)
+        _positive_int(fixing_pr_number, "capability fixing PR number")
+        _timestamp(verification_completed_at, "capability verification completion")
         if base_root_tree_oid == hidden_fixed_root_tree_oid:
             raise _rejection("Evaluator capability base and hidden-fixed trees are not distinct.")
         _validate_capability_dependencies(
@@ -549,6 +572,11 @@ def require_v02_evaluator_capability(value: object) -> VerifiedV02EvaluatorCapab
             "public_commitment_sha256": capability.public_commitment_sha256,
             "generator_projection_sha256": capability.generator_projection_sha256,
             "dataset_evidence_sha256": capability.dataset_evidence_sha256,
+            "difficulty": capability.difficulty,
+            "upstream_instance_id": capability.upstream_instance_id,
+            "fixing_pr_number": capability.fixing_pr_number,
+            "evaluator_commitment_nonce": capability.evaluator_commitment_nonce,
+            "verification_completed_at": capability.verification_completed_at,
             "base_commit_sha": capability.base_commit_sha,
             "base_root_tree_oid": capability.base_root_tree_oid,
             "source_receipt_sha256": capability.source_receipt_sha256,
@@ -1323,10 +1351,17 @@ def load_v02_preregistration(path: Path) -> V02Preregistration:
 def audit_v02_cohort_packages(
     preregistration_path: Path,
     *,
-    packages_root: Path,
+    packages_root: Path | None = None,
     trusted_semantic_verifier: V02SemanticVerifier | None = None,
+    issued_packages: Sequence[VerifiedV02CasePackage] | None = None,
 ) -> V02CohortAudit:
-    """Fail closed unless all 20 private packages match the frozen public commitments."""
+    """Fail closed unless all 20 private packages match the frozen public commitments.
+
+    The structural path reads packages from ``packages_root`` and remains useful before a freeze.
+    The production path accepts only in-memory packages returned by the application-owned semantic
+    issuer. Their nominal capabilities cannot be serialized and therefore must cross the all-case
+    audit barrier in the same trusted controller process.
+    """
 
     preregistration = load_v02_preregistration(preregistration_path)
     blockers: list[str] = []
@@ -1335,21 +1370,56 @@ def audit_v02_cohort_packages(
     seen_targets: dict[tuple[str, int], str] = {}
     seen_base_fix_pairs: dict[tuple[str, str], str] = {}
     seen_nonces: dict[str, str] = {}
-    try:
-        require_private_directory(packages_root)
-    except (ReproAssertError, OSError) as exc:
-        return V02CohortAudit(
-            ready=False,
-            expected_case_count=EXPECTED_CASE_COUNT,
-            verified_case_count=0,
-            blockers=(f"private_packages_root:{_error_code(exc)}",),
-        )
-    for frozen in preregistration.cases:
-        package_path = Path(packages_root) / frozen.id / CASE_PACKAGE_FILENAME
-        try:
-            package = verify_v02_case_package(
-                package_path, trusted_semantic_verifier=trusted_semantic_verifier
+    issued_by_id: dict[str, VerifiedV02CasePackage] | None = None
+    if issued_packages is not None:
+        if packages_root is not None or trusted_semantic_verifier is not None:
+            return V02CohortAudit(
+                ready=False,
+                expected_case_count=EXPECTED_CASE_COUNT,
+                verified_case_count=0,
+                blockers=("issued_packages:mixed_audit_modes",),
             )
+        issued_by_id = {}
+        for package in issued_packages:
+            if type(package) is not VerifiedV02CasePackage:
+                blockers.append("issued_packages:invalid_package_type")
+                continue
+            if package.case.id in issued_by_id:
+                blockers.append(f"{package.case.id}:issued_package_duplicate")
+                continue
+            issued_by_id[package.case.id] = package
+        frozen_ids = {case.id for case in preregistration.cases}
+        for extra in sorted(set(issued_by_id) - frozen_ids):
+            blockers.append(f"{extra}:issued_package_not_preregistered")
+    else:
+        if packages_root is None:
+            return V02CohortAudit(
+                ready=False,
+                expected_case_count=EXPECTED_CASE_COUNT,
+                verified_case_count=0,
+                blockers=("private_packages_root:missing",),
+            )
+        try:
+            require_private_directory(packages_root)
+        except (ReproAssertError, OSError) as exc:
+            return V02CohortAudit(
+                ready=False,
+                expected_case_count=EXPECTED_CASE_COUNT,
+                verified_case_count=0,
+                blockers=(f"private_packages_root:{_error_code(exc)}",),
+            )
+    for frozen in preregistration.cases:
+        try:
+            if issued_by_id is not None:
+                issued_package = issued_by_id.get(frozen.id)
+                if issued_package is None:
+                    raise _rejection("Issued package is missing for a frozen case.")
+                package = issued_package
+            else:
+                package_path = cast(Path, packages_root) / frozen.id / CASE_PACKAGE_FILENAME
+                package = verify_v02_case_package(
+                    package_path, trusted_semantic_verifier=trusted_semantic_verifier
+                )
             if package.case != V02CaseIdentity(
                 id=frozen.id,
                 repo=frozen.repo,
@@ -1402,6 +1472,31 @@ def audit_v02_cohort_packages(
                 capability.public_commitment_sha256,
                 package.evaluator_commitment_sha256,
                 "evaluator capability public commitment",
+            )
+            _require_equal(
+                capability.difficulty,
+                package.difficulty,
+                "evaluator capability difficulty",
+            )
+            _require_equal(
+                capability.upstream_instance_id,
+                package.upstream_instance_id,
+                "evaluator capability upstream instance",
+            )
+            _require_equal(
+                capability.fixing_pr_number,
+                package.fixing_pr_number,
+                "evaluator capability fixing PR number",
+            )
+            _require_equal(
+                capability.evaluator_commitment_nonce,
+                package.evaluator_commitment_nonce,
+                "evaluator capability commitment nonce",
+            )
+            _require_equal(
+                capability.verification_completed_at,
+                package.verification_completed_at,
+                "evaluator capability verification completion",
             )
             _require_equal(
                 capability.hidden_fixed_root_tree_oid,

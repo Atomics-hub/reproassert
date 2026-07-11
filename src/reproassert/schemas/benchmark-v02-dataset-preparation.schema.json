@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Atomics-hub/reproassert/blob/main/schemas/benchmark-v02-dataset-preparation.schema.json",
+  "title": "ReproAssert v0.2 private dataset preparation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "algorithm", "status", "prepared_at", "case_count", "inputs", "outputs", "claims", "preparation_sha256"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "algorithm": {"const": "reproassert-v02-private-dataset-preparation-v1"},
+    "status": {"const": "prepared_no_provider_invoked"},
+    "prepared_at": {"type": "string", "format": "date-time"},
+    "case_count": {"const": 20},
+    "inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tdd_id_list", "source_dataset", "upstream_object_witness", "cohort_plan", "dataset_parser_image_id"],
+      "properties": {
+        "tdd_id_list": {"$ref": "#/$defs/artifact"},
+        "source_dataset": {"$ref": "#/$defs/artifact"},
+        "upstream_object_witness": {"$ref": "#/$defs/artifact"},
+        "cohort_plan": {"$ref": "#/$defs/artifact"},
+        "dataset_parser_image_id": {"const": "sha256:0bf07669fd085b608e6859b90a486b3ede52d8cc409309410181ab32fbe1118f"}
+      }
+    },
+    "outputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["parser_receipt", "boundary_attestation", "projections"],
+      "properties": {
+        "parser_receipt": {"$ref": "#/$defs/artifact"},
+        "boundary_attestation": {"$ref": "#/$defs/artifact"},
+        "projections": {
+          "type": "array",
+          "minItems": 20,
+          "maxItems": 20,
+          "items": {"$ref": "#/$defs/projection"}
+        }
+      }
+    },
+    "claims": {
+      "const": {
+        "campaign_readiness_changed": false,
+        "issue_text_chronology": "chronology_unproven",
+        "model_or_provider_invoked": false,
+        "provider_calls": 0
+      }
+    },
+    "preparation_sha256": {"$ref": "#/$defs/sha256"}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "bytes"],
+      "properties": {
+        "path": {"type": "string", "pattern": "^(?!\\.)(?!.*(?:^|/)\\.{1,2}(?:/|$))[A-Za-z0-9._/-]{1,240}$"},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "bytes": {"type": "integer", "minimum": 1, "maximum": 4194304}
+      }
+    },
+    "projection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["case_id", "path", "sha256", "bytes"],
+      "properties": {
+        "case_id": {"type": "string", "pattern": "^rk-v0\\.2-[0-9]{3}$"},
+        "path": {"type": "string", "pattern": "^generator-projections/rk-v0\\.2-[0-9]{3}\\.json$"},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "bytes": {"type": "integer", "minimum": 1, "maximum": 131072}
+      }
+    }
+  }
+}

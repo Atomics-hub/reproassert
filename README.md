@@ -261,6 +261,22 @@ and pytest, and rejects any mismatch. Its self-hashed result records collection 
 run's bounded argv, duration, exit state, output digest, and JUnit digest. It never invokes a model
 provider.
 
+Before a scored campaign, the private preparation lane can materialize and independently rederive
+the frozen dataset inputs without making a provider call:
+
+```console
+reproassert benchmark prepare-v02-dataset --help
+reproassert benchmark verify-v02-dataset --help
+reproassert benchmark prepare-v02-object-source --help
+reproassert benchmark verify-v02-object-source --help
+```
+
+Dataset preparation writes a self-hashed receipt, the attested parser receipt, and exactly 20
+generator-safe projections inside a controller-owned `0700` directory outside every Git checkout.
+Verification reruns the exact no-network parser and byte-compares every projection. The projections
+remain explicitly `chronology_unproven`; none of these commands exposes paid execution or changes
+campaign readiness.
+
 The exact bundle and result schemas are published at
 [`benchmark-v02-replay-bundle.schema.json`](https://atomics-hub.github.io/reproassert/benchmark-v02-replay-bundle.schema.json)
 and

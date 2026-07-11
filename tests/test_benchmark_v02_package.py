@@ -5,7 +5,7 @@ import json
 import stat
 import subprocess
 import sys
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any, cast
 
@@ -639,6 +639,11 @@ def test_nominal_evaluator_capability_rejects_corrupted_issuer() -> None:
         public_commitment_sha256="6" * 64,
         generator_projection_sha256="4" * 64,
         dataset_evidence_sha256="a" * 64,
+        difficulty="lt_15m",
+        upstream_instance_id="owner__repo-9",
+        fixing_pr_number=9,
+        evaluator_commitment_nonce="e" * 64,
+        verification_completed_at="2026-07-10T14:00:00Z",
         base_commit_sha=CASE.base_sha,
         base_root_tree_oid=BASE_TREE_OID,
         source_receipt_sha256="b" * 64,
@@ -929,6 +934,15 @@ def test_cohort_audit_requires_every_commitment_to_match(
     ) -> VerifiedV02CasePackage:
         frozen = by_id[path.parent.name]
         ordinal = int(frozen.id.rsplit("-", 1)[1])
+        overrides = private_overrides.get(frozen.id, {})
+        upstream_instance_id = cast(
+            str,
+            overrides.get("upstream_instance_id", f"owner__repo{(ordinal + 1) // 2}-{ordinal}"),
+        )
+        evaluator_commitment_nonce = cast(
+            str,
+            overrides.get("evaluator_commitment_nonce", f"{ordinal + 2000:064x}"),
+        )
         capability = package_module.VerifiedV02EvaluatorCapability(
             package_module._CAPABILITY_ISSUER,
             case=V02CaseIdentity(frozen.id, frozen.repo, frozen.issue_url, frozen.base_sha),
@@ -939,6 +953,11 @@ def test_cohort_audit_requires_every_commitment_to_match(
             public_commitment_sha256=frozen.evaluator_commitment_sha256,
             generator_projection_sha256=frozen.generator_projection_sha256,
             dataset_evidence_sha256="a" * 64,
+            difficulty=frozen.difficulty,
+            upstream_instance_id=upstream_instance_id,
+            fixing_pr_number=ordinal,
+            evaluator_commitment_nonce=evaluator_commitment_nonce,
+            verification_completed_at="2026-07-10T14:00:00Z",
             base_commit_sha=frozen.base_sha,
             base_root_tree_oid=f"{ordinal + 900:040x}",
             source_receipt_sha256="b" * 64,
@@ -968,11 +987,11 @@ def test_cohort_audit_requires_every_commitment_to_match(
             "evaluator_commitment_sha256": frozen.evaluator_commitment_sha256,
             "snapshot_sha256": "8" * 64,
             "difficulty": frozen.difficulty,
-            "upstream_instance_id": f"owner__repo{(ordinal + 1) // 2}-{ordinal}",
+            "upstream_instance_id": upstream_instance_id,
             "fixing_pr_number": ordinal,
             "fixed_commit_sha": f"{ordinal + 500:040x}",
             "hidden_fixed_root_tree_oid": f"{ordinal + 1000:040x}",
-            "evaluator_commitment_nonce": f"{ordinal + 2000:064x}",
+            "evaluator_commitment_nonce": evaluator_commitment_nonce,
             "verification_completed_at": "2026-07-10T14:00:00Z",
             "evaluator_capability": capability,
         }
@@ -983,6 +1002,37 @@ def test_cohort_audit_requires_every_commitment_to_match(
     complete = audit_v02_cohort_packages(prereg_path, packages_root=packages)
     assert complete.ready is True
     assert complete.verified_case_count == 20
+
+    issued = [fake_verify(packages / case.id / CASE_PACKAGE_FILENAME) for case in cases]
+    issued_complete = audit_v02_cohort_packages(
+        prereg_path,
+        issued_packages=issued,
+    )
+    assert issued_complete.ready is True
+    assert issued_complete.verified_case_count == 20
+    assert issued_complete.blockers == ()
+    forged = list(issued)
+    forged[0] = replace(
+        forged[0],
+        upstream_instance_id=forged[1].upstream_instance_id,
+        fixing_pr_number=forged[1].fixing_pr_number,
+        evaluator_commitment_nonce=forged[1].evaluator_commitment_nonce,
+        verification_completed_at="2020-01-01T00:00:00Z",
+        difficulty=("15m_to_1h" if forged[0].difficulty == "lt_15m" else "lt_15m"),
+    )
+    forged_audit = audit_v02_cohort_packages(
+        prereg_path,
+        issued_packages=forged,
+    )
+    assert forged_audit.ready is False
+    assert any(blocker.startswith(f"{cases[0].id}:") for blocker in forged_audit.blockers)
+    mixed = audit_v02_cohort_packages(
+        prereg_path,
+        packages_root=packages,
+        issued_packages=issued,
+    )
+    assert mixed.ready is False
+    assert mixed.blockers == ("issued_packages:mixed_audit_modes",)
 
     private_overrides[cases[1].id] = {
         "upstream_instance_id": "owner__repo1-1",
