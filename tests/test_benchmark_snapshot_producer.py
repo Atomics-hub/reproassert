@@ -7,6 +7,7 @@ from typing import Any
 
 import pytest
 
+from reproassert import __version__
 from reproassert.benchmark_snapshot import canonicalize_snapshot_receipt
 from reproassert.benchmark_snapshot_producer import (
     GRAPHQL_API_VERSION,
@@ -229,7 +230,7 @@ def test_receipt_commits_query_provenance_chronology_redaction_and_human_review(
         },
         "tool": {
             "name": "reproassert-snapshot-producer",
-            "version": "0.2.0",
+            "version": __version__,
             "git_sha": "b" * 40,
         },
         "raw_receipt_sha256": hashlib.sha256(raw).hexdigest(),
