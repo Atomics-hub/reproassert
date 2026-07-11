@@ -30,6 +30,7 @@ _ROOT_KEYS = {"algorithm", "entries", "harness", "manifest_sha256", "policy", "s
 _HARNESS_KEYS = {"git_sha", "repository", "specs_sha256"}
 _ENTRY_KEYS = {
     "base_sha",
+    "base_tree_oid",
     "case_id",
     "image_digest",
     "image_id",
@@ -56,6 +57,7 @@ class InstanceRuntime:
     case_id: str
     instance_id: str
     base_sha: str
+    base_tree_oid: str
     spec_sha256: str
     image_tag: str
     image_digest: str
@@ -150,6 +152,7 @@ def load_instance_runtime_manifest(path: Path) -> InstanceRuntimeManifest:
                 case_id=_text(entry["case_id"], _CASE_ID, "case ID"),
                 instance_id=_text(entry["instance_id"], _INSTANCE_ID, "instance ID"),
                 base_sha=_text(entry["base_sha"], _GIT_SHA, "base SHA"),
+                base_tree_oid=_text(entry["base_tree_oid"], _GIT_SHA, "base tree OID"),
                 spec_sha256=_digest(entry["spec_sha256"], "instance spec"),
                 image_tag=_text(entry["image_tag"], _IMAGE_TAG, "instance image tag"),
                 image_digest=_text(entry["image_digest"], _IMAGE_ID, "instance image digest"),
@@ -183,6 +186,7 @@ def instance_runtime_manifest_bytes(
         "entries": [
             {
                 "base_sha": entry.base_sha,
+                "base_tree_oid": entry.base_tree_oid,
                 "case_id": entry.case_id,
                 "image_digest": entry.image_digest,
                 "image_id": entry.image_id,
