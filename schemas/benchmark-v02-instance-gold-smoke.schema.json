@@ -36,8 +36,22 @@
     "policy": {
       "const": {
         "image_acquisition": "bounded_exact-digest-pull-before-sandbox-execution",
+        "profile": "reproassert-v02-instance-gold-smoke-resources-v1",
         "provider_execution_enabled": false,
-        "sandbox_network_mode": "none"
+        "sandbox": {
+          "capabilities": "drop_all",
+          "cpus": 2.0,
+          "max_output_bytes": 2097152,
+          "memory_bytes": 4294967296,
+          "network_mode": "none",
+          "no_new_privileges": true,
+          "pids": 512,
+          "read_only_root": true,
+          "test_user": "65532:65532",
+          "timeout_seconds": 600.0,
+          "tmpfs_bytes": 536870912,
+          "tmpfs_inodes": 32768
+        }
       }
     },
     "receipt_sha256": {"$ref": "#/$defs/sha256"},

@@ -12,6 +12,13 @@ command run with Docker network mode `none`, no credentials, no host bind mount,
 filesystem, dropped capabilities, and resource limits. No model or provider code is reachable from
 this controller.
 
+The resource envelope is frozen as `reproassert-v02-instance-gold-smoke-resources-v1`: 600 seconds
+per test command, 2 MiB bounded output, 4 GiB memory with no swap allowance, 2 CPUs, 512 processes,
+and a 512 MiB `/tmp` tmpfs with 32,768 inodes. These limits accommodate the historical Astropy,
+scikit-learn, and SymPy suites while remaining finite. The exact values, non-root test user, dropped
+capabilities, read-only root, and network-none mode are committed in every receipt and rejected if
+they drift, even when a modified receipt is self-hashed again.
+
 The canonical private receipt always contains all 20 case rows. A targeted smoke marks the other 19
 rows `not_run`; it never shrinks the denominator. Raw hidden patches and raw sandbox output are not
 stored. The receipt records only hidden-input commitments and bounded output hashes. Timeouts,

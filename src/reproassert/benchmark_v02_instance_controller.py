@@ -24,6 +24,7 @@ from reproassert.benchmark_v02_instance_runtime import (
 )
 from reproassert.errors import PolicyRejection, ReproAssertError
 from reproassert.safeio import open_regular_file, write_bytes_exclusive
+from reproassert.sandbox import SandboxPolicy
 
 GOLD_SMOKE_SCHEMA_VERSION = "0.1.0"
 GOLD_SMOKE_ALGORITHM = "reproassert-v02-instance-gold-smoke-v1"
@@ -49,6 +50,26 @@ _SETUP_MARKERS = (
     "permission denied",
     "no such file or directory",
 )
+GOLD_SMOKE_POLICY_PROFILE = "reproassert-v02-instance-gold-smoke-resources-v1"
+GOLD_SMOKE_RECEIPT_POLICY = {
+    "image_acquisition": "bounded_exact-digest-pull-before-sandbox-execution",
+    "profile": GOLD_SMOKE_POLICY_PROFILE,
+    "provider_execution_enabled": False,
+    "sandbox": {
+        "capabilities": "drop_all",
+        "cpus": 2.0,
+        "max_output_bytes": 2 * 1024 * 1024,
+        "memory_bytes": 4 * 1024 * 1024 * 1024,
+        "network_mode": "none",
+        "no_new_privileges": True,
+        "pids": 512,
+        "read_only_root": True,
+        "test_user": "65532:65532",
+        "timeout_seconds": 600.0,
+        "tmpfs_bytes": 512 * 1024 * 1024,
+        "tmpfs_inodes": 32_768,
+    },
+}
 
 
 @dataclass(frozen=True)
@@ -103,16 +124,16 @@ def verify_instance_gold_smoke_receipt(path: Path) -> GoldSmokeReceipt:
         or value.get("receipt_sha256") != _self_hash(value)
     ):
         raise _reject("Gold-smoke receipt identity is invalid.")
-    if value.get("claims") != {
-        "hidden_patch_contents_emitted": False,
-        "model_or_provider_invoked": False,
-        "network_during_sandbox_execution": False,
-        "provider_calls": 0,
-    } or value.get("policy") != {
-        "image_acquisition": "bounded_exact-digest-pull-before-sandbox-execution",
-        "provider_execution_enabled": False,
-        "sandbox_network_mode": "none",
-    }:
+    if (
+        value.get("claims")
+        != {
+            "hidden_patch_contents_emitted": False,
+            "model_or_provider_invoked": False,
+            "network_during_sandbox_execution": False,
+            "provider_calls": 0,
+        }
+        or value.get("policy") != GOLD_SMOKE_RECEIPT_POLICY
+    ):
         raise _reject("Gold-smoke receipt trust claims are invalid.")
     _timestamp(value.get("executed_at"))
     _git_sha(value.get("tool_git_sha"))
@@ -161,7 +182,7 @@ def verify_instance_gold_smoke_receipt(path: Path) -> GoldSmokeReceipt:
     )
 
 
-ExecutorFactory = Callable[[InstanceRuntimeManifest, str], InstanceRuntimeExecutor]
+ExecutorFactory = Callable[[InstanceRuntimeManifest, str, SandboxPolicy], InstanceRuntimeExecutor]
 
 
 def run_instance_gold_smoke(
@@ -241,11 +262,7 @@ def run_instance_gold_smoke(
             "hidden_extraction_receipt_sha256": verified_hidden.prepared.receipt_sha256,
             "instance_runtime_manifest_sha256": manifest.sha256,
         },
-        "policy": {
-            "image_acquisition": "bounded_exact-digest-pull-before-sandbox-execution",
-            "provider_execution_enabled": False,
-            "sandbox_network_mode": "none",
-        },
+        "policy": GOLD_SMOKE_RECEIPT_POLICY,
         "receipt_sha256": "0" * 64,
         "results": results,
         "schema_version": GOLD_SMOKE_SCHEMA_VERSION,
@@ -282,7 +299,9 @@ def _run_case(
     classification = "infrastructure_failure"
     reason = "controller_failure"
     try:
-        with executor_factory(manifest, case_id) as executor:
+        runtime = next(entry for entry in manifest.entries if entry.case_id == case_id)
+        policy = _gold_smoke_policy(runtime.image_id)
+        with executor_factory(manifest, case_id, policy) as executor:
             executor.acquire()
             executor.prepare_workspaces(fixed_patch=production)
             executor.apply_patch(workspace="base", patch=developer_tests)
@@ -612,8 +631,23 @@ def _verify_phase(value: object) -> None:
     _digest(value.get("output_sha256"), "phase output")
 
 
-def _executor_factory(manifest: InstanceRuntimeManifest, case_id: str) -> InstanceRuntimeExecutor:
-    return InstanceRuntimeExecutor(manifest, case_id=case_id)
+def _executor_factory(
+    manifest: InstanceRuntimeManifest, case_id: str, policy: SandboxPolicy
+) -> InstanceRuntimeExecutor:
+    return InstanceRuntimeExecutor(manifest, case_id=case_id, policy=policy)
+
+
+def _gold_smoke_policy(image: str) -> SandboxPolicy:
+    return SandboxPolicy(
+        image=image,
+        timeout_seconds=600.0,
+        max_output_bytes=2 * 1024 * 1024,
+        memory_bytes=4 * 1024 * 1024 * 1024,
+        cpus=2.0,
+        pids=512,
+        tmpfs_bytes=512 * 1024 * 1024,
+        tmpfs_inodes=32_768,
+    )
 
 
 def _self_hash(record: dict[str, object]) -> str:

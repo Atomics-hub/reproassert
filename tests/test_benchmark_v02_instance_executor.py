@@ -39,10 +39,15 @@ def _manifest() -> InstanceRuntimeManifest:
 class FakeDocker:
     commands: ClassVar[list[list[str]]]
 
-    def __init__(self, runtime: InstanceRuntime | None = None) -> None:
+    def __init__(
+        self,
+        runtime: InstanceRuntime | None = None,
+        policy: SandboxPolicy | None = None,
+    ) -> None:
         self.commands = []
         self.containers: dict[str, dict[str, object]] = {}
         self.runtime = runtime or _runtime()
+        self.policy = policy or SandboxPolicy(image=self.runtime.image_id)
 
     def run(
         self,
@@ -92,14 +97,20 @@ class FakeDocker:
                 "HostConfig": {
                     "Binds": None,
                     "CapDrop": ["ALL"],
-                    "Memory": 1024 * 1024 * 1024,
-                    "MemorySwap": 1024 * 1024 * 1024,
-                    "NanoCpus": 1_000_000_000,
+                    "Memory": self.policy.memory_bytes,
+                    "MemorySwap": self.policy.memory_bytes,
+                    "NanoCpus": int(self.policy.cpus * 1_000_000_000),
                     "NetworkMode": "none",
-                    "PidsLimit": 128,
+                    "PidsLimit": self.policy.pids,
                     "ReadonlyRootfs": "--read-only" in args,
                     "SecurityOpt": ["no-new-privileges"],
-                    "Tmpfs": {"/tmp": "rw,noexec,nosuid,nodev,size=67108864,nr_inodes=4096"},
+                    "Tmpfs": {
+                        "/tmp": (
+                            "rw,noexec,nosuid,nodev,"
+                            f"size={self.policy.tmpfs_bytes},"
+                            f"nr_inodes={self.policy.tmpfs_inodes}"
+                        )
+                    },
                 },
                 "Image": image_id,
                 "Mounts": [
@@ -293,3 +304,30 @@ def test_sympy_profile_runs_only_frozen_bin_test_as_nonroot() -> None:
     assert test_create[test_create.index("--user") + 1] == "65532:65532"
     with pytest.raises(ReproAssertError, match="does not use the pytest"):
         executor.run_pytest(workspace="base", targets=("sympy/core/tests/test_basic.py",))
+
+
+def test_custom_resource_policy_is_enforced_by_container_inspection() -> None:
+    policy = SandboxPolicy(
+        image=_runtime().image_id,
+        timeout_seconds=600.0,
+        max_output_bytes=2 * 1024 * 1024,
+        memory_bytes=4 * 1024 * 1024 * 1024,
+        cpus=2.0,
+        pids=512,
+        tmpfs_bytes=512 * 1024 * 1024,
+        tmpfs_inodes=32_768,
+    )
+    fake = FakeDocker(policy=policy)
+    executor = InstanceRuntimeExecutor(
+        _manifest(), case_id="rk-v0.2-001", policy=policy, runner=fake
+    )
+
+    executor.acquire()
+    executor.prepare_workspaces(fixed_patch=b"diff --git a/a b/a\n")
+    executor.run_test_command(workspace="base", targets=("tests/test_issue.py",))
+
+    creates = [command for command in fake.commands if command[0] == "create"]
+    assert any("4294967296" in command for command in creates)
+    assert any(any("536870912" in token for token in command) for command in creates)
+    assert any("--cpus" in command and "2" in command for command in creates)
+    assert any("--pids-limit" in command and "512" in command for command in creates)

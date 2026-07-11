@@ -17,6 +17,7 @@ from reproassert.benchmark_v02_instance_runtime import (
     load_instance_runtime_manifest,
 )
 from reproassert.errors import PolicyRejection
+from reproassert.sandbox import SandboxPolicy
 
 
 def _canonical(value: object) -> bytes:
@@ -142,6 +143,11 @@ def test_single_case_preserves_denominator_and_never_stores_hidden_output(
     manifest, manifest_sha, specs, specs_sha = _inputs(tmp_path)
     hidden = _install_hidden(monkeypatch, tmp_path)
     output = tmp_path / "receipt.json"
+    policies: list[SandboxPolicy] = []
+
+    def factory(_manifest: object, case_id: str, policy: SandboxPolicy) -> FakeExecutor:
+        policies.append(policy)
+        return FakeExecutor(case_id)
 
     result = controller.run_instance_gold_smoke(
         manifest_path=manifest,
@@ -153,7 +159,7 @@ def test_single_case_preserves_denominator_and_never_stores_hidden_output(
         executed_at="2026-07-10T23:30:00Z",
         tool_git_sha="a" * 40,
         case_id="rk-v0.2-001",
-        executor_factory=lambda _manifest, case_id: FakeExecutor(case_id),
+        executor_factory=factory,
     )
 
     receipt = json.loads(output.read_bytes())
@@ -166,6 +172,18 @@ def test_single_case_preserves_denominator_and_never_stores_hidden_output(
         "semantic_valid": 1,
     }
     assert result.semantic_valid_count == 1
+    assert policies == [
+        SandboxPolicy(
+            image=f"sha256:{'e' * 64}",
+            timeout_seconds=600.0,
+            max_output_bytes=2 * 1024 * 1024,
+            memory_bytes=4 * 1024 * 1024 * 1024,
+            cpus=2.0,
+            pids=512,
+            tmpfs_bytes=512 * 1024 * 1024,
+            tmpfs_inodes=32_768,
+        )
+    ]
     verified = controller.verify_instance_gold_smoke_receipt(output)
     assert verified.semantic_valid_count == 1
     assert b"SECRET" not in output.read_bytes()
@@ -173,9 +191,10 @@ def test_single_case_preserves_denominator_and_never_stores_hidden_output(
     schema = json.loads(Path("schemas/benchmark-v02-instance-gold-smoke.schema.json").read_text())
     jsonschema.validate(receipt, schema)
 
-    receipt["counts"]["semantic_valid"] = 20
+    receipt["policy"]["sandbox"]["cpus"] = 1.0
+    receipt["receipt_sha256"] = controller._self_hash(receipt)
     output.write_bytes(_canonical(receipt))
-    with pytest.raises(PolicyRejection, match="identity"):
+    with pytest.raises(PolicyRejection, match="trust claims"):
         controller.verify_instance_gold_smoke_receipt(output)
 
 
@@ -196,7 +215,9 @@ def test_network_dependency_is_infrastructure_not_semantic(
         executed_at="2026-07-10T23:30:00Z",
         tool_git_sha="a" * 40,
         case_id="rk-v0.2-014",
-        executor_factory=lambda _manifest, case_id: FakeExecutor(case_id, network_failure=True),
+        executor_factory=lambda _manifest, case_id, _policy: FakeExecutor(
+            case_id, network_failure=True
+        ),
     )
 
     selected = next(row for row in json.loads(output.read_bytes())["results"] if row["selected"])
