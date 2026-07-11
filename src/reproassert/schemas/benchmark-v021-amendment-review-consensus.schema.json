@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Atomics-hub/reproassert/blob/main/schemas/benchmark-v021-amendment-review-consensus.schema.json",
+  "title": "ReproAssert v0.2.1 sealed amendment review consensus",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["algorithm", "amendment_handoff_raw_sha256", "amendment_receipt_sha256", "benchmark_version", "claims", "consensus", "schema_version", "seal_sha256", "sealed_at", "status", "submissions", "tool_git_sha"],
+  "properties": {
+    "algorithm": {"const": "reproassert-v021-amendment-review-consensus-v1"},
+    "amendment_handoff_raw_sha256": {"$ref": "#/$defs/sha256"},
+    "amendment_receipt_sha256": {"$ref": "#/$defs/sha256"},
+    "benchmark_version": {"const": "0.2.1"},
+    "claims": {"const": {"model_or_provider_invoked": false, "nominal_authority_serialized": false, "provider_calls": 0}},
+    "consensus": {"type": "object", "additionalProperties": false, "required": ["mode", "verdict"], "properties": {"mode": {"enum": ["two_primary_agreement", "declared_tiebreak"]}, "verdict": {"enum": ["approved", "rejected"]}}},
+    "schema_version": {"const": "1.0.0"},
+    "seal_sha256": {"$ref": "#/$defs/sha256"},
+    "sealed_at": {"type": "string", "format": "date-time", "pattern": "Z$"},
+    "status": {"enum": ["approved_provider_disabled", "rejected_provider_disabled"]},
+    "submissions": {"type": "array", "minItems": 2, "maxItems": 3, "items": {"$ref": "benchmark-v021-amendment-review-submission.schema.json"}},
+    "tool_git_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"}
+  },
+  "$defs": {"sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}
+}

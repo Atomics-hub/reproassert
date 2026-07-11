@@ -90,6 +90,18 @@ The v0.2 freeze is provider-free. It records 19 evaluator-preflight-ready cases 
 provider-disabled v0.2.1 capability and case-preparation evidence, but it cannot enter this v0.2
 preregistration or execution path. That scoring-policy amendment requires a separately reviewed
 v0.2.1 preregistration, freeze, authorization, execution, controls, review, and publication chain.
+
+The first v0.2.1 review boundary is provider-disabled. Prepare the amendment handoff with
+`reproassert benchmark prepare-v021-amendment-review-handoff`, have the two already-declared
+primary mapping reviewers independently submit the strict
+`benchmark-v021-amendment-review-submission` schema, then seal with
+`seal-v021-amendment-review-consensus`. A declared third reviewer is accepted only after primary
+disagreement. The future semantic-review roster stays disjoint. These submissions are unsigned,
+operator-collected human receipts: the verifier proves their bindings, declared identities,
+chronology, and agreement structure, but not cryptographic human authorship. Even an approved
+consensus cannot invoke a provider: no v0.2.1 run command or executable config exists until the
+separately versioned runtime migration and full preregistration/freeze/authorization chain is
+implemented.
 Verification reruns every upstream verifier:
 
 ```bash

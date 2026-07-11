@@ -34,6 +34,15 @@ SCHEMA_FILENAMES = {
         "benchmark-v02-exact-image-authorization.schema.json"
     ),
     "benchmark-v02-amendment": "benchmark-v02-amendment.schema.json",
+    "benchmark-v021-amendment-review-submission": (
+        "benchmark-v021-amendment-review-submission.schema.json"
+    ),
+    "benchmark-v021-amendment-review-handoff": (
+        "benchmark-v021-amendment-review-handoff.schema.json"
+    ),
+    "benchmark-v021-amendment-review-consensus": (
+        "benchmark-v021-amendment-review-consensus.schema.json"
+    ),
     "benchmark-v02-exact-image-capability-index": (
         "benchmark-v02-exact-image-capability-index.schema.json"
     ),

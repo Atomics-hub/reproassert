@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Atomics-hub/reproassert/blob/main/schemas/benchmark-v021-amendment-review-handoff.schema.json",
+  "title": "ReproAssert v0.2.1 provider-free amendment review handoff",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["algorithm", "amendment", "benchmark_version", "claims", "mapping_handoff_raw_sha256", "prepared_at", "receipt_sha256", "review_policy", "schema_version", "status", "tool_git_sha"],
+  "properties": {
+    "algorithm": {"const": "reproassert-v021-amendment-review-handoff-v1"},
+    "amendment": {
+      "type": "object", "additionalProperties": false,
+      "required": ["change", "evidence", "internal_receipt_sha256", "raw_sha256", "review_status"],
+      "properties": {
+        "change": {
+          "type": "object", "additionalProperties": false,
+          "required": ["added_fail_to_pass_targets", "amended_case_id", "amended_instance_id", "fail_to_pass_after", "fail_to_pass_before", "removed_fail_to_pass_targets", "scope"],
+          "properties": {
+            "added_fail_to_pass_targets": {"const": 0},
+            "amended_case_id": {"const": "rk-v0.2-014"},
+            "amended_instance_id": {"const": "psf__requests-1921"},
+            "fail_to_pass_after": {"const": 1},
+            "fail_to_pass_before": {"const": 6},
+            "removed_fail_to_pass_targets": {"const": 5},
+            "scope": {"const": "strict_subset_only"}
+          }
+        },
+        "evidence": {
+          "type": "object", "additionalProperties": false,
+          "required": ["amended_executed_at", "amended_gold_smoke_commitment_sha256", "amended_gold_smoke_receipt_sha256", "amended_gold_specs_sha256", "hidden_extraction_commitment_sha256", "hidden_extraction_receipt_sha256", "original_executed_at", "original_gold_smoke_commitment_sha256", "original_gold_smoke_receipt_sha256", "original_gold_specs_sha256", "runtime_manifest_raw_sha256", "runtime_manifest_sha256", "smoke_tool_git_sha"],
+          "properties": {
+            "amended_executed_at": {"$ref": "#/$defs/timestamp"},
+            "amended_gold_smoke_commitment_sha256": {"$ref": "#/$defs/sha256"},
+            "amended_gold_smoke_receipt_sha256": {"$ref": "#/$defs/sha256"},
+            "amended_gold_specs_sha256": {"const": "8fa460abb6d72fcaa19f3588277216aa8b483eb28e27ea78985cb7e6f6ceb1db"},
+            "hidden_extraction_commitment_sha256": {"$ref": "#/$defs/sha256"},
+            "hidden_extraction_receipt_sha256": {"$ref": "#/$defs/sha256"},
+            "original_executed_at": {"$ref": "#/$defs/timestamp"},
+            "original_gold_smoke_commitment_sha256": {"$ref": "#/$defs/sha256"},
+            "original_gold_smoke_receipt_sha256": {"$ref": "#/$defs/sha256"},
+            "original_gold_specs_sha256": {"const": "f9cdfa3b0fa7aa8d26a7c4720af36095fe429f098daa5dcea41a436895f63544"},
+            "runtime_manifest_raw_sha256": {"$ref": "#/$defs/sha256"},
+            "runtime_manifest_sha256": {"$ref": "#/$defs/sha256"},
+            "smoke_tool_git_sha": {"$ref": "#/$defs/git_sha"}
+          }
+        },
+        "internal_receipt_sha256": {"$ref": "#/$defs/sha256"},
+        "raw_sha256": {"$ref": "#/$defs/sha256"},
+        "review_status": {"const": "pending"}
+      }
+    },
+    "benchmark_version": {"const": "0.2.1"},
+    "claims": {"const": {"model_or_provider_invoked": false, "nominal_authority_serialized": false, "provider_calls": 0, "reviewer_verdict_generated": false}},
+    "mapping_handoff_raw_sha256": {"$ref": "#/$defs/sha256"},
+    "prepared_at": {"type": "string", "format": "date-time", "pattern": "Z$"},
+    "receipt_sha256": {"$ref": "#/$defs/sha256"},
+    "review_policy": {
+      "type": "object", "additionalProperties": false,
+      "required": ["decision", "oracle_access", "primary_reviewer_ids", "semantic_reviewer_ids", "tiebreak_reviewer_id", "tiebreak_rule"],
+      "properties": {
+        "decision": {"const": "approve_or_reject_exact_amendment"},
+        "oracle_access": {"const": "required_for_amendment_review"},
+        "primary_reviewer_ids": {"type": "array", "minItems": 2, "maxItems": 2, "uniqueItems": true, "items": {"$ref": "#/$defs/id"}},
+        "semantic_reviewer_ids": {"type": "array", "minItems": 2, "maxItems": 3, "uniqueItems": true, "items": {"$ref": "#/$defs/id"}},
+        "tiebreak_reviewer_id": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/id"}]},
+        "tiebreak_rule": {"const": "submit_only_after_primary_disagreement"}
+      }
+    },
+    "schema_version": {"const": "1.0.0"},
+    "status": {"const": "human_review_required_provider_disabled"},
+    "tool_git_sha": {"$ref": "#/$defs/git_sha"}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "git_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "timestamp": {"type": "string", "format": "date-time", "pattern": "Z$"},
+    "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{2,127}$"}
+  }
+}
