@@ -74,7 +74,7 @@
               "fixed": {"$ref": "#/$defs/execution"}
             }
           },
-          "reason": {"enum": ["not_selected", "fails_on_base_passes_on_fixed", "does_not_fail_on_base", "does_not_pass_on_fixed", "timeout", "output_limit", "network_dependency", "collection_or_setup_failure", "cleanup_failure", "sandbox_setup_failure", "controller_failure"]},
+          "reason": {"enum": ["not_selected", "fails_on_base_passes_on_fixed", "does_not_fail_on_base", "does_not_pass_on_fixed", "timeout", "output_limit", "network_dependency", "collection_or_setup_failure", "setup_failure", "cleanup_failure", "sandbox_setup_failure", "controller_failure"]},
           "selected": {"type": "boolean"},
           "test_command_profile": {"type": ["string", "null"], "enum": ["pytest-v1", "sympy-bin-test-v1", null]},
           "test_counts": {

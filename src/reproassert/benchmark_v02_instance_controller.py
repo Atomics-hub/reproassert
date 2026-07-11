@@ -42,6 +42,13 @@ _NETWORK_MARKERS = (
     "connectionerror",
     "socket.gaierror",
 )
+_SETUP_MARKERS = (
+    "modulenotfounderror",
+    "importerror while importing test module",
+    "command not found",
+    "permission denied",
+    "no such file or directory",
+)
 
 
 @dataclass(frozen=True)
@@ -366,6 +373,9 @@ def _infrastructure_reason(*results: InstancePytestResult, collecting: bool) -> 
     lowered = "\n".join(result.output.lower() for result in results)
     if any(marker in lowered for marker in _NETWORK_MARKERS):
         return "network_dependency"
+    failed_output = "\n".join(result.output.lower() for result in results if result.exit_code != 0)
+    if any(marker in failed_output for marker in _SETUP_MARKERS):
+        return "setup_failure"
     if collecting and any(result.exit_code != 0 for result in results):
         return "collection_or_setup_failure"
     return None
@@ -521,6 +531,7 @@ def _verify_result_row(row: dict[str, object]) -> None:
         "output_limit",
         "network_dependency",
         "collection_or_setup_failure",
+        "setup_failure",
         "cleanup_failure",
         "sandbox_setup_failure",
         "controller_failure",

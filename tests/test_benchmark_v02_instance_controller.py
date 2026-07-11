@@ -235,3 +235,15 @@ def test_rejects_unsafe_gold_target(tmp_path: Path) -> None:
     raw = _canonical(value)
     with pytest.raises(PolicyRejection, match="unsafe"):
         controller._load_gold_specs(raw)
+
+
+def test_missing_runtime_dependency_is_infrastructure() -> None:
+    result = InstancePytestResult(
+        workspace="fixed",
+        exit_code=1,
+        output="ModuleNotFoundError: No module named 'required_dependency' SECRET",
+        timed_out=False,
+        output_truncated=False,
+    )
+
+    assert controller._infrastructure_reason(result, collecting=False) == "setup_failure"
