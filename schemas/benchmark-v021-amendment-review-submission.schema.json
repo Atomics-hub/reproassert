@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Atomics-hub/reproassert/blob/main/schemas/benchmark-v021-amendment-review-submission.schema.json",
+  "title": "ReproAssert v0.2.1 independent amendment review submission",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["amendment_handoff_raw_sha256", "declarations", "reviewer_id", "schema_version", "submitted_at", "verdict"],
+  "properties": {
+    "amendment_handoff_raw_sha256": {"$ref": "#/$defs/sha256"},
+    "declarations": {"const": {"independent_judgment": true, "oracle_access": "review_only", "role": "amendment_reviewer", "semantic_review_role": "forbidden"}},
+    "reviewer_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{2,127}$"},
+    "schema_version": {"const": "1.0.0"},
+    "submitted_at": {"type": "string", "format": "date-time", "pattern": "Z$"},
+    "verdict": {"enum": ["approved", "rejected"]}
+  },
+  "$defs": {"sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}
+}

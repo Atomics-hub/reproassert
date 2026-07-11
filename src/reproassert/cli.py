@@ -104,6 +104,12 @@ from reproassert.benchmark_v02_preparation import (
     verify_v02_dataset_preparation,
 )
 from reproassert.benchmark_v02_replay import run_v02_replay_bundle
+from reproassert.benchmark_v021_amendment_review import (
+    prepare_v021_amendment_review_handoff,
+    seal_v021_amendment_review_consensus,
+    verify_v021_amendment_review_consensus,
+    verify_v021_amendment_review_handoff,
+)
 from reproassert.dependency_execution_receipt import load_dependency_execution_receipt
 from reproassert.errors import ReproAssertError
 from reproassert.generator import (
@@ -905,6 +911,242 @@ def benchmark_verify_v02_amendment(
             sort_keys=True,
         )
     )
+
+
+def _verified_pending_amendment(
+    receipt: Path,
+    original_gold_specs: Path,
+    amended_gold_specs: Path,
+    original_gold_smoke_receipt: Path,
+    amended_gold_smoke_receipt: Path,
+    instance_runtime_manifest: Path,
+    expected_manifest_sha256: str,
+    hidden_extraction_receipt: Path,
+) -> VerifiedV02BenchmarkAmendment:
+    return verify_v02_benchmark_amendment(
+        receipt,
+        original_gold_specs=original_gold_specs,
+        amended_gold_specs=amended_gold_specs,
+        original_gold_smoke_receipt=original_gold_smoke_receipt,
+        amended_gold_smoke_receipt=amended_gold_smoke_receipt,
+        instance_runtime_manifest=instance_runtime_manifest,
+        expected_runtime_manifest_sha256=expected_manifest_sha256,
+        hidden_extraction_receipt=hidden_extraction_receipt,
+    )
+
+
+def _v021_review_chain_options(function: Callable[..., Any]) -> Callable[..., Any]:
+    options = (
+        click.option(
+            "--mapping-handoff",
+            type=click.Path(path_type=Path, exists=True, dir_okay=False),
+            required=True,
+        ),
+        click.option(
+            "--mapping-preparation",
+            type=click.Path(path_type=Path, exists=True, dir_okay=False),
+            required=True,
+        ),
+    )
+    for option in reversed(options):
+        function = option(function)
+    return _amendment_common_options(function)
+
+
+@benchmark_group.command("prepare-v021-amendment-review-handoff")
+@click.argument("amendment_receipt", type=click.Path(path_type=Path, exists=True, dir_okay=False))
+@_v021_review_chain_options
+@click.option("--prepared-at", required=True)
+@click.option("--tool-git-sha", required=True)
+@click.option("--output", type=click.Path(path_type=Path, dir_okay=False), required=True)
+def benchmark_prepare_v021_amendment_review_handoff(
+    amendment_receipt: Path,
+    original_gold_specs: Path,
+    amended_gold_specs: Path,
+    original_gold_smoke_receipt: Path,
+    amended_gold_smoke_receipt: Path,
+    instance_runtime_manifest: Path,
+    expected_manifest_sha256: str,
+    hidden_extraction_receipt: Path,
+    mapping_handoff: Path,
+    mapping_preparation: Path,
+    prepared_at: str,
+    tool_git_sha: str,
+    output: Path,
+) -> None:
+    """Prepare a provider-disabled human review of the exact v0.2.1 amendment."""
+    try:
+        _ensure_private_output_root(output.parent)
+        authority = _verified_pending_amendment(
+            amendment_receipt,
+            original_gold_specs,
+            amended_gold_specs,
+            original_gold_smoke_receipt,
+            amended_gold_smoke_receipt,
+            instance_runtime_manifest,
+            expected_manifest_sha256,
+            hidden_extraction_receipt,
+        )
+        verified = prepare_v021_amendment_review_handoff(
+            amendment_authority=authority,
+            mapping_handoff_path=mapping_handoff,
+            mapping_preparation_path=mapping_preparation,
+            prepared_at=prepared_at,
+            tool_git_sha=tool_git_sha,
+            output_path=output,
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(json.dumps(asdict(verified), indent=2, sort_keys=True, default=str))
+
+
+@benchmark_group.command("verify-v021-amendment-review-handoff")
+@click.argument("handoff", type=click.Path(path_type=Path, exists=True, dir_okay=False))
+@click.argument("amendment_receipt", type=click.Path(path_type=Path, exists=True, dir_okay=False))
+@_v021_review_chain_options
+def benchmark_verify_v021_amendment_review_handoff(
+    handoff: Path,
+    amendment_receipt: Path,
+    original_gold_specs: Path,
+    amended_gold_specs: Path,
+    original_gold_smoke_receipt: Path,
+    amended_gold_smoke_receipt: Path,
+    instance_runtime_manifest: Path,
+    expected_manifest_sha256: str,
+    hidden_extraction_receipt: Path,
+    mapping_handoff: Path,
+    mapping_preparation: Path,
+) -> None:
+    """Freshly rederive a provider-disabled v0.2.1 amendment review handoff."""
+    try:
+        amendment = _verified_pending_amendment(
+            amendment_receipt,
+            original_gold_specs,
+            amended_gold_specs,
+            original_gold_smoke_receipt,
+            amended_gold_smoke_receipt,
+            instance_runtime_manifest,
+            expected_manifest_sha256,
+            hidden_extraction_receipt,
+        )
+        verified = verify_v021_amendment_review_handoff(
+            handoff,
+            amendment_authority=amendment,
+            mapping_handoff_path=mapping_handoff,
+            mapping_preparation_path=mapping_preparation,
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    result = asdict(verified)
+    result["verified"] = True
+    click.echo(json.dumps(result, indent=2, sort_keys=True, default=str))
+
+
+@benchmark_group.command("seal-v021-amendment-review-consensus")
+@click.argument("handoff", type=click.Path(path_type=Path, exists=True, dir_okay=False))
+@click.argument("amendment_receipt", type=click.Path(path_type=Path, exists=True, dir_okay=False))
+@_v021_review_chain_options
+@click.option(
+    "--submissions-root",
+    type=click.Path(path_type=Path, exists=True, file_okay=False),
+    required=True,
+)
+@click.option("--sealed-at", required=True)
+@click.option("--tool-git-sha", required=True)
+@click.option("--output", type=click.Path(path_type=Path, dir_okay=False), required=True)
+def benchmark_seal_v021_amendment_review_consensus(
+    handoff: Path,
+    amendment_receipt: Path,
+    original_gold_specs: Path,
+    amended_gold_specs: Path,
+    original_gold_smoke_receipt: Path,
+    amended_gold_smoke_receipt: Path,
+    instance_runtime_manifest: Path,
+    expected_manifest_sha256: str,
+    hidden_extraction_receipt: Path,
+    mapping_handoff: Path,
+    mapping_preparation: Path,
+    submissions_root: Path,
+    sealed_at: str,
+    tool_git_sha: str,
+    output: Path,
+) -> None:
+    """Seal two primary decisions or one predeclared tie-break after disagreement."""
+    try:
+        _ensure_private_output_root(output.parent)
+        amendment = _verified_pending_amendment(
+            amendment_receipt,
+            original_gold_specs,
+            amended_gold_specs,
+            original_gold_smoke_receipt,
+            amended_gold_smoke_receipt,
+            instance_runtime_manifest,
+            expected_manifest_sha256,
+            hidden_extraction_receipt,
+        )
+        handoff_authority = verify_v021_amendment_review_handoff(
+            handoff,
+            amendment_authority=amendment,
+            mapping_handoff_path=mapping_handoff,
+            mapping_preparation_path=mapping_preparation,
+        )
+        verified = seal_v021_amendment_review_consensus(
+            handoff_authority=handoff_authority,
+            submissions_root=submissions_root,
+            sealed_at=sealed_at,
+            tool_git_sha=tool_git_sha,
+            output_path=output,
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(json.dumps(asdict(verified), indent=2, sort_keys=True, default=str))
+
+
+@benchmark_group.command("verify-v021-amendment-review-consensus")
+@click.argument("consensus", type=click.Path(path_type=Path, exists=True, dir_okay=False))
+@click.argument("handoff", type=click.Path(path_type=Path, exists=True, dir_okay=False))
+@click.argument("amendment_receipt", type=click.Path(path_type=Path, exists=True, dir_okay=False))
+@_v021_review_chain_options
+def benchmark_verify_v021_amendment_review_consensus(
+    consensus: Path,
+    handoff: Path,
+    amendment_receipt: Path,
+    original_gold_specs: Path,
+    amended_gold_specs: Path,
+    original_gold_smoke_receipt: Path,
+    amended_gold_smoke_receipt: Path,
+    instance_runtime_manifest: Path,
+    expected_manifest_sha256: str,
+    hidden_extraction_receipt: Path,
+    mapping_handoff: Path,
+    mapping_preparation: Path,
+) -> None:
+    """Freshly rederive the provider-disabled v0.2.1 amendment consensus authority."""
+    try:
+        amendment = _verified_pending_amendment(
+            amendment_receipt,
+            original_gold_specs,
+            amended_gold_specs,
+            original_gold_smoke_receipt,
+            amended_gold_smoke_receipt,
+            instance_runtime_manifest,
+            expected_manifest_sha256,
+            hidden_extraction_receipt,
+        )
+        handoff_authority = verify_v021_amendment_review_handoff(
+            handoff,
+            amendment_authority=amendment,
+            mapping_handoff_path=mapping_handoff,
+            mapping_preparation_path=mapping_preparation,
+        )
+        verified = verify_v021_amendment_review_consensus(
+            consensus, handoff_authority=handoff_authority
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    result = asdict(verified)
+    result["verified"] = True
+    click.echo(json.dumps(result, indent=2, sort_keys=True, default=str))
 
 
 def _capability_amendment(
