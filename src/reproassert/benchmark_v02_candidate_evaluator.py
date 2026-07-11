@@ -6,10 +6,11 @@ import ast
 import hashlib
 import json
 import re
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Literal
+from typing import Literal, cast
 
 from defusedxml import ElementTree
 
@@ -105,6 +106,7 @@ class CandidateEvaluationReceipt:
     case_id: str
     classification: str
     accepted: bool
+    evaluator_wall_ms: int
 
 
 @dataclass(frozen=True)
@@ -277,6 +279,7 @@ def evaluate_instance_candidate(
     files; the evaluator derives and byte-verifies the private inputs internally.
     """
 
+    evaluator_started_monotonic = time.monotonic()
     capability = require_v02_exact_image_evaluator_capability(evaluator_capability)
     hidden = _resolve_hidden_evaluator_inputs(
         evaluator_capability=capability,
@@ -295,6 +298,7 @@ def evaluate_instance_candidate(
         executed_at=executed_at,
         tool_git_sha=tool_git_sha,
         executor_factory=executor_factory,
+        evaluator_started_monotonic=evaluator_started_monotonic,
     )
 
 
@@ -310,6 +314,7 @@ def _evaluate_instance_candidate_with_resolved_hidden(
     executed_at: str,
     tool_git_sha: str,
     executor_factory: ExecutorFactory | None = None,
+    evaluator_started_monotonic: float | None = None,
 ) -> CandidateEvaluationReceipt:
     """Execute with private inputs already resolved by the scored public boundary.
 
@@ -318,6 +323,9 @@ def _evaluate_instance_candidate_with_resolved_hidden(
     deterministic L1 causal signal only; semantic review and all remaining L2 controls are separate.
     """
 
+    evaluator_started = (
+        time.monotonic() if evaluator_started_monotonic is None else evaluator_started_monotonic
+    )
     capability = require_v02_exact_image_evaluator_capability(evaluator_capability)
     checked_case = _case_id(case_id)
     if capability.case_id != checked_case:
@@ -467,6 +475,7 @@ def _evaluate_instance_candidate_with_resolved_hidden(
             "provider_calls": 0,
         },
         "executed_at": _timestamp(executed_at),
+        "evaluator_wall_ms": max(0, round((time.monotonic() - evaluator_started) * 1_000)),
         "inputs": {
             **capability.public_record(),
             "evaluator_public_commitment_sha256": (capability.evaluator_public_commitment_sha256),
@@ -504,14 +513,18 @@ def _evaluate_instance_candidate_with_resolved_hidden(
         case_id=checked_case,
         classification=classification,
         accepted=accepted,
+        evaluator_wall_ms=cast(int, record["evaluator_wall_ms"]),
     )
 
 
-def verify_instance_candidate_receipt(path: Path) -> CandidateEvaluationReceipt:
+def verify_instance_candidate_receipt(
+    path: Path, *, raw: bytes | None = None
+) -> CandidateEvaluationReceipt:
     """Verify canonical encoding, self-commitment, redaction claims, and outcome invariants."""
 
-    with open_regular_file(path) as stream:
-        raw = stream.read(512 * 1024 + 1)
+    if raw is None:
+        with open_regular_file(path) as stream:
+            raw = stream.read(512 * 1024 + 1)
     if len(raw) > 512 * 1024:
         raise _reject("Candidate evaluation receipt exceeds the verifier limit.")
     try:
@@ -529,6 +542,7 @@ def verify_instance_candidate_receipt(path: Path) -> CandidateEvaluationReceipt:
         "causal_controls",
         "claims",
         "executed_at",
+        "evaluator_wall_ms",
         "inputs",
         "outcome",
         "phases",
@@ -547,6 +561,13 @@ def verify_instance_candidate_receipt(path: Path) -> CandidateEvaluationReceipt:
         raise _reject("Candidate evaluation receipt identity is invalid.")
     case_id = _case_id(value.get("case_id"))
     _timestamp(value.get("executed_at"))
+    evaluator_wall_ms = value.get("evaluator_wall_ms")
+    if (
+        not isinstance(evaluator_wall_ms, int)
+        or isinstance(evaluator_wall_ms, bool)
+        or evaluator_wall_ms < 0
+    ):
+        raise _reject("Candidate evaluator wall duration is invalid.")
     _git_sha(value.get("tool_git_sha"))
     claims = value.get("claims")
     if claims != {
@@ -662,6 +683,7 @@ def verify_instance_candidate_receipt(path: Path) -> CandidateEvaluationReceipt:
             _verify_evidence(phases[name])
         elif phases[name] is not None:
             raise _reject("SymPy native receipt cannot claim pytest collection evidence.")
+    _verify_gold_receipt_evidence(phases, profile_id=profile_id)
     runs = phases["candidate_runs"]
     if not isinstance(runs, list) or len(runs) != len(RUN_ORDER):
         raise _reject("Candidate repeat evidence is invalid.")
@@ -678,6 +700,10 @@ def verify_instance_candidate_receipt(path: Path) -> CandidateEvaluationReceipt:
             raise _reject("Candidate run evidence is invalid.")
         if profile_id == "pytest-v1":
             _verify_evidence(run["collection"])
+            if not _bounded_clean_result(
+                cast(dict[str, object], run["collection"]), expected_exit=0
+            ):
+                raise _reject("Candidate receipt collection evidence is not clean.")
         elif run["collection"] is not None:
             raise _reject("SymPy native run cannot claim pytest collection evidence.")
         _verify_evidence(run["result"])
@@ -690,12 +716,14 @@ def verify_instance_candidate_receipt(path: Path) -> CandidateEvaluationReceipt:
             raise _reject("Fixed candidate run contains a failure fingerprint.")
     if accepted and len(set(base_fingerprints)) != 1:
         raise _reject("Accepted candidate base fingerprints are inconsistent.")
+    _verify_recomputed_candidate_outcome(runs, outcome)
     return CandidateEvaluationReceipt(
         path=path,
         sha256=hashlib.sha256(raw).hexdigest(),
         case_id=case_id,
         classification=str(outcome.get("classification")),
         accepted=accepted,
+        evaluator_wall_ms=evaluator_wall_ms,
     )
 
 
@@ -1044,6 +1072,80 @@ def _candidate_fingerprint_or_none(
     if not normalized:
         raise _reject("SymPy native base failure has no attributable output.")
     return hashlib.sha256(normalized.encode()).hexdigest()
+
+
+def _verify_gold_receipt_evidence(phases: dict[str, object], *, profile_id: object) -> None:
+    gold_base = cast(dict[str, object], phases["gold_base"])
+    gold_fixed = cast(dict[str, object], phases["gold_fixed"])
+    if not _bounded_clean_result(gold_base, expected_exit=1) or not _bounded_clean_result(
+        gold_fixed, expected_exit=0
+    ):
+        raise _reject("Receipt gold evidence does not attest the buggy/fixed pair.")
+    if profile_id == "pytest-v1":
+        for name in ("gold_base_collect", "gold_fixed_collect"):
+            if not _bounded_clean_result(cast(dict[str, object], phases[name]), expected_exit=0):
+                raise _reject("Receipt gold collection evidence is not clean.")
+
+
+def _verify_recomputed_candidate_outcome(runs: list[object], outcome: dict[str, object]) -> None:
+    base = [
+        cast(dict[str, object], cast(dict[str, object], run)["result"])
+        for run in runs
+        if cast(dict[str, object], run)["workspace"] == "base"
+    ]
+    fixed = [
+        cast(dict[str, object], cast(dict[str, object], run)["result"])
+        for run in runs
+        if cast(dict[str, object], run)["workspace"] == "fixed"
+    ]
+    all_results = [*base, *fixed]
+    if any(result["timed_out"] is True for result in all_results):
+        classification = "timeout"
+    elif any(result["oom_killed"] is True for result in all_results):
+        classification = "oom_killed"
+    elif any(result["output_truncated"] is True for result in all_results):
+        classification = "output_limit"
+    elif any(cast(int, result["exit_code"]) not in {0, 1} for result in all_results):
+        classification = "generic_crash"
+    elif (
+        len({result["exit_code"] for result in base}) != 1
+        or len({result["exit_code"] for result in fixed}) != 1
+    ):
+        classification = "flaky"
+    elif {result["exit_code"] for result in base} != {1}:
+        classification = "does_not_fail_on_base"
+    elif {result["exit_code"] for result in fixed} != {0}:
+        classification = "does_not_pass_on_fixed"
+    else:
+        fingerprints = [
+            cast(dict[str, object], run)["failure_fingerprint_sha256"]
+            for run in runs
+            if cast(dict[str, object], run)["workspace"] == "base"
+        ]
+        classification = (
+            "verified_reproduction"
+            if None not in fingerprints and len(set(fingerprints)) == 1
+            else "wrong_or_flaky_failure"
+        )
+    accepted = classification == "verified_reproduction"
+    if (
+        outcome.get("classification") != classification
+        or outcome.get("accepted") is not accepted
+        or outcome.get("base_consistency")
+        != f"{sum(result['exit_code'] == 1 for result in base)}/{BASE_RUNS}"
+        or outcome.get("fixed_consistency")
+        != f"{sum(result['exit_code'] == 0 for result in fixed)}/{FIXED_RUNS}"
+    ):
+        raise _reject("Candidate receipt outcome does not recompute from bounded evidence.")
+
+
+def _bounded_clean_result(value: dict[str, object], *, expected_exit: int) -> bool:
+    return (
+        value.get("exit_code") == expected_exit
+        and value.get("timed_out") is False
+        and value.get("oom_killed") is False
+        and value.get("output_truncated") is False
+    )
 
 
 def _verify_evidence(value: object) -> None:

@@ -172,7 +172,14 @@ def _synthetic_receipt(
 
 def _dedicated_python(tmp_path: Path) -> Path:
     root = tmp_path / "parser-venv"
-    venv.EnvBuilder(with_pip=False, clear=True).create(root)
+    # A copied uv-managed macOS interpreter cannot locate its sibling
+    # ``libpython`` from the temporary venv. Match ``python -m venv`` on
+    # POSIX and use an absolute symlink to the dedicated interpreter instead.
+    venv.EnvBuilder(
+        with_pip=False,
+        clear=True,
+        symlinks=os.name != "nt",
+    ).create(root)
     return root / "bin" / "python" if os.name != "nt" else root / "Scripts/python.exe"
 
 

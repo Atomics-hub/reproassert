@@ -111,7 +111,13 @@
           "oneOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }]
         },
         "causal_control_receipt_sha256": { "$ref": "#/$defs/sha256" },
-        "status": { "enum": ["sealed_consensus", "not_applicable_no_candidate"] },
+        "status": {
+          "enum": [
+            "sealed_consensus",
+            "not_applicable_no_candidate",
+            "not_applicable_infrastructure_failure"
+          ]
+        },
         "reviewer_role_seal_sha256": {
           "oneOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }]
         },
@@ -137,12 +143,35 @@
           "enum": [
             "semantically_valid",
             "semantically_invalid",
+            "inconclusive",
             "not_applicable_no_candidate"
           ]
         },
         "tiebreak_used": { "type": "boolean" },
         "review_case_sha256": { "$ref": "#/$defs/sha256" }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": { "const": "not_applicable_infrastructure_failure" }
+            }
+          },
+          "then": {
+            "properties": {
+              "case_id": { "const": "rk-v0.2-014" },
+              "candidate_sha256": { "$ref": "#/$defs/sha256" },
+              "reviewer_role_seal_sha256": { "type": "null" },
+              "mapping_reviewer_ids": { "maxItems": 0 },
+              "authorized_semantic_reviewer_ids": { "maxItems": 0 },
+              "reviews": { "maxItems": 0 },
+              "reviewer_count": { "const": 0 },
+              "consensus_verdict": { "const": "inconclusive" },
+              "tiebreak_used": { "const": false }
+            }
+          }
+        }
+      ]
     },
     "review": {
       "type": "object",

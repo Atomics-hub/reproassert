@@ -225,7 +225,11 @@
         "runner_input_sha256": { "$ref": "#/$defs/sha256" },
         "candidate_status": { "enum": ["submitted", "no_candidate"] },
         "candidate": {
-          "oneOf": [{ "$ref": "#/$defs/candidate" }, { "type": "null" }]
+          "oneOf": [
+            { "$ref": "#/$defs/candidate" },
+            { "$ref": "#/$defs/exact_candidate" },
+            { "type": "null" }
+          ]
         },
         "reproduction": {
           "oneOf": [{ "$ref": "#/$defs/reproduction" }, { "type": "null" }]
@@ -279,6 +283,20 @@
         "test_content": { "type": "string", "minLength": 1, "maxLength": 32768 },
         "expected_symptom": { "type": "string", "minLength": 3, "maxLength": 500 },
         "rationale": { "type": "string", "minLength": 3, "maxLength": 2000 }
+      }
+    },
+    "exact_candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "bytes", "test_function"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^(?:tests/reproassert/test_issue_[1-9][0-9]*|sympy/reproassert/tests/test_issue_01[67])\\.py$"
+        },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "bytes": { "type": "integer", "minimum": 1, "maximum": 65536 },
+        "test_function": { "type": "string", "pattern": "^test_[A-Za-z0-9_]+$" }
       }
     },
     "causal_control_evidence": {
@@ -338,6 +356,7 @@
           "enum": [
             "semantically_valid",
             "semantically_invalid",
+            "inconclusive",
             "not_applicable_no_candidate"
           ]
         },

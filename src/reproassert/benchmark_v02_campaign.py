@@ -17,9 +17,9 @@ from reproassert.benchmark_v02_package import (
     BENCHMARK_VERSION,
     EXPECTED_CASE_COUNT,
     PreregisteredV02Case,
-    load_v02_preregistration,
 )
 from reproassert.benchmark_v02_runner import V02LedgerSnapshot, read_v02_scored_ledger
+from reproassert.benchmark_v02_scored_preregistration import load_v02_scored_preregistration
 from reproassert.errors import PolicyRejection
 from reproassert.intake import parse_issue_url
 from reproassert.safeio import require_private_directory
@@ -37,6 +37,9 @@ GENERATION_BARRIER_ALGORITHM = "reproassert-v02-campaign-generation-barrier-v1"
 DISPOSITION_SET_ALGORITHM = "reproassert-v02-generation-disposition-set-v1"
 PRIVATE_RESULT_FILENAME = "reproassert-v02-private-result.json"
 EMBARGOED_RESULT_FILENAME = "reproassert-v02-public-embargoed-result.json"
+EXACT_PRIVATE_RESULT_FILENAME = "reproassert-v02-exact-private-result.json"
+EXACT_EMBARGOED_RESULT_FILENAME = "reproassert-v02-exact-public-embargoed-result.json"
+EXACT_RESULT_ALGORITHM = "reproassert-v02-exact-image-scored-result-v1"
 PRIVATE_FINALIZATION_FILENAME = "reproassert-v02-private-finalization.json"
 PUBLIC_AGGREGATE_FILENAME = "reproassert-v02-public-aggregate.json"
 
@@ -310,12 +313,15 @@ def verify_v02_semantic_review_set(
     """Verify review bundles and seals; evidence/timing binding occurs at finalization."""
 
     freeze = verify_v02_campaign_freeze(campaign_freeze_path, preregistration_path)
+    scored = load_v02_scored_preregistration(Path(preregistration_path))
     raw, record = _load_canonical_json(Path(semantic_review_set_path), "semantic review set")
     _, values = _verify_review_set_envelope(record, freeze)
     case_ids: list[str] = []
     for value in values:
         review_case = _mapping(value, "semantic review case")
-        _verify_semantic_review_case_record(review_case)
+        _verify_semantic_review_case_record(
+            review_case, allow_exact_infrastructure=scored.format == "exact-image-v1"
+        )
         case_ids.append(cast(str, review_case["case_id"]))
     if tuple(case_ids) != freeze.case_ids:
         raise _reject("v02_semantic_review", "Semantic reviews are not the ordered cohort.")
@@ -485,7 +491,7 @@ def verify_v02_campaign_output_structure(
     """Structurally verify two outputs; this does not re-open their source evidence bundle."""
 
     freeze = verify_v02_campaign_freeze(campaign_freeze_path, preregistration_path)
-    preregistration = load_v02_preregistration(Path(preregistration_path))
+    preregistration = load_v02_scored_preregistration(Path(preregistration_path))
     private_raw, private = _load_canonical_json(
         Path(private_finalization_path), "private campaign finalization"
     )
@@ -638,7 +644,11 @@ def verify_v02_campaign_output_structure(
     verified_public_cases: list[Mapping[str, Any]] = []
     for value in public_cases:
         row = _mapping(value, "public aggregate case")
-        _verify_public_aggregate_case(row, expected_cases)
+        _verify_public_aggregate_case(
+            row,
+            expected_cases,
+            exact_mode=preregistration.format == "exact-image-v1",
+        )
         verified_public_cases.append(row)
     if tuple(cast(str, row["case_id"]) for row in verified_public_cases) != freeze.case_ids:
         raise _reject("v02_campaign_finalization", "Public aggregate case order changed.")
@@ -730,7 +740,7 @@ def prepare_v02_campaign_freeze(
 ) -> Path:
     """Write a public preparation-only campaign freeze with no provider authorization."""
 
-    preregistration = load_v02_preregistration(Path(preregistration_path))
+    preregistration = load_v02_scored_preregistration(Path(preregistration_path))
     _identifier(campaign_id, "campaign ID")
     _timestamp(prepared_at, "campaign preparation time")
     _identifier(tool_name, "tool name")
@@ -801,7 +811,7 @@ def verify_v02_campaign_freeze(
         raise _reject("v02_campaign_freeze", "Campaign freeze version or status is invalid.")
     campaign_id = _identifier(record["campaign_id"], "campaign ID")
     _timestamp(record["prepared_at"], "campaign preparation time")
-    preregistration = load_v02_preregistration(Path(preregistration_path))
+    preregistration = load_v02_scored_preregistration(Path(preregistration_path))
     cohort_sha256 = _digest_value(preregistration.decoded.get("cohort_sha256"), "cohort")
     if (
         record["preregistration_sha256"] != preregistration.raw_sha256
@@ -929,11 +939,25 @@ def finalize_v02_campaign(
     tool_name: str,
     tool_version: str,
     tool_git_sha: str,
+    exact_preregistration: object | None = None,
+    exact_causal_control_authorities: Mapping[str, object] | None = None,
 ) -> V02CampaignFinalization:
     """Fail closed, cross-check 20 private attempts, then unseal one bounded aggregate."""
 
     freeze = verify_v02_campaign_freeze(campaign_freeze_path, preregistration_path)
-    preregistration = load_v02_preregistration(Path(preregistration_path))
+    preregistration = load_v02_scored_preregistration(Path(preregistration_path))
+    exact_mode = preregistration.format == "exact-image-v1"
+    exact_authority_sha256: str | None = None
+    if exact_mode:
+        exact_authority_sha256 = _require_exact_finalization_preregistration(
+            exact_preregistration, preregistration
+        )
+    elif exact_preregistration is not None or exact_causal_control_authorities is not None:
+        raise _reject(
+            "v02_campaign_finalization",
+            "Legacy finalization rejects exact-only nominal authorities.",
+        )
+    exact_rows = {cast(str, row["case_id"]): row for row in preregistration.exact_rows}
     _timestamp(finalized_at, "campaign finalization time")
     _identifier(tool_name, "tool name")
     _bounded_text(tool_version, "tool version", 1, 64)
@@ -953,6 +977,8 @@ def finalize_v02_campaign(
         attempts=attempts,
         cases=preregistration.cases,
         freeze=freeze,
+        exact_mode=exact_mode,
+        exact_rows=exact_rows,
     )
     # This is the intentional barrier: no private verdict file is opened until every public
     # candidate disposition has been validated as sealed and immutable.
@@ -962,6 +988,8 @@ def finalize_v02_campaign(
         cases=preregistration.cases,
         freeze=freeze,
         public_results=frozen_public,
+        exact_mode=exact_mode,
+        exact_rows=exact_rows,
     )
     controls_raw, controls = _load_canonical_json(
         Path(causal_control_set_path), "causal-control set"
@@ -974,6 +1002,10 @@ def finalize_v02_campaign(
         private_results,
         attempts,
         finalized_at=finalized_at,
+        exact_mode=exact_mode,
+        exact_causal_control_authorities=exact_causal_control_authorities,
+        exact_preregistration_sha256=exact_authority_sha256,
+        exact_rows=exact_rows,
     )
     reviews_raw, reviews = _load_canonical_json(
         Path(semantic_review_set_path), "semantic review set"
@@ -999,6 +1031,7 @@ def finalize_v02_campaign(
         reviews=review_by_case,
         control_set_sha256=hashlib.sha256(controls_raw).hexdigest(),
         review_set_sha256=hashlib.sha256(reviews_raw).hexdigest(),
+        exact_mode=exact_mode,
     )
     public_bytes = _canonical_bytes(public_record)
     private_record["public_aggregate_sha256"] = hashlib.sha256(public_bytes).hexdigest()
@@ -1013,6 +1046,31 @@ def finalize_v02_campaign(
         private_finalization_path=private_path,
         public_aggregate_path=public_path,
     )
+
+
+def _require_exact_finalization_preregistration(
+    value: object,
+    loaded: object,
+) -> str:
+    """Bind exact finalization to the same fresh evidence authority used by scoring."""
+
+    from reproassert.benchmark_v02_exact_preregistration import (
+        require_v02_exact_preregistration,
+    )
+
+    authority = require_v02_exact_preregistration(value)
+    scored = cast(Any, loaded)
+    if (
+        authority.sha256 != scored.raw_sha256
+        or authority.cohort_sha256 != scored.cohort_sha256
+        or authority.request_set_sha256 != scored.request_set_sha256
+        or authority.case_count != len(scored.cases)
+    ):
+        raise _reject(
+            "v02_campaign_finalization",
+            "Exact preregistration authority differs from the finalization campaign.",
+        )
+    return authority.sha256
 
 
 def _account_attempts(
@@ -1185,20 +1243,37 @@ def _freeze_all_public_dispositions(
     attempts: Mapping[str, Mapping[str, Any]],
     cases: Sequence[PreregisteredV02Case],
     freeze: VerifiedV02CampaignFreeze,
+    exact_mode: bool = False,
+    exact_rows: Mapping[str, Mapping[str, object]] | None = None,
 ) -> dict[str, dict[str, Any]]:
     frozen: dict[str, dict[str, Any]] = {}
     for case in cases:
         directory = attempts_root / case.id
         require_private_directory(directory)
         raw, record = _load_canonical_json(
-            directory / EMBARGOED_RESULT_FILENAME, "embargoed result"
+            directory
+            / (EXACT_EMBARGOED_RESULT_FILENAME if exact_mode else EMBARGOED_RESULT_FILENAME),
+            "embargoed result",
         )
         state = attempts[case.id]
         terminal = cast(Mapping[str, Any], cast(Mapping[str, Any], state["terminal"])["payload"])
-        _verify_common_result(record, case, freeze, state, visibility="public_safe_embargoed")
+        _verify_common_result(
+            record,
+            case,
+            freeze,
+            state,
+            visibility="public_safe_embargoed",
+            exact_mode=exact_mode,
+            exact_row=None if exact_rows is None else exact_rows.get(case.id),
+        )
         if hashlib.sha256(raw).hexdigest() != terminal["public_result_sha256"]:
             raise _reject("v02_campaign_result", f"Case {case.id} public result was tampered.")
         evaluation = _mapping(record["evaluation"], "embargoed evaluation")
+        if exact_mode:
+            _verify_exact_evaluation(evaluation, candidate=record["candidate"], case_id=case.id)
+            _verify_result_candidate(record["candidate"], case)
+            frozen[case.id] = record
+            continue
         _exact_keys(
             evaluation,
             {
@@ -1325,20 +1400,43 @@ def _open_private_results_after_barrier(
     cases: Sequence[PreregisteredV02Case],
     freeze: VerifiedV02CampaignFreeze,
     public_results: Mapping[str, Mapping[str, Any]],
+    exact_mode: bool = False,
+    exact_rows: Mapping[str, Mapping[str, object]] | None = None,
 ) -> dict[str, dict[str, Any]]:
     private: dict[str, dict[str, Any]] = {}
     for case in cases:
         raw, record = _load_canonical_json(
-            attempts_root / case.id / PRIVATE_RESULT_FILENAME, "private result"
+            attempts_root
+            / case.id
+            / (EXACT_PRIVATE_RESULT_FILENAME if exact_mode else PRIVATE_RESULT_FILENAME),
+            "private result",
         )
         state = attempts[case.id]
         terminal = cast(Mapping[str, Any], cast(Mapping[str, Any], state["terminal"])["payload"])
-        _verify_common_result(record, case, freeze, state, visibility="private_controller_only")
+        _verify_common_result(
+            record,
+            case,
+            freeze,
+            state,
+            visibility="private_controller_only",
+            exact_mode=exact_mode,
+            exact_row=None if exact_rows is None else exact_rows.get(case.id),
+        )
         if hashlib.sha256(raw).hexdigest() != terminal["private_result_sha256"]:
             raise _reject("v02_campaign_result", f"Case {case.id} private result was tampered.")
         public_candidate = public_results[case.id]["candidate"]
         if record["candidate"] != public_candidate:
             raise _reject("v02_campaign_candidate", f"Case {case.id} candidate projections differ.")
+        if exact_mode:
+            public_projection = dict(public_results[case.id])
+            public_projection["visibility"] = "private_controller_only"
+            if record != public_projection:
+                raise _reject(
+                    "v02_campaign_result",
+                    f"Case {case.id} exact public/private projections differ.",
+                )
+            private[case.id] = record
+            continue
         terminal_projection = _mapping(record["terminal_projection"], "terminal projection")
         _exact_keys(
             terminal_projection,
@@ -1377,7 +1475,14 @@ def _verify_common_result(
     state: Mapping[str, Any],
     *,
     visibility: str,
+    exact_mode: bool = False,
+    exact_row: Mapping[str, object] | None = None,
 ) -> None:
+    if exact_mode:
+        _verify_exact_common_result(
+            record, case, freeze, state, visibility=visibility, exact_row=exact_row
+        )
+        return
     common = {
         "schema_version",
         "benchmark_version",
@@ -1439,6 +1544,162 @@ def _verify_common_result(
         raise _reject("v02_campaign_cost", f"Case {case.id} result cost is not reconciled.")
 
 
+def _verify_exact_common_result(
+    record: Mapping[str, Any],
+    case: PreregisteredV02Case,
+    freeze: VerifiedV02CampaignFreeze,
+    state: Mapping[str, Any],
+    *,
+    visibility: str,
+    exact_row: Mapping[str, object] | None,
+) -> None:
+    _exact_keys(
+        record,
+        {
+            "algorithm",
+            "attempt_id",
+            "benchmark_version",
+            "campaign_id",
+            "candidate",
+            "case",
+            "claims",
+            "cost",
+            "evaluation",
+            "exact_case_commitment_sha256",
+            "exact_preregistration_sha256",
+            "ledger_head_before_result_sha256",
+            "runner_input_sha256",
+            "schema_version",
+            "visibility",
+        },
+        f"exact {visibility} result",
+    )
+    start = cast(Mapping[str, Any], cast(Mapping[str, Any], state["start"])["payload"])
+    start_event = cast(Mapping[str, Any], state["start"])
+    terminal = cast(Mapping[str, Any], cast(Mapping[str, Any], state["terminal"])["payload"])
+    if exact_row is None:
+        raise _reject("v02_campaign_result", f"Case {case.id} lacks its exact preregistration row.")
+    if (
+        record["schema_version"] != SCHEMA_VERSION
+        or record["benchmark_version"] != "0.2"
+        or record["algorithm"] != EXACT_RESULT_ALGORITHM
+        or record["visibility"] != visibility
+        or record["campaign_id"] != freeze.campaign_id
+        or record["attempt_id"] != start_event["attempt_id"]
+        or record["case"] != asdict(case)
+        or record["exact_preregistration_sha256"] != freeze.preregistration_sha256
+        or record["exact_case_commitment_sha256"] != exact_row.get("case_commitment_sha256")
+        or record["runner_input_sha256"] != start["runner_input_sha256"]
+    ):
+        raise _reject("v02_campaign_result", f"Case {case.id} exact result binding is invalid.")
+    _digest(record["ledger_head_before_result_sha256"], "exact result ledger head")
+    if record["claims"] != {
+        "causal_controls_complete": False,
+        "hidden_bytes_emitted": False,
+        "network_enabled": False,
+        "provider_calls_during_evaluation": 0,
+        "semantic_review_complete": False,
+    }:
+        raise _reject("v02_campaign_result", f"Case {case.id} exact trust claims are invalid.")
+    candidate = _verify_result_candidate(record["candidate"], case)
+    candidate_events = cast(list[dict[str, Any]], state["candidate_events"])
+    if candidate is None:
+        if candidate_events:
+            raise _reject("v02_campaign_candidate", f"Case {case.id} candidate event differs.")
+    elif (
+        len(candidate_events) != 1
+        or candidate_events[0]["payload"]["candidate_sha256"] != candidate["sha256"]
+        or candidate_events[0]["payload"]["candidate_bytes"] != candidate["bytes"]
+        or candidate_events[0]["payload"]["test_function"] != candidate["test_function"]
+    ):
+        raise _reject("v02_campaign_candidate", f"Case {case.id} exact candidate is not frozen.")
+    evaluation = _mapping(record["evaluation"], "exact evaluation")
+    _verify_exact_evaluation(evaluation, candidate=candidate, case_id=case.id)
+    kind = evaluation["kind"]
+    if kind == "no_candidate":
+        expected_terminal = ("no_output", "rejected")
+    elif kind == "infrastructure_failure":
+        expected_terminal = ("benchmark_infrastructure_error", "rejected")
+    elif evaluation["accepted"] is True:
+        expected_terminal = ("verified_reproduction", "differential_reproduction")
+    else:
+        expected_terminal = ("rejected_reproduction", "rejected")
+    if (terminal["outcome"], terminal["claim_level"]) != expected_terminal:
+        raise _reject("v02_campaign_result", f"Case {case.id} exact terminal verdict differs.")
+    cost = _mapping(record["cost"], "exact result cost")
+    _exact_keys(cost, {"complete", "total_attributable_microusd"}, "exact result cost")
+    expected_total = sum(
+        cast(Mapping[str, int], state["costs"])[name] for name in _ATTRIBUTABLE_COST_CATEGORIES
+    )
+    if (
+        cost["complete"] is not True
+        or cost["total_attributable_microusd"] != expected_total
+        or terminal["cost_complete"] is not True
+        or terminal["total_attributable_microusd"] != expected_total
+    ):
+        raise _reject("v02_campaign_cost", f"Case {case.id} exact result cost is not reconciled.")
+
+
+def _verify_result_candidate(value: object, case: PreregisteredV02Case) -> Mapping[str, Any] | None:
+    if value is None:
+        return None
+    candidate = _mapping(value, "exact candidate")
+    _exact_keys(candidate, {"bytes", "path", "sha256", "test_function"}, "exact candidate")
+    issue_number = parse_issue_url(case.issue_url).number
+    contract = v02_candidate_contract(case_id=case.id, issue_number=issue_number)
+    if (
+        candidate["path"] != contract.relative_path
+        or candidate["test_function"] != contract.test_function
+        or isinstance(candidate["bytes"], bool)
+        or not isinstance(candidate["bytes"], int)
+        or not 1 <= candidate["bytes"] <= 65_536
+    ):
+        raise _reject("v02_campaign_candidate", f"Case {case.id} exact candidate contract differs.")
+    _digest(candidate["sha256"], "exact candidate")
+    return candidate
+
+
+def _verify_exact_evaluation(
+    evaluation: Mapping[str, Any], *, candidate: object, case_id: str
+) -> None:
+    _exact_keys(
+        evaluation,
+        {"accepted", "classification", "kind", "reason", "receipt_sha256"},
+        "exact evaluation",
+    )
+    kind = evaluation["kind"]
+    accepted = evaluation["accepted"]
+    classification = evaluation["classification"]
+    if type(accepted) is not bool or not isinstance(classification, str) or not classification:
+        raise _reject("v02_campaign_result", f"Case {case_id} exact evaluation verdict is invalid.")
+    if kind == "exact_image_receipt":
+        if candidate is None or evaluation["reason"] is not None:
+            raise _reject("v02_campaign_result", f"Case {case_id} exact receipt is inconsistent.")
+        _digest(evaluation["receipt_sha256"], "exact evaluation receipt")
+    elif kind == "infrastructure_failure":
+        if (
+            case_id != "rk-v0.2-014"
+            or candidate is None
+            or accepted is not False
+            or classification != "network_dependency"
+            or evaluation["receipt_sha256"] is not None
+            or not isinstance(evaluation["reason"], str)
+            or not evaluation["reason"]
+        ):
+            raise _reject("v02_campaign_result", "Case 014 infrastructure result is invalid.")
+    elif kind == "no_candidate":
+        if (
+            candidate is not None
+            or accepted is not False
+            or evaluation["receipt_sha256"] is not None
+            or not isinstance(evaluation["reason"], str)
+            or not evaluation["reason"]
+        ):
+            raise _reject("v02_campaign_result", f"Case {case_id} no-candidate result is invalid.")
+    else:
+        raise _reject("v02_campaign_result", f"Case {case_id} exact evaluation kind is invalid.")
+
+
 def _verify_causal_control_set(
     record: Mapping[str, Any],
     freeze: VerifiedV02CampaignFreeze,
@@ -1448,6 +1709,10 @@ def _verify_causal_control_set(
     attempts: Mapping[str, Mapping[str, Any]],
     *,
     finalized_at: str,
+    exact_mode: bool = False,
+    exact_causal_control_authorities: Mapping[str, object] | None = None,
+    exact_preregistration_sha256: str | None = None,
+    exact_rows: Mapping[str, Mapping[str, object]] | None = None,
 ) -> dict[str, dict[str, Any]]:
     sealed_at, values = _verify_causal_control_set_envelope(record, freeze)
     if sealed_at > _parse_timestamp(finalized_at, "campaign finalization time"):
@@ -1472,6 +1737,48 @@ def _verify_causal_control_set(
             continue
         private_result = private_results[case_id]
         evaluation = _mapping(private_result["evaluation"], "private differential evaluation")
+        if exact_mode:
+            exact_row = None if exact_rows is None else exact_rows.get(case_id)
+            if (
+                exact_preregistration_sha256 is None
+                or exact_row is None
+                or private_result.get("exact_preregistration_sha256")
+                != exact_preregistration_sha256
+                or private_result.get("exact_case_commitment_sha256")
+                != exact_row.get("case_commitment_sha256")
+            ):
+                raise _reject(
+                    "v02_causal_control",
+                    f"Case {case_id} exact control authority lacks its campaign identity chain.",
+                )
+            normalized = _exact_control_case(
+                control_case,
+                evaluation=evaluation,
+                candidate_sha256=cast(str, candidate_sha256),
+                evaluator_commitment_sha256=expected_commitment,
+                authority=(
+                    None
+                    if exact_causal_control_authorities is None
+                    else exact_causal_control_authorities.get(case_id)
+                ),
+            )
+            terminal = _mapping(attempts[case_id]["terminal"], "terminal event")
+            terminal_payload = _mapping(terminal["payload"], "terminal payload")
+            attempt_completed = _parse_timestamp(
+                terminal_payload["completed_at"], "attempt completion time"
+            )
+            completed_at = normalized.get("completed_at")
+            if completed_at is not None:
+                control_completed = _parse_timestamp(
+                    completed_at, "exact causal-control completion time"
+                )
+                if control_completed < attempt_completed or control_completed > sealed_at:
+                    raise _reject(
+                        "v02_causal_control",
+                        f"Case {case_id} exact controls fall outside the sealed window.",
+                    )
+            by_case[case_id] = normalized
+            continue
         if evaluation["evaluator_commitment_sha256"] != expected_commitment:
             raise _reject(
                 "v02_causal_control", f"Case {case_id} private evaluator commitment differs."
@@ -1520,6 +1827,98 @@ def _verify_causal_control_set(
     return by_case
 
 
+def _exact_control_case(
+    structural: Mapping[str, Any],
+    *,
+    evaluation: Mapping[str, Any],
+    candidate_sha256: str,
+    evaluator_commitment_sha256: str,
+    authority: object | None,
+) -> dict[str, Any]:
+    """Project exact control authority; serialized receipts alone never carry L2 trust."""
+
+    case_id = cast(str, structural["case_id"])
+    if evaluation.get("kind") != "exact_image_receipt" or evaluation.get("accepted") is not True:
+        result = dict(structural)
+        result.update(
+            {
+                "candidate_sha256": candidate_sha256,
+                "evaluator_commitment_sha256": evaluator_commitment_sha256,
+                "required_controls_passed": False,
+                "declared_decoys_passed": False,
+                "l2_causal_controls_passed": False,
+            }
+        )
+        return result
+    if authority is None:
+        result = dict(structural)
+        result.update(
+            {
+                "candidate_sha256": candidate_sha256,
+                "evaluator_commitment_sha256": evaluator_commitment_sha256,
+                "required_controls_passed": False,
+                "declared_decoys_passed": False,
+                "l2_causal_controls_passed": False,
+            }
+        )
+        return result
+    from reproassert.benchmark_v02_exact_controls import (
+        require_exact_causal_control_execution,
+        verify_exact_image_causal_control_receipt,
+    )
+
+    issued = require_exact_causal_control_execution(authority)
+    structural_receipt = verify_exact_image_causal_control_receipt(issued.path)
+    if (
+        issued.case_id != case_id
+        or structural_receipt.case_id != case_id
+        or structural_receipt.sha256 != issued.sha256
+    ):
+        raise _reject("v02_causal_control", f"Case {case_id} exact control authority changed.")
+    raw, receipt = _load_canonical_json(issued.path, "exact causal-control receipt")
+    candidate = _mapping(receipt["candidate"], "exact control candidate")
+    if (
+        hashlib.sha256(raw).hexdigest() != issued.sha256
+        or candidate.get("sha256") != candidate_sha256
+        or receipt.get("evaluator_public_commitment_sha256") != evaluator_commitment_sha256
+        or candidate.get("evaluation_receipt_sha256") != evaluation.get("receipt_sha256")
+        or receipt.get("claims", {}).get("l2_causal_controls_passed")
+        is not issued.l2_causal_controls_passed
+    ):
+        raise _reject("v02_causal_control", f"Case {case_id} exact control evidence differs.")
+    receipt_controls = cast(Sequence[Mapping[str, Any]], receipt["controls"])
+    outcomes = {
+        "full_fix": "candidate_on_fixed",
+        "fix_minus_selected": "fix_minus_issue_relevant_hunks",
+        "base_plus_selected": "base_plus_issue_relevant_hunks",
+    }
+    projected: list[dict[str, object]] = []
+    for control in receipt_controls:
+        name = cast(str, control["name"])
+        expected = _CONTROL_EXPECTED_OUTCOMES[outcomes[name]]
+        projected.append(
+            {
+                "control_type": outcomes[name],
+                "observed_outcome": (
+                    expected if control["status"] == "conclusive_pass" else "inconclusive"
+                ),
+            }
+        )
+    return {
+        **dict(structural),
+        "candidate_sha256": candidate_sha256,
+        "evaluator_commitment_sha256": evaluator_commitment_sha256,
+        "fixed_pass_evidence_sha256": evaluation["receipt_sha256"],
+        "completed_at": receipt["executed_at"],
+        "controls": projected,
+        "control_receipt_sha256": issued.sha256,
+        "required_controls_passed": issued.l2_causal_controls_passed,
+        "declared_decoy_control_ids": [],
+        "declared_decoys_passed": True,
+        "l2_causal_controls_passed": issued.l2_causal_controls_passed,
+    }
+
+
 def _verify_review_set(
     record: Mapping[str, Any],
     freeze: VerifiedV02CampaignFreeze,
@@ -1536,7 +1935,13 @@ def _verify_review_set(
     by_case: dict[str, dict[str, Any]] = {}
     for value in values:
         review_case = _mapping(value, "semantic review case")
-        _verify_semantic_review_case_record(review_case)
+        candidate_case_id = cast(str, review_case.get("case_id"))
+        raw_candidate_evaluation = private_results.get(candidate_case_id, {}).get("evaluation")
+        infrastructure = (
+            isinstance(raw_candidate_evaluation, Mapping)
+            and raw_candidate_evaluation.get("kind") == "infrastructure_failure"
+        )
+        _verify_semantic_review_case_record(review_case, allow_exact_infrastructure=infrastructure)
         case_id = cast(str, review_case["case_id"])
         if case_id in by_case or case_id not in public_results:
             raise _reject("v02_semantic_review", "Semantic review case is duplicate or unknown.")
@@ -1554,6 +1959,18 @@ def _verify_review_set(
         evaluation = _mapping(
             private_results[case_id]["evaluation"], "private differential evaluation"
         )
+        if evaluation.get("kind") == "infrastructure_failure":
+            if (
+                review_case["status"] != "not_applicable_infrastructure_failure"
+                or review_case["reviewer_count"] != 0
+                or review_case["consensus_verdict"] != "inconclusive"
+                or review_case["reviews"] != []
+            ):
+                raise _reject(
+                    "v02_semantic_review", f"Case {case_id} infrastructure review is invalid."
+                )
+            by_case[case_id] = dict(review_case)
+            continue
         fixed_evidence = _fixed_pass_evidence_sha256(evaluation)
         control_completed = _parse_timestamp(
             control["completed_at"], "causal-control completion time"
@@ -1663,6 +2080,7 @@ def _final_records(
     reviews: Mapping[str, Mapping[str, Any]],
     control_set_sha256: str,
     review_set_sha256: str,
+    exact_mode: bool = False,
 ) -> tuple[dict[str, object], dict[str, object]]:
     public_cases: list[dict[str, object]] = []
     private_cases: list[dict[str, object]] = []
@@ -1679,7 +2097,14 @@ def _final_records(
         evaluation = private_result["evaluation"]
         mechanical = bool(
             isinstance(evaluation, Mapping)
-            and evaluation.get("accepted_mechanical_differential") is True
+            and (
+                evaluation.get("accepted_mechanical_differential") is True
+                or (
+                    exact_mode
+                    and evaluation.get("kind") == "exact_image_receipt"
+                    and evaluation.get("accepted") is True
+                )
+            )
         )
         review_consensus = cast(str, review_case["consensus_verdict"])
         review_semantic_valid = review_consensus == "semantically_valid"
@@ -1699,16 +2124,26 @@ def _final_records(
                     "v02_campaign_publication", "Candidate path differs from its case profile."
                 )
             evaluation_record = _mapping(evaluation, "private differential evaluation")
-            dependency = _mapping(evaluation_record["dependency"], "dependency evidence")
+            dependency = (
+                {"receipt_sha256": None, "plan_sha256": None, "tree_sha256": None, "image_id": None}
+                if exact_mode
+                else _mapping(evaluation_record["dependency"], "dependency evidence")
+            )
             reproduction = {
                 "repository": case_record["repo"],
                 "base_sha": case_record["base_sha"],
                 "candidate_path": candidate_path_value,
                 "candidate_sha256": candidate_record["sha256"],
-                "source_context_sha256": cast(Mapping[str, Any], private_result["source_context"])[
-                    "sha256"
-                ],
-                "evaluator_commitment_sha256": evaluation_record["evaluator_commitment_sha256"],
+                "source_context_sha256": (
+                    case_record["source_context_sha256"]
+                    if exact_mode
+                    else cast(Mapping[str, Any], private_result["source_context"])["sha256"]
+                ),
+                "evaluator_commitment_sha256": (
+                    case_record["evaluator_commitment_sha256"]
+                    if exact_mode
+                    else evaluation_record["evaluator_commitment_sha256"]
+                ),
                 "dependency_receipt_sha256": dependency["receipt_sha256"],
                 "dependency_plan_sha256": dependency["plan_sha256"],
                 "dependency_tree_sha256": dependency["tree_sha256"],
@@ -2019,7 +2454,10 @@ def _verify_public_disclosure(provenance_value: object, configuration_value: obj
 
 
 def _verify_public_aggregate_case(
-    row: Mapping[str, Any], expected_cases: Mapping[str, PreregisteredV02Case]
+    row: Mapping[str, Any],
+    expected_cases: Mapping[str, PreregisteredV02Case],
+    *,
+    exact_mode: bool = False,
 ) -> None:
     _exact_keys(
         row,
@@ -2053,7 +2491,24 @@ def _verify_public_aggregate_case(
         if row["candidate_status"] != "no_candidate" or row["reproduction"] is not None:
             raise _reject("v02_campaign_publication", "No-candidate public case is inconsistent.")
     else:
-        candidate_record = _verify_candidate(candidate, case_id)
+        exact_shape = isinstance(candidate, Mapping) and set(candidate) == {
+            "bytes",
+            "path",
+            "sha256",
+            "test_function",
+        }
+        if exact_mode is not exact_shape:
+            raise _reject(
+                "v02_campaign_candidate",
+                "Aggregate candidate shape differs from its preregistration protocol.",
+            )
+        candidate_record = (
+            _verify_result_candidate(candidate, case)
+            if exact_mode
+            else _verify_candidate(candidate, case_id)
+        )
+        if candidate_record is None:
+            raise _reject("v02_campaign_candidate", "Submitted aggregate candidate is missing.")
         path = cast(str, candidate_record["path"])
         issue_number = parse_issue_url(case.issue_url).number
         contract = v02_candidate_contract(case_id=case_id, issue_number=issue_number)
@@ -2166,11 +2621,19 @@ def _verify_public_aggregate_case(
         or not isinstance(review_evidence["tiebreak_used"], bool)
     ):
         raise _reject("v02_campaign_publication", "Public review evidence is invalid.")
+    infrastructure_without_review = (
+        candidate is not None
+        and outcome == "benchmark_infrastructure_error"
+        and review_evidence["consensus_verdict"] == "inconclusive"
+    )
     if reviewer_count == 0:
         if (
             review_evidence["reviewer_role_seal_sha256"] is not None
             or review_evidence["checklist_sha256"] is not None
-            or review_evidence["consensus_verdict"] != "not_applicable_no_candidate"
+            or (
+                review_evidence["consensus_verdict"] != "not_applicable_no_candidate"
+                and not infrastructure_without_review
+            )
             or review_evidence["tiebreak_used"] is not False
         ):
             raise _reject("v02_campaign_publication", "No-candidate review evidence is invalid.")
@@ -2183,7 +2646,10 @@ def _verify_public_aggregate_case(
             reviewer_count == 3
         ):
             raise _reject("v02_campaign_publication", "Candidate review consensus is invalid.")
-    mechanical = claim == "differential_reproduction" and outcome == ("differential_reproduction")
+    mechanical = claim == "differential_reproduction" and outcome in {
+        "differential_reproduction",
+        "verified_reproduction",
+    }
     review_valid = review_evidence["consensus_verdict"] == "semantically_valid"
     controls_passed = (
         control_evidence["required_controls_passed"] is True
@@ -2225,7 +2691,7 @@ def _aggregate_summary(cases: Sequence[Mapping[str, Any]]) -> dict[str, object]:
         case
         for case in cases
         if case["claim_level"] == "differential_reproduction"
-        and case["mechanical_outcome"] == "differential_reproduction"
+        and case["mechanical_outcome"] in {"differential_reproduction", "verified_reproduction"}
     ]
     provisional_count = len(provisional)
     false_positive_count = sum(case["l2_semantic_valid"] is False for case in mechanical)
@@ -2480,7 +2946,9 @@ def _verify_semantic_review_record(review: Mapping[str, Any]) -> None:
         raise _reject("v02_semantic_review", "Semantic review seal is invalid.")
 
 
-def _verify_semantic_review_case_record(review_case: Mapping[str, Any]) -> None:
+def _verify_semantic_review_case_record(
+    review_case: Mapping[str, Any], *, allow_exact_infrastructure: bool = False
+) -> None:
     _exact_keys(
         review_case,
         {
@@ -2506,6 +2974,33 @@ def _verify_semantic_review_case_record(review_case: Mapping[str, Any]) -> None:
         isinstance(value, list) for value in (reviews_value, mapping_value, authorized_value)
     ):
         raise _reject("v02_semantic_review", "Semantic review case arrays are invalid.")
+    if (
+        allow_exact_infrastructure
+        and review_case.get("case_id") == "rk-v0.2-014"
+        and review_case.get("status") == "not_applicable_infrastructure_failure"
+    ):
+        expected: dict[str, object] = {
+            "case_id": _case_id(review_case.get("case_id")),
+            "candidate_sha256": _digest_value(
+                review_case.get("candidate_sha256"), "infrastructure review candidate"
+            ),
+            "causal_control_receipt_sha256": _digest_value(
+                review_case.get("causal_control_receipt_sha256"),
+                "infrastructure control receipt",
+            ),
+            "status": "not_applicable_infrastructure_failure",
+            "reviewer_role_seal_sha256": None,
+            "mapping_reviewer_ids": [],
+            "authorized_semantic_reviewer_ids": [],
+            "reviews": [],
+            "reviewer_count": 0,
+            "consensus_verdict": "inconclusive",
+            "tiebreak_used": False,
+        }
+        expected["review_case_sha256"] = _self_hash(expected, "review_case_sha256")
+        if review_case != expected:
+            raise _reject("v02_semantic_review", "Infrastructure review seal is invalid.")
+        return
     parsed_reviews: list[V02SemanticReview] = []
     for value in cast(list[object], reviews_value):
         review = _mapping(value, "semantic review")
@@ -2855,6 +3350,9 @@ def _verify_causal_control_set_envelope(
 
 
 def _fixed_pass_evidence_sha256(evaluation: Mapping[str, Any]) -> str:
+    if evaluation.get("kind") == "exact_image_receipt":
+        receipt = evaluation.get("receipt_sha256")
+        return _digest_value(receipt, "exact fixed-pass receipt")
     runs = evaluation.get("scheduled_runs")
     if not isinstance(runs, list):
         raise _reject("v02_causal_control", "Differential evaluation lacks scheduled runs.")

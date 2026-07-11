@@ -7,19 +7,22 @@ import json
 import math
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import cast
+from typing import TypeVar, cast
 
 from reproassert.benchmark_v02_campaign import verify_v02_campaign_freeze
 from reproassert.benchmark_v02_cases import verify_v02_cases
 from reproassert.benchmark_v02_instance_controller import verify_instance_gold_smoke_receipt
 from reproassert.benchmark_v02_instance_runtime import load_instance_runtime_manifest
-from reproassert.benchmark_v02_package import EXPECTED_CASE_COUNT, load_v02_preregistration
+from reproassert.benchmark_v02_package import EXPECTED_CASE_COUNT
 from reproassert.benchmark_v02_runner import (
     V02PricingSnapshot,
     _pricing_from_record,
+)
+from reproassert.benchmark_v02_scored_preregistration import (
+    load_v02_scored_preregistration as load_v02_preregistration,
 )
 from reproassert.candidate import MAX_TEST_BYTES
 from reproassert.context import V02_SOURCE_CONTEXT_POLICY_SHA256
@@ -46,9 +49,12 @@ _CASE_ID = re.compile(r"rk-v0\.2-[0-9]{3}\Z")
 _MODEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\Z")
 _IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{2,127}\Z")
 _TIMESTAMP = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?Z\Z")
+_FREEZE_ISSUER = object()
+_AUTHORIZATION_ISSUER = object()
+T = TypeVar("T")
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, init=False)
 class VerifiedV02ExecutionFreeze:
     path: Path
     sha256: str
@@ -57,17 +63,25 @@ class VerifiedV02ExecutionFreeze:
     requested_model: str
     max_campaign_microusd: int
     max_case_microusd: int
+    _issuer: object = field(repr=False, compare=False)
     provider_calls: int = 0
 
+    def __init__(self, *_args: object, **_kwargs: object) -> None:
+        raise TypeError("VerifiedV02ExecutionFreeze is verifier-issued only")
 
-@dataclass(frozen=True)
+
+@dataclass(frozen=True, init=False)
 class VerifiedV02ExactImageAuthorization:
     path: Path
     sha256: str
     execution_freeze_sha256: str
     campaign_id: str
     authorized_at: str
+    _issuer: object = field(repr=False, compare=False)
     provider_calls: int = 0
+
+    def __init__(self, *_args: object, **_kwargs: object) -> None:
+        raise TypeError("VerifiedV02ExactImageAuthorization is verifier-issued only")
 
 
 def exact_approval_statement(execution_freeze_sha256: str) -> str:
@@ -365,14 +379,19 @@ def verify_v02_exact_image_execution_freeze(
     }:
         raise _reject("Execution freeze provider-disabled claims are invalid.")
     _git_sha(record["controller_git_sha"], "controller Git SHA")
-    return VerifiedV02ExecutionFreeze(
-        path=Path(path),
-        sha256=hashlib.sha256(raw).hexdigest(),
-        campaign_id=freeze.campaign_id,
-        request_set_sha256=expected_set,
-        requested_model=pricing.requested_model,
-        max_campaign_microusd=MAX_CAMPAIGN_MICROUSD,
-        max_case_microusd=MAX_CASE_MICROUSD,
+    return _issue_verified(
+        VerifiedV02ExecutionFreeze,
+        {
+            "path": Path(path),
+            "sha256": hashlib.sha256(raw).hexdigest(),
+            "campaign_id": freeze.campaign_id,
+            "request_set_sha256": expected_set,
+            "requested_model": pricing.requested_model,
+            "max_campaign_microusd": MAX_CAMPAIGN_MICROUSD,
+            "max_case_microusd": MAX_CASE_MICROUSD,
+            "provider_calls": 0,
+            "_issuer": _FREEZE_ISSUER,
+        },
     )
 
 
@@ -538,13 +557,42 @@ def verify_v02_exact_image_authorization(
         _timestamp(freeze_record["prepared_at"])
     ) or _timestamp_value(authorized_at) > datetime.now(timezone.utc):
         raise _reject("Authorization chronology is not post-freeze.")
-    return VerifiedV02ExactImageAuthorization(
-        path=Path(path),
-        sha256=hashlib.sha256(raw).hexdigest(),
-        execution_freeze_sha256=freeze.sha256,
-        campaign_id=freeze.campaign_id,
-        authorized_at=authorized_at,
+    return _issue_verified(
+        VerifiedV02ExactImageAuthorization,
+        {
+            "path": Path(path),
+            "sha256": hashlib.sha256(raw).hexdigest(),
+            "execution_freeze_sha256": freeze.sha256,
+            "campaign_id": freeze.campaign_id,
+            "authorized_at": authorized_at,
+            "provider_calls": 0,
+            "_issuer": _AUTHORIZATION_ISSUER,
+        },
     )
+
+
+def require_v02_exact_image_execution_freeze(value: object) -> VerifiedV02ExecutionFreeze:
+    if type(value) is not VerifiedV02ExecutionFreeze or value._issuer is not _FREEZE_ISSUER:
+        raise _reject("Fresh verifier-issued exact-image execution freeze is required.")
+    return value
+
+
+def require_v02_exact_image_authorization(
+    value: object,
+) -> VerifiedV02ExactImageAuthorization:
+    if (
+        type(value) is not VerifiedV02ExactImageAuthorization
+        or value._issuer is not _AUTHORIZATION_ISSUER
+    ):
+        raise _reject("Fresh verifier-issued exact-image authorization is required.")
+    return value
+
+
+def _issue_verified(kind: type[T], values: Mapping[str, object]) -> T:
+    issued = object.__new__(kind)
+    for name, value in values.items():
+        object.__setattr__(issued, name, value)
+    return issued
 
 
 def _preparation_pricing(root: Path, receipt: Mapping[str, object]) -> V02PricingSnapshot:

@@ -6,7 +6,7 @@
   "additionalProperties": false,
   "required": [
     "algorithm", "benchmark_version", "case_id", "candidate", "candidate_profile", "causal_controls",
-    "claims", "executed_at", "inputs", "outcome", "phases", "policy",
+    "claims", "executed_at", "evaluator_wall_ms", "inputs", "outcome", "phases", "policy",
     "receipt_sha256", "schema_version", "tool_git_sha"
   ],
   "properties": {
@@ -57,6 +57,7 @@
       }
     },
     "executed_at": { "$ref": "#/$defs/timestamp" },
+    "evaluator_wall_ms": { "type": "integer", "minimum": 0 },
     "inputs": {
       "type": "object", "additionalProperties": false,
       "required": ["algorithm", "case_id", "evaluator_public_commitment_sha256", "gold_smoke", "hidden_inputs", "runtime", "runtime_manifest_sha256"],
