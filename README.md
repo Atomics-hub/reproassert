@@ -18,7 +18,7 @@ Desktop. This command uses ReproAssert's public issue #1 and pinned buggy commit
 key, makes no model call, and builds the hash-locked verifier image automatically on first use.
 
 ```console
-uvx --from git+https://github.com/Atomics-hub/reproassert.git reproassert demo
+uvx reproassert demo
 ```
 
 The proof ends with artifacts you can inspect and replay:
@@ -47,7 +47,7 @@ issue-marked failure on the pinned base revision across repeated sandboxed runs.
 You need Python 3.10+, [uv](https://docs.astral.sh/uv/), and Docker Engine or Docker Desktop.
 
 ```console
-uv tool install git+https://github.com/Atomics-hub/reproassert.git
+uv tool install reproassert
 ```
 
 For a current issue, `HEAD` is resolved and recorded as an exact 40-character SHA. Provider use is
@@ -75,7 +75,7 @@ accepted by a maintainer.
 ```console
 python3 -m venv .venv
 . .venv/bin/activate
-python -m pip install git+https://github.com/Atomics-hub/reproassert.git
+python -m pip install reproassert
 reproassert demo
 ```
 
