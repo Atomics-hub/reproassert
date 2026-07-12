@@ -387,7 +387,9 @@ def execute_v021_case(
         write_bytes_exclusive(result_path, result_raw)
     result_sha = hashlib.sha256(result_raw).hexdigest()
     ledger.record_result(case_id, request_sha, response_sha, result_sha)
-    return _issue_result(result_path, result_sha, case_id, "candidate_generated", response_sha)
+    return _issue_result(
+        result_path, result_sha, case_id, "provider_response_durable_unparsed", response_sha
+    )
 
 
 def _call_provider_once(
@@ -399,7 +401,9 @@ def _call_provider_once(
     if not isinstance(response, V021ProviderResponse):
         raise _reject("Provider adapter returned an invalid response type.")
     if (
-        not response.response_id
+        type(response.response_id) is not str
+        or type(response.output) is not str
+        or not response.response_id
         or len(response.response_id) > 500
         or len(response.output) > 1_000_000
     ):
@@ -483,7 +487,7 @@ def _success_result_record(
         "claim_level": "generation_only_unreviewed",
         "input_sha256": row["input_sha256"],
         "lineage_commitment_sha256": plan.lineage_commitment_sha256,
-        "outcome": "candidate_generated",
+        "outcome": "provider_response_durable_unparsed",
         "preregistration_sha256": plan.preregistration_sha256,
         "request_sha256": row["request_sha256"],
         "response_sha256": response_sha,
@@ -543,7 +547,7 @@ def _load_result(
         path,
         expected_sha,
         cast(str, row["case_id"]),
-        "candidate_generated",
+        "provider_response_durable_unparsed",
         cast(str, response_sha),
     )
 

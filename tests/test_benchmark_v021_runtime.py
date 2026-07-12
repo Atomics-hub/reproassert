@@ -119,6 +119,24 @@ def _fixture(
         _canonical({"algorithm": runtime.REQUEST_SET_ALGORITHM, "requests": request_rows})
     ).hexdigest()
     authorization = object.__new__(auth_module.VerifiedV021ExecutionAuthorization)
+    authorization_ref = "operator:test-runtime"
+    operator_nonce = "7" * 64
+    authorized_at = "2026-07-11T00:00:00Z"
+    ledger_path = tmp_path / "ledger.jsonl"
+    ledger_identity = "1" * 64
+    execution_statement = auth_module.required_v021_execution_statement(
+        preregistration_raw_sha256=prereg.sha256,
+        request_set_sha256=request_set,
+        ledger_absolute_path=ledger_path,
+        ledger_identity_sha256=ledger_identity,
+        model=auth_module.MODEL,
+        total_cap_usd=auth_module.TOTAL_CAP_USD,
+        per_case_cap_usd=auth_module.PER_CASE_CAP_USD,
+        overage_allowed=False,
+        authorized_at=authorized_at,
+        authorization_ref=authorization_ref,
+        operator_nonce=operator_nonce,
+    )
     for name, value in {
         "path": tmp_path / "authorization.json",
         "sha256": "d" * 64,
@@ -133,11 +151,15 @@ def _fixture(
         "request_sha256_by_case": {
             str(row["case_id"]): str(row["request_envelope_sha256"]) for row in request_rows
         },
-        "ledger_path": tmp_path / "ledger.jsonl",
-        "ledger_identity_sha256": "1" * 64,
+        "ledger_path": ledger_path,
+        "ledger_identity_sha256": ledger_identity,
         "total_cap_usd": auth_module.TOTAL_CAP_USD,
         "per_case_cap_usd": auth_module.PER_CASE_CAP_USD,
-        "authorized_at": "2026-07-11T00:00:00Z",
+        "authorized_at": authorized_at,
+        "authorization_ref": authorization_ref,
+        "operator_nonce": operator_nonce,
+        "execution_statement": execution_statement,
+        "execution_statement_sha256": hashlib.sha256(execution_statement.encode()).hexdigest(),
         "_issuer": auth_module._ISSUER,
     }.items():
         object.__setattr__(authorization, name, value)
@@ -272,6 +294,25 @@ def test_preflight_has_no_actual_case014_infrastructure_waiver(tmp_path: Path) -
     capability_path.write_bytes(capability_raw)
     prereg = _prereg(tmp_path, capability_raw=capability_raw)
     object.__setattr__(authorization, "preregistration_sha256", prereg.sha256)
+    execution_statement = auth_module.required_v021_execution_statement(
+        preregistration_raw_sha256=prereg.sha256,
+        request_set_sha256=authorization.request_set_sha256,
+        ledger_absolute_path=authorization.ledger_path,
+        ledger_identity_sha256=authorization.ledger_identity_sha256,
+        model=authorization.model,
+        total_cap_usd=authorization.total_cap_usd,
+        per_case_cap_usd=authorization.per_case_cap_usd,
+        overage_allowed=False,
+        authorized_at=authorization.authorized_at,
+        authorization_ref=authorization.authorization_ref,
+        operator_nonce=authorization.operator_nonce,
+    )
+    object.__setattr__(authorization, "execution_statement", execution_statement)
+    object.__setattr__(
+        authorization,
+        "execution_statement_sha256",
+        hashlib.sha256(execution_statement.encode()).hexdigest(),
+    )
     plan_record = json.loads(plan.path.read_text())
     plan_record["preregistration_sha256"] = prereg.sha256
     plan.path.write_bytes(_canonical(plan_record) + b"\n")
@@ -302,7 +343,7 @@ def test_reservation_precedes_the_only_provider_call(tmp_path: Path) -> None:
         response_directory=responses,
         result_directory=results,
     )
-    assert result.outcome == "candidate_generated"
+    assert result.outcome == "provider_response_durable_unparsed"
     assert ledger.events == [
         ("reserve", "rk-v0.2-014"),
         ("response", "rk-v0.2-014"),
@@ -368,7 +409,7 @@ def test_durable_response_recovery_never_recalls_provider(tmp_path: Path) -> Non
         response_directory=responses,
         result_directory=results,
     )
-    assert recovered.outcome == "candidate_generated"
+    assert recovered.outcome == "provider_response_durable_unparsed"
     assert calls == 1
 
 
@@ -400,6 +441,21 @@ def test_tampered_durable_response_cross_binding_is_rejected(tmp_path: Path) -> 
             provider=lambda _request: (_ for _ in ()).throw(AssertionError("provider recalled")),
             response_directory=responses,
             result_directory=results,
+        )
+
+
+def test_provider_response_runtime_types_are_enforced() -> None:
+    request = runtime.V021ProviderRequest(
+        case_id="rk-v0.2-001",
+        request_sha256="1" * 64,
+        input_sha256="2" * 64,
+        call_id="3" * 64,
+        request={},
+    )
+    with pytest.raises(PolicyRejection, match="fields exceed"):
+        runtime._call_provider_once(
+            lambda _request: runtime.V021ProviderResponse("response", ["not", "text"], 1),  # type: ignore[arg-type]
+            request,
         )
 
 

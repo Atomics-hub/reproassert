@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atomics-hub.github.io/reproassert/schemas/benchmark-v021-spend-ledger-event.schema.json",
+  "title": "ReproAssert v0.2.1 spend ledger event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["algorithm", "authorization_sha256", "benchmark_version", "case_id", "event_sha256", "event_type", "ledger_identity_sha256", "lineage_commitment_sha256", "payload", "preregistration_sha256", "recorded_at", "request_set_sha256", "schema_version", "sequence"],
+  "properties": {
+    "algorithm": {"const": "reproassert-v021-spend-ledger-event-v1"},
+    "authorization_sha256": {"$ref": "#/$defs/sha256"}, "benchmark_version": {"const": "0.2.1"},
+    "case_id": {"type": ["string", "null"], "pattern": "^rk-v0\\.2-(00[1-9]|01[0-9]|020)$"},
+    "event_sha256": {"$ref": "#/$defs/sha256"},
+    "event_type": {"enum": ["ledger_claimed", "case_reserved", "provider_response_durable", "case_completed"]},
+    "ledger_identity_sha256": {"$ref": "#/$defs/sha256"}, "lineage_commitment_sha256": {"$ref": "#/$defs/sha256"},
+    "payload": {"type": "object"}, "preregistration_sha256": {"$ref": "#/$defs/sha256"},
+    "recorded_at": {"type": "string", "format": "date-time"}, "request_set_sha256": {"$ref": "#/$defs/sha256"},
+    "schema_version": {"const": "1.0.0"}, "sequence": {"type": "integer", "minimum": 1}
+  },
+  "allOf": [
+    {"if": {"properties": {"event_type": {"const": "ledger_claimed"}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/claim_payload"}}}},
+    {"if": {"properties": {"event_type": {"const": "case_reserved"}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/reservation_payload"}}}},
+    {"if": {"properties": {"event_type": {"const": "provider_response_durable"}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/response_payload"}}}},
+    {"if": {"properties": {"event_type": {"const": "case_completed"}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/result_payload"}}}}
+  ],
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "previous": {"oneOf": [{"$ref": "#/$defs/sha256"}, {"type": "null"}]},
+    "claim_payload": {"type": "object", "additionalProperties": false, "required": ["claim_sha256", "previous_event_sha256"], "properties": {"claim_sha256": {"$ref": "#/$defs/sha256"}, "previous_event_sha256": {"$ref": "#/$defs/previous"}}},
+    "reservation_payload": {"type": "object", "additionalProperties": false, "required": ["call_id", "maximum_cost_usd", "previous_event_sha256", "request_sha256"], "properties": {"call_id": {"$ref": "#/$defs/sha256"}, "maximum_cost_usd": {"const": "0.25"}, "previous_event_sha256": {"$ref": "#/$defs/previous"}, "request_sha256": {"$ref": "#/$defs/sha256"}}},
+    "response_payload": {"type": "object", "additionalProperties": false, "required": ["actual_cost_usd", "call_id", "previous_event_sha256", "request_sha256", "reservation_event_sha256", "response_sha256"], "properties": {"actual_cost_usd": {"type": "string", "pattern": "^(0|0\\.[0-9]{6})$"}, "call_id": {"$ref": "#/$defs/sha256"}, "previous_event_sha256": {"$ref": "#/$defs/previous"}, "request_sha256": {"$ref": "#/$defs/sha256"}, "reservation_event_sha256": {"$ref": "#/$defs/sha256"}, "response_sha256": {"$ref": "#/$defs/sha256"}}},
+    "result_payload": {"type": "object", "additionalProperties": false, "required": ["call_id", "previous_event_sha256", "request_sha256", "reservation_event_sha256", "response_sha256", "result_sha256"], "properties": {"call_id": {"$ref": "#/$defs/sha256"}, "previous_event_sha256": {"$ref": "#/$defs/previous"}, "request_sha256": {"$ref": "#/$defs/sha256"}, "reservation_event_sha256": {"$ref": "#/$defs/sha256"}, "response_sha256": {"$ref": "#/$defs/sha256"}, "result_sha256": {"$ref": "#/$defs/sha256"}}}
+  }
+}

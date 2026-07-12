@@ -107,7 +107,7 @@ def _issue_barrier(
     if tuple(result.case_id for result in results) != expected:
         raise _reject("Generation barrier requires all 20 canonical terminal dispositions.")
     if any(
-        result.outcome not in {"candidate_generated", "no_candidate", "provider_rejected"}
+        result.outcome != "provider_response_durable_unparsed"
         for result in results
     ):
         raise _reject("Generation barrier cannot include unknown-spend or nonterminal cases.")

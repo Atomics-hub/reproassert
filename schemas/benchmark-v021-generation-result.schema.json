@@ -31,7 +31,7 @@
     "input_sha256": {"$ref": "#/$defs/sha256"},
     "call_id": {"$ref": "#/$defs/sha256"},
     "response_sha256": {"oneOf": [{"$ref": "#/$defs/sha256"}, {"type": "null"}]},
-    "outcome": {"enum": ["candidate_generated", "unknown_spend_halt"]},
+    "outcome": {"enum": ["provider_response_durable_unparsed", "unknown_spend_halt"]},
     "claim_level": {"enum": ["generation_only_unreviewed", "rejected"]}
   },
   "$defs": {
