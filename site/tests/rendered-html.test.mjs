@@ -33,7 +33,8 @@ test("server-renders the ReproAssert proof surface", async () => {
   assert.match(html, /The test/);
   assert.match(html, /before the/);
   assert.match(html, /repeatable_base_failure/);
-  assert.match(html, /Twenty leak-audited cases\. Zero scored results\./);
+  assert.match(html, /Twenty evaluated\. Zero accepted\./);
+  assert.match(html, /Exactly 20[\s\S]*calls cost \$0\.688111/);
   assert.match(html, /benchmark replay-v02-case/);
   assert.match(html, /Self-owned fixture · fresh replay matched · not benchmark evidence/);
   assert.match(html, /github\.com\/Atomics-hub\/reproassert\/issues\/1/);
@@ -56,7 +57,7 @@ test("keeps public claims and business math bounded in source", async () => {
   assert.match(page, /51/);
   assert.match(page, /\$199/);
   assert.match(page, /\$10,149/);
-  assert.match(page, /No\s+semantic-validity claim yet/);
+  assert.match(page, /No semantic-validity claim/);
   assert.match(page, /No native host execution/);
   assert.doesNotMatch(page, /testimonial|customer logo|state of the art/i);
   assert.match(layout, /title: "ReproAssert — The test before the fix"/);

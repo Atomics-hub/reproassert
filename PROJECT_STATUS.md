@@ -1,15 +1,14 @@
 # Project status
 
-Last updated: 2026-07-10
+Last updated: 2026-07-12
 
 ## Current verdict
 
-**GO for validation-ready local Python/pytest infrastructure. The 20-case v0.2 selection is frozen
-from a container-attested, leak-audited upstream dataset; the scored runner, exact pricing and spend
-authorization barrier, causal evaluator, two-reviewer/tie-break semantic gate, publication verifier,
-and exact-SHA dependency-aware replay path are implemented. The campaign remains deliberately
-unrun at 0/20 until Tom supplies exact capped spend authorization. Hosted-product and demand claims
-remain deferred, and nobody has been contacted.**
+**GO for the trustworthy local Python/pytest infrastructure; NO-GO for claiming benchmark accuracy
+or scaling the current generator unchanged. The v0.2.1 campaign completed all 20 frozen cases for
+$0.688111 and accepted 0/20. Seventeen candidates failed the strict output contract and three failed
+deterministic attribution after six-run Docker evaluation. No L2, human-review, maintainer-demand,
+hosted-product, or revenue claim is supported, and nobody has been contacted.**
 
 ## Verified now
 
@@ -39,9 +38,9 @@ remain deferred, and nobody has been contacted.**
   source passes. This is infrastructure proof, not benchmark accuracy.
 - Frozen public benchmark manifest: 20 historical cases across 10 repositories; five-case smoke
   subset; strict schemas and validator.
-- Deny-by-default campaign freeze, separate hash-chained smoke/scored event ledgers, all-attempt
-  accounting, provider-call spend reservation, and explicit unknown-cost failure states. Both
-  ledgers and the result file remain empty.
+- Deny-by-default campaign freeze, irreversible hash-chained spend ledger, all-attempt accounting,
+  provider-call reservation, durable recovery, exact frozen pricing, and explicit unknown-cost
+  failure states. The v0.2.1 ledger records 20/20 completed calls and $0.688111 actual spend.
 - Exact-source preparation baseline: 16/20 archives passed independent fresh-metadata
   re-verification. Four failed closed: one Git submodule/gitlink, two tracked symlinks, and one
   codeload `export-subst` byte change. This used no model, authorized no spend, and changed no
@@ -67,12 +66,12 @@ remain deferred, and nobody has been contacted.**
   20 production patches, developer-test patches, and metadata records inside the same pinned,
   no-network Docker boundary. Its receipt commits the exact dataset, cohort, worker, request,
   container inspection, and artifact set without emitting hidden bytes or paths to stdout.
-- The provider-disabled case controller authentically prepared 20/20 private pre-review packets.
+- The preparation controller authentically prepared 20/20 private evaluator packets.
   Preparation reran the dataset and hidden boundaries, freshly rederived all 20 exact Git sources,
   froze the full provider request envelopes and official pricing capture, emitted genuine
-  two-reviewer/tie-break rubrics with empty reviewer slots, and wrote an unsigned $0.25/case,
-  $5/campaign proposal. Provider calls remained zero. Dependency-ready and campaign-ready counts
-  remain 0/20. One packet records a bounded pre-existing developer-test-line overlap in the exact
+  review rubrics, and froze a $0.25/case, $5/campaign zero-overage ceiling. The automated successor
+  then executed one frozen request per case without granting any human-review claim. One packet
+  records a bounded pre-existing developer-test-line overlap in the exact
   buggy-base context; this is contamination evidence, not an evaluator-boundary leak.
 - The causal wheel dependency executor now accepts only a strict plan path; creates fresh, distinct,
   exactly labeled local-tmpfs input, wheelhouse, and dependency volumes with byte and inode quotas;
@@ -102,10 +101,9 @@ remain deferred, and nobody has been contacted.**
   handoff, never a raw receipt or host-native preparation object. The production runner binds all 20
   rendered requests, exact provider/model/adapter pricing, caps, approval bytes, tool revision,
   campaign/cohort/preregistration, and a single-ledger claim before provider-capable work.
-- L2 publication requires a mechanical fail-to-pass differential, executed candidate-on-fixed,
-  fix-minus, base-plus, and preregistered decoy controls, plus two distinct authorized reviewers.
-  A deterministic third reviewer is required only on disagreement. No missing or inconclusive
-  control can be published as L2.
+- L2 publication remains unavailable. The automated v0.2.1 campaign can issue only L1 deterministic
+  evidence after exact base/fixed execution; it cannot claim human review, maintainer validation, or
+  semantic validity.
 - Protected `main` includes the validation controls at merge commit
   `6abbed9ade57934bbdc75afa250800acc355003d` (PR #20). That public milestone passed Python 3.10 and
   3.14, distribution/clean-install, Docker, schema, Ruff, and mypy checks.
@@ -128,35 +126,29 @@ remain deferred, and nobody has been contacted.**
 
 ## Evidence still missing
 
-- Historical benchmark results: **0/20 run**.
-- Semantically valid benchmark reproductions: **0/20 measured**.
+- Historical v0.2.1 benchmark denominator: **20/20 evaluated; 0/20 accepted at L1**.
+- Semantically valid benchmark reproductions: **0/20 claimed**; L2 was not attempted.
 - Regular-file v1 source receipts: **16/20 accepted and independently reverified; four unsupported
   under that deliberately narrower policy**.
 - Leak-audited dataset selection: **20/20 frozen**; prospective issue chronology remains unproven.
-- Prepared evaluator inputs: **20/20 hidden records and 20/20 pre-review case packets**. These are
-  not authentic scored case packages. Hash-locked dependency execution receipts are 0/20, genuine
-  mapping and semantic reviewer assignments are absent, preregistration is unbound, and spend is
-  not authorized. The issuer, runner, replay, controls, and schemas are implemented, but no paid
-  campaign ran.
+- Candidate quality: **17/20 contract-rejected; 3/20 sandbox-evaluated and rejected as
+  `wrong_or_flaky_failure`; 0 false acceptances** under the frozen evaluator.
 - Exact-object source receipts: **20/20 accepted and independently reverified locally**; private
   receipts are not a public index and have not changed the frozen campaign prerequisite.
 - Independently validated or maintainer-accepted tests: **0**.
 - Maintainers willing to use it again: **0**.
-- L1 plausible fail-to-pass public benchmark results: **0/20 measured**.
-- Complete model cost across successful and failed generation attempts, warm runtime, and hosted
-  runner COGS: **not measured**. A verified-candidate report does not capture aborted attempts.
-- Model/provider spend for the validation campaign: **$0**. CI used the repository's public-runner
-  workflow only for the coherent PR gates; no paid service was purchased.
+- L1 deterministic fail-to-pass public benchmark results: **0/20**.
+- Model/provider spend: **$0.688111 total across exactly 20 calls**; $0.022471 minimum and $0.051351
+  maximum per case. Cost per accepted reproduction is undefined at zero successes. Hosted runner
+  COGS remains unmeasured.
 - Paid pilots, qualified trials, and MRR: **0**.
 
 ## Next validation slice
 
-1. Treat v0.2.0 as validation-ready tooling, not as benchmark-success evidence; retain v0.1.0 as an
-   immutable historical release and require the same exact tag-source gate for every later release.
-2. Produce and execute reviewed hash-locked dependency plans for all 20 cases; complete genuine
-   mapping review and preregistration. Only then turn the current unsigned cap proposal into an
-   exact authorization request for Tom.
-3. Run the 20-case campaign without inspecting hidden fixes in generation, finalize only through the
-   causal-control and reviewer-consensus gate, and publish failures as well as successes.
-4. Prepare maintainer-validation packets from accepted candidates, but contact nobody without Tom's
-   separate exact outreach approval.
+1. Publish and preserve the complete failed denominator; do not rerun or relax the frozen contract
+   after seeing outputs.
+2. Diagnose the 17 schema/contract failures and three attribution failures using only public
+   generation artifacts, then preregister a materially improved generation profile before spending
+   on a new cohort or repeat.
+3. Keep the open-source CLI useful independently of benchmark accuracy; gather organic GitHub usage
+   as the only available external validation signal, without labeling it maintainer validation.

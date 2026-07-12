@@ -1,13 +1,11 @@
 # Roadmap
 
-Date: 2026-07-10
+Date: 2026-07-12
 
-Status: alpha and validation-ready, with **0/20 scored runs**. The 20-case selection, attested
-dataset parser, exact upstream provenance, causal wheel executor, semantic issuer, scored runner,
-pre-inference pricing/authorization barrier, executed controls, reviewer consensus, bounded
-publication, and exact-SHA dependency-aware replay are implemented. Provider execution remains
-default-deny at a $0 cap until exact authorization and all 20 private case packages pass. No model
-spend or outreach occurred.
+Status: alpha with one complete, failed validation campaign: **20/20 evaluated, 0/20 accepted**.
+Exactly 20 frozen OpenAI calls cost $0.688111; 17 outputs failed the candidate contract and three
+failed deterministic attribution in Docker. The current profile missed the 6/20 continuation gate.
+No L2, human-review, maintainer-demand, or revenue claim is supported; no outreach occurred.
 
 This roadmap is ordered by evidence, not feature count. A later phase does not begin because the earlier phase has more code; it begins when the earlier claim is reproducible and useful.
 
@@ -43,43 +41,28 @@ Before the first release is described as usable:
 - keep CLI help, README examples, security docs, and report schema synchronized; and
 - record known failures rather than widening the claim.
 
-## Next: execute validation without moving the goalposts
+## Next: learn from the failed campaign without moving the goalposts
 
-The 20-case v0.1 cohort is frozen and
-[`results.jsonl`](../benchmarks/v0.1/results.jsonl) is empty. Its historical snapshot cutoff is not
-currently supportable from trusted evidence, so v0.1 remains blocked rather than being silently
-reinterpreted. Exact-object source preparation now accepts and freshly reverifies 20/20 repositories;
-that transport milestone does not satisfy the historical or evaluator gates. V0.2 therefore uses a
-chronology-honest dataset-snapshot selection rather than relabeling v0.1. The next evidence slice is:
+The v0.1 cohort remains immutable under its provenance erratum. The v0.2.1 successor preserved the
+full denominator, exact requests, hidden-fix isolation, spend ledger, and fail-closed evaluator. Its
+0/20 result is now the baseline. The next evidence slice is:
 
-1. build and independently verify all 20 private source/dependency/hidden-fix case packages;
-2. freeze the exact 20 rendered requests, tool revision, pricing snapshot, provider/model/adapter,
-   per-case and campaign caps, and human approval bytes before provider-capable work;
-3. submit exactly one candidate per frozen case and retain every attempt, failure, and cost event;
-4. execute the declared causal controls and blinded two-reviewer/tie-break protocol;
-5. publish the complete 20-case denominator, attributable cost, wall time, and replay bundles; and
-6. record false reproductions, setup failures, flakiness, and infrastructure errors without hiding
-   them from the denominator.
+1. preserve the exact first-run artifacts and never reclassify or replace a failed case;
+2. analyze contract failures without hidden fixes to improve structured-output compliance;
+3. analyze the three unstable fingerprints without weakening JUnit or attribution requirements;
+4. preregister any successor prompt/model/contract and a fresh capped budget before execution; and
+5. keep benchmark results separate from organic GitHub usage and maintainer-demand evidence.
 
-The provider-free dataset transaction, exact-object source, chronology, exact-image capability, and
-hunk-mapping packet commands are implemented. Authentic local runs rederived all 20 projections,
-proved issue-before-fix ordering for 20/20, runtime-attested 20/20 exact images, and validated hidden
-gold on 19/20 while retaining case 014's network infrastructure failure. The 20 private mapping
-packets contain 32 committed hunks and zero fabricated reviews. Genuine mapping consensus,
-preregistration, and final request/pricing authorization are still required before a scored run.
-
-The exact-image execution-freeze controller and hard reservation audit are implemented. A successor
-preparation at merged SHA `1ec56e5` reduced cases 004/005 below the cap. The stronger full-outbound
-calculation—including instructions and schema overhead—reserves $2.838709 total with a $0.208513
-maximum case, still below the approved $5/$0.25 limits. Regenerate once more at this bridge's final
-merge SHA, bind genuine mapping consensus and preregistration, then freeze the exact inputs. This is
-a zero-spend prerequisite, not a benchmark result.
+The first run stayed below its frozen $5 total / $0.25 per-case caps. It measured $0.688111 total,
+$0.022471 minimum, and $0.051351 maximum. Since there were no accepted reproductions, cost per
+success is undefined and the cost-efficiency gate did not pass.
 
 Complete historical body revision capture remains an optional future upgrade to a stronger content
 cleanliness claim. The current receipt proves creation order, not that the later dataset snapshot
 contains only text visible before the fix attempt.
 
-Continuation requires at least 6/20 semantic-valid cases, median warm runtime below 10 minutes, and attributable cost at or below roughly $1 per semantic-valid reproduction or a measured path there. Passing supports further validation only; it does not establish a population rate or state of the art.
+The preregistered continuation threshold was at least 6/20 accepted cases. The observed 0/20 does
+not support scaling this profile. A successor experiment must earn a new decision on its own terms.
 
 ## Then: maintainer usefulness
 

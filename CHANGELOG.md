@@ -4,10 +4,26 @@ All notable changes to ReproAssert will be documented here. The format follows [
 
 ## [Unreleased]
 
+### Added
+
+- The complete public v0.2.1 result bundle: 20/20 frozen cases evaluated, 0/20 accepted, 17
+  candidate-contract rejections, three exact-image evaluator rejections, and $0.688111 total spend.
+- A bounded OpenAI campaign adapter, irreversible reservation/response/completion ledger, automated
+  oracle-evidence authority, full-denominator evaluator, and structural public result inspector.
+
 ### Changed
 
 - Bound the source-context path manifest to 128 KiB while retaining every selected source file,
   keeping conservative per-case model reservations within the frozen benchmark spend cap.
+- Replaced the unrun benchmark status across the README, docs, release notes, and proof site with
+  the measured failed result and its strict no-L2/no-human/no-maintainer claim ceiling.
+
+### Security
+
+- Bound resumed evaluator receipts to the exact generated candidate, target, evaluator commit, and
+  aggregate; removed public executor injection; made terminal recovery idempotent; required exact
+  JUnit attribution on both base and fixed runs; and kept private live authority distinct from
+  structural public inspection.
 
 ## [0.2.1] - 2026-07-11
 

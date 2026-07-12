@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
+import stat
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -464,7 +466,10 @@ def _verify_v021_automated_evaluation_set(
     ):
         raise _reject("Automated evaluation aggregate identity or claim ceiling is invalid.")
     receipt_root = Path(receipt_directory)
-    require_private_directory(receipt_root)
+    if issuance is _LIVE_ISSUANCE:
+        require_private_directory(receipt_root)
+    else:
+        _require_public_receipt_directory(receipt_root)
     bindings: dict[str, str] = {}
     accepted = 0
     for value in rows:
@@ -650,6 +655,21 @@ def _read_bounded(path: Path, limit: int, label: str) -> bytes:
     if not raw or len(raw) > limit:
         raise _reject(f"{label.capitalize()} is empty or exceeds its byte limit.")
     return raw
+
+
+def _require_public_receipt_directory(path: Path) -> None:
+    """Open a public checkout directory without following its final path component."""
+
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as exc:
+        raise _reject("Public evaluation receipt directory is unsafe.") from exc
+    try:
+        if not stat.S_ISDIR(os.fstat(descriptor).st_mode):
+            raise _reject("Public evaluation receipt path is not a directory.")
+    finally:
+        os.close(descriptor)
 
 
 def _decode_canonical(raw: bytes, label: str) -> dict[str, object]:

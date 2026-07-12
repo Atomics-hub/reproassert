@@ -106,7 +106,7 @@ export default function Home() {
           <p className="heroQualifier">
             Self-fixture verified. Current maximum claim: {" "}
             <code>repeatable_base_failure</code>. V0.2 selection frozen; scored
-            benchmark: 0 / 20. No semantic-validity claim yet.
+            benchmark: 20 / 20 evaluated, 0 accepted. No semantic-validity claim.
           </p>
         </div>
 
@@ -179,7 +179,7 @@ export default function Home() {
         </div>
         <div>
           <span className="truthLabel">Benchmark</span>
-          <strong>0 / 20 scored</strong>
+          <strong>0 / 20 accepted</strong>
         </div>
       </section>
 
@@ -263,7 +263,7 @@ export default function Home() {
           <div className="ledgerHeader">
             <div>
               <p className="kicker">Public benchmark selection · v0.2</p>
-              <h2 id="benchmark-title">Twenty leak-audited cases. Zero scored results.</h2>
+              <h2 id="benchmark-title">Twenty evaluated. Zero accepted.</h2>
             </div>
             <div className="ledgerScore" aria-label="Zero of twenty cases scored">
               <strong>0</strong>
@@ -271,24 +271,24 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="caseGrid" aria-label="Twenty pending benchmark cases">
+          <div className="caseGrid" aria-label="Twenty rejected benchmark cases">
             {Array.from({ length: 20 }, (_, index) => (
               <div className="caseCell" key={index}>
                 <span>{String(index + 1).padStart(2, "0")}</span>
-                <strong>pending</strong>
+                <strong>{[2, 6, 10].includes(index) ? "oracle reject" : "contract reject"}</strong>
               </div>
             ))}
           </div>
 
           <div className="ledgerFooter">
             <p>
-              <strong>This is selection proof, not performance.</strong> The
-              chronology-honest cohort is frozen from pinned upstream objects.
-              Every case, including abstentions and infrastructure failures,
-              stays in the denominator.
+              <strong>The first measured run missed its gate.</strong> Exactly 20
+              calls cost $0.688111. Seventeen candidates failed the contract;
+              three reached Docker evaluation and failed stable attribution.
+              There is no L1, L2, human-review, or maintainer-validity claim.
             </p>
-            <a className="button buttonOutline" href={`${githubUrl}/tree/main/benchmarks/v0.2-draft`}>
-              Inspect the selection
+            <a className="button buttonOutline" href={`${githubUrl}/tree/main/benchmarks/v0.2-results`}>
+              Inspect the result
               <span aria-hidden="true">↗</span>
             </a>
           </div>
@@ -391,11 +391,9 @@ export default function Home() {
           </div>
           <pre>
             <code>
-              <span className="prompt">$</span> git clone {githubUrl}.git
-              {"\n"}<span className="prompt">$</span> cd reproassert
-              {"\n"}<span className="prompt">$</span> uv sync
-              {"\n\n"}<span className="prompt">$</span> uv run reproassert sandbox build
-              {"\n"}<span className="prompt">$</span> uv run reproassert doctor
+              <span className="prompt">$</span> uv tool install git+{githubUrl}.git
+              {"\n\n"}<span className="prompt">$</span> reproassert sandbox build
+              {"\n"}<span className="prompt">$</span> reproassert doctor
             </code>
           </pre>
           <div className="doctorRows">

@@ -392,11 +392,11 @@ jobs:
             are checksum-verified and receive GitHub workflow-provenance plus exact-tag-source
             attestations before publication.
 
-            Claim limits: the frozen historical benchmark remains 0/20 scored, no outside maintainer
-            has validated a candidate or committed to reuse, failed generation-attempt cost is not yet
-            captured, and no accuracy, demand, revenue, or hosted-readiness claim is made. The built-in
-            OpenAI adapter is opt-in and was contract-tested without a live paid request. This release is
-            not published to PyPI.
+            Claim limits: v0.2.1 evaluated 20/20 frozen cases and accepted 0/20; 17 outputs failed the
+            candidate contract and three failed deterministic attribution after Docker evaluation.
+            Exactly 20 paid calls cost $0.688111. No outside maintainer has validated a candidate or
+            committed to reuse, and no accuracy, demand, revenue, or hosted-readiness claim is made.
+            The built-in OpenAI adapter remains explicit opt-in. This release is not published to PyPI.
         run: >-
           gh release create "$RELEASE_TAG"
           dist/*

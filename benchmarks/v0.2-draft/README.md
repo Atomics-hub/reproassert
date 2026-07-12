@@ -1,12 +1,12 @@
 # Benchmark v0.2 draft
 
-> v0.2.1 preparation note: an approved amendment can now be frozen with
-> `prepare-v021-preregistration`, but the emitted artifact remains
-> `execution_disabled_until_v021_runtime_migration`. There is intentionally no
-> v0.2.1 run command. See [ADR 0019](../../docs/decisions/0019-approved-v021-preregistration-stays-provider-disabled.md).
+> v0.2.1 result: the automated successor evaluated all 20 frozen cases and accepted 0. Seventeen
+> candidates failed the frozen contract and three failed deterministic attribution after sandbox
+> execution. See the committed public result bundle in `../v0.2-results/`.
 
-This directory contains the public selection freeze for the unrun v0.2 benchmark. It is not a
-campaign result: model outputs remain 0/20 and maintainer validations remain zero.
+This directory preserves the public selection and preparation history. It is not itself the result
+bundle. The v0.2.1 campaign made 20 calls for $0.688111, accepted 0/20, made no L2 or human-review
+claim, and has zero maintainer validations.
 
 The v0.2 preparation contract replaces v0.1's unsubstantiated `pre_fix_source_snapshot` claim with
 the bounded `dataset_snapshot_at_pinned_commit` source. The frozen plan conservatively labels every
@@ -48,8 +48,9 @@ The successor freeze binds the fresh public-safe
 [`dataset-parser-boundary-attestation-v0.2.1.json`](dataset-parser-boundary-attestation-v0.2.1.json):
 the exact replacement image rederived the unchanged parser receipt and output under the frozen
 no-network, read-only, capability-dropped policy. Private dataset and hidden-gold receipts must
-still freshly verify their exact stored bytes before authorizing case preparation. This correction
-does not change the honest public state of 0/20 scored runs.
+still freshly verify their exact stored bytes before authorizing case preparation. At the time it
+was frozen, this correction did not change the then-unrun 0/20 state. The later v0.2.1 result is
+preserved separately in `../v0.2-results/`.
 
 The successor freeze also binds the release archive name, exact 92,300,454-byte size, and SHA-256.
 After downloading that asset from the v0.2.1 release, install it without trusting a mutable tag:
@@ -198,9 +199,8 @@ applies exactly one candidate to separately attested base/fixed trees, and runs 
 failures and three exact fixed passes. Raw fixed stdout/JUnit is reduced to digests before the public
 record. This fixture does not come from an authentic v0.2 package and is not an L1 result.
 
-The campaign controller is implemented but deliberately unexecuted. It reserves spend before each
-provider call, writes a durable candidate transaction before evaluation, supports zero-provider-call
-crash recovery, requires executed causal controls and two-reviewer/tie-break consensus before L2,
-and emits a 20-case bounded aggregate including no-candidate cases. Published accepted cases are
-replayed with `reproassert benchmark replay-v02-case <bundle>`, which reacquires exact source and
-rebuilds hash-locked dependencies without invoking a model. Authentic results remain 0/20.
+The automated successor campaign executed on 2026-07-12. It reserved spend before each provider
+call, wrote durable candidate transactions before evaluation, recovered without duplicate calls,
+and emitted the complete 20-case aggregate. No case was accepted. Any future published accepted
+case would still require `reproassert benchmark replay-v02-case <bundle>` to reacquire exact source
+and rebuild hash-locked dependencies without invoking a model.
