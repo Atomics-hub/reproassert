@@ -1,0 +1,499 @@
+"""All-20 automated-oracle bridge from durable generation to sandbox evaluation."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import cast
+
+from reproassert.benchmark_v02_amendment import VerifiedV02BenchmarkAmendment
+from reproassert.benchmark_v02_candidate_contract import v02_candidate_contract
+from reproassert.benchmark_v02_candidate_evaluator import (
+    CandidateArtifact,
+    CandidateEvaluationReceipt,
+    evaluate_instance_candidate,
+    verify_instance_candidate_receipt,
+)
+from reproassert.benchmark_v02_exact_capability import VerifiedV02ExactImageEvaluatorCapability
+from reproassert.benchmark_v02_hidden import VerifiedV02HiddenExtraction
+from reproassert.benchmark_v021_automated_evidence import (
+    VerifiedV021AutomatedEvidence,
+    require_v021_automated_evidence,
+)
+from reproassert.benchmark_v021_campaign_controller import (
+    VerifiedV021GenerationBarrier,
+    require_v021_generation_barrier,
+)
+from reproassert.benchmark_v021_openai_adapter import parse_v021_candidate_output
+from reproassert.benchmark_v021_runtime import (
+    RESPONSE_ALGORITHM,
+    V021GenerationResult,
+    VerifiedV021RuntimePlan,
+    require_v021_generation_result,
+    require_v021_runtime_plan,
+)
+from reproassert.errors import PolicyRejection
+from reproassert.safeio import open_regular_file, require_private_directory, write_bytes_exclusive
+
+ALGORITHM = "reproassert-v021-automated-evaluation-v1"
+AGGREGATE_ALGORITHM = "reproassert-v021-automated-evaluation-aggregate-v1"
+SCHEMA_VERSION = "1.0.0"
+CASE_COUNT = 20
+MAX_RESPONSE_BYTES = 2 * 1024 * 1024
+MAX_RESULT_BYTES = 2 * 1024 * 1024
+MAX_EVALUATION_RECEIPT_BYTES = 512 * 1024
+_CASE_ID = re.compile(r"rk-v0\.2-(?:00[1-9]|01[0-9]|020)\Z")
+_SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+_GIT_SHA = re.compile(r"[0-9a-f]{40}\Z")
+
+
+@dataclass(frozen=True)
+class V021EvaluationCaseInputs:
+    """Private evaluator authorities and paths; never serialized into public receipts."""
+
+    issue_number: int
+    evaluator_capability: VerifiedV02ExactImageEvaluatorCapability = field(repr=False)
+    verified_hidden: VerifiedV02HiddenExtraction = field(repr=False)
+    gold_smoke_receipt_path: Path = field(repr=False)
+    gold_specs_path: Path = field(repr=False)
+    manifest_path: Path = field(repr=False)
+    expected_manifest_sha256: str
+    amendment_authority: VerifiedV02BenchmarkAmendment = field(repr=False)
+
+
+@dataclass(frozen=True)
+class V021AutomatedEvaluationReceipt:
+    path: Path
+    sha256: str
+    case_id: str
+    classification: str
+    accepted: bool
+
+
+@dataclass(frozen=True, init=False)
+class VerifiedV021AutomatedEvaluationSet:
+    """Process-local authority issued only after all 20 evaluations are verified."""
+
+    path: Path
+    sha256: str
+    accepted_count: int
+    rejected_count: int
+    receipt_sha256_by_case: Mapping[str, str] = field(repr=False)
+    _issuer: object = field(repr=False, compare=False)
+
+    def __init__(self, *_args: object, **_kwargs: object) -> None:
+        raise TypeError("VerifiedV021AutomatedEvaluationSet is verifier-issued only")
+
+
+Evaluator = Callable[..., CandidateEvaluationReceipt]
+ReceiptVerifier = Callable[[Path], CandidateEvaluationReceipt]
+_ISSUER = object()
+
+
+def evaluate_v021_automated_campaign(
+    *,
+    plan: VerifiedV021RuntimePlan,
+    barrier: VerifiedV021GenerationBarrier,
+    generation_results: Sequence[V021GenerationResult],
+    automated_evidence_authority: VerifiedV021AutomatedEvidence,
+    response_directory: Path,
+    case_inputs: Mapping[str, V021EvaluationCaseInputs],
+    receipt_directory: Path,
+    aggregate_path: Path,
+    executed_at: str,
+    tool_git_sha: str,
+    evaluator: Evaluator = evaluate_instance_candidate,
+    receipt_verifier: ReceiptVerifier = verify_instance_candidate_receipt,
+) -> VerifiedV021AutomatedEvaluationSet:
+    """Parse and evaluate exactly 20 durable outputs, or publish no aggregate authority."""
+
+    verified_plan = require_v021_runtime_plan(plan)
+    verified_barrier = require_v021_generation_barrier(barrier)
+    evidence = require_v021_automated_evidence(automated_evidence_authority)
+    expected_ids = tuple(f"rk-v0.2-{index:03d}" for index in range(1, CASE_COUNT + 1))
+    if tuple(case_inputs) != expected_ids:
+        raise _reject("Automated evaluation requires exact sorted inputs for all 20 cases.")
+    if (
+        verified_barrier.authorization_sha256 != verified_plan.authorization_sha256
+        or verified_barrier.request_set_sha256 != verified_plan.request_set_sha256
+        or evidence.request_set_sha256 != verified_plan.request_set_sha256
+    ):
+        raise _reject("Generation, plan, and automated evidence lineages differ.")
+    if tuple(result.case_id for result in generation_results) != expected_ids:
+        raise _reject("Generation results are missing, reordered, or cross-case mixed.")
+    response_root, receipt_root, aggregate = (
+        Path(response_directory),
+        Path(receipt_directory),
+        Path(aggregate_path),
+    )
+    require_private_directory(response_root)
+    require_private_directory(receipt_root)
+    require_private_directory(aggregate.parent)
+    if aggregate.exists() or aggregate.is_symlink():
+        raise _reject("Refusing to overwrite an automated evaluation aggregate.")
+
+    rows: list[dict[str, object]] = []
+    for result_value in generation_results:
+        result = require_v021_generation_result(result_value)
+        case_id = result.case_id
+        expected_result_sha = verified_barrier.result_sha256_by_case.get(case_id)
+        if (
+            result.outcome != "provider_response_durable_unparsed"
+            or result.sha256 != expected_result_sha
+            or result.response_sha256 is None
+        ):
+            raise _reject("Every barrier result must be a durable unparsed provider response.")
+        result_raw = _read_bounded(result.path, MAX_RESULT_BYTES, "generation result")
+        if hashlib.sha256(result_raw).hexdigest() != result.sha256:
+            raise _reject("Generation result changed after nominal verification.")
+        result_record = _decode_canonical(result_raw, "generation result")
+        if (
+            result_record.get("case_id") != case_id
+            or result_record.get("response_sha256") != result.response_sha256
+            or result_record.get("request_sha256")
+            != _plan_row(verified_plan, case_id)["request_sha256"]
+        ):
+            raise _reject("Generation result durable bindings are invalid.")
+
+        response_raw = _read_bounded(
+            response_root / f"{case_id}.json", MAX_RESPONSE_BYTES, "provider response"
+        )
+        if hashlib.sha256(response_raw).hexdigest() != result.response_sha256:
+            raise _reject("Provider response differs from the generation result commitment.")
+        response = _decode_canonical(response_raw, "provider response")
+        plan_row = _plan_row(verified_plan, case_id)
+        if (
+            response.get("algorithm") != RESPONSE_ALGORITHM
+            or response.get("case_id") != case_id
+            or response.get("authorization_sha256") != verified_plan.authorization_sha256
+            or response.get("preregistration_sha256") != verified_plan.preregistration_sha256
+            or response.get("lineage_commitment_sha256") != verified_plan.lineage_commitment_sha256
+            or response.get("request_sha256") != plan_row["request_sha256"]
+            or response.get("input_sha256") != plan_row["input_sha256"]
+        ):
+            raise _reject("Provider response has stale or cross-case bindings.")
+        output = response.get("output")
+        inputs = case_inputs[case_id]
+        contract = v02_candidate_contract(case_id=case_id, issue_number=inputs.issue_number)
+        candidate = parse_v021_candidate_output(
+            cast(str, output),
+            issue_number=inputs.issue_number,
+            required_test_function=contract.test_function,
+        )
+        artifact = CandidateArtifact(
+            relative_path=contract.relative_path,
+            content=candidate.test_content.encode("utf-8"),
+            test_function=contract.test_function,
+        )
+        evaluator_path = receipt_root / f"{case_id}.evaluator.json"
+        public_path = receipt_root / f"{case_id}.json"
+        for destination in (evaluator_path, public_path):
+            if destination.exists() or destination.is_symlink():
+                raise _reject("Refusing to overwrite an automated case evaluation receipt.")
+        evaluated = evaluator(
+            evaluator_capability=inputs.evaluator_capability,
+            verified_hidden=inputs.verified_hidden,
+            gold_smoke_receipt_path=inputs.gold_smoke_receipt_path,
+            gold_specs_path=inputs.gold_specs_path,
+            manifest_path=inputs.manifest_path,
+            expected_manifest_sha256=inputs.expected_manifest_sha256,
+            case_id=case_id,
+            candidate=artifact,
+            output_path=evaluator_path,
+            executed_at=executed_at,
+            tool_git_sha=tool_git_sha,
+            amendment_authority=inputs.amendment_authority,
+            automated_evidence_authority=evidence,
+        )
+        verified_evaluation = receipt_verifier(evaluated.path)
+        evaluator_raw = _read_bounded(
+            verified_evaluation.path, MAX_EVALUATION_RECEIPT_BYTES, "candidate evaluation"
+        )
+        if (
+            hashlib.sha256(evaluator_raw).hexdigest() != verified_evaluation.sha256
+            or verified_evaluation.case_id != case_id
+        ):
+            raise _reject("Candidate evaluator receipt changed or crossed case boundaries.")
+        record = {
+            "algorithm": ALGORITHM,
+            "benchmark_version": "0.2.1",
+            "candidate": {
+                "bytes": len(artifact.content),
+                "expected_symptom_sha256": hashlib.sha256(
+                    candidate.expected_symptom.encode()
+                ).hexdigest(),
+                "relative_path": contract.relative_path,
+                "sha256": candidate.sha256,
+                "test_function": contract.test_function,
+            },
+            "case_id": case_id,
+            "claims": {
+                "automated_oracle_validated": True,
+                "human_reviewed": False,
+                "l2_causal_claim": False,
+                "maintainer_validated": False,
+            },
+            "evaluator_receipt_sha256": verified_evaluation.sha256,
+            "generation": {
+                "barrier_sha256": verified_barrier.sha256,
+                "response_sha256": result.response_sha256,
+                "result_sha256": result.sha256,
+            },
+            "outcome": {
+                "accepted": verified_evaluation.accepted,
+                "classification": verified_evaluation.classification,
+                "claim_level": "l1_deterministic" if verified_evaluation.accepted else "rejected",
+                "remaining_required_controls": [
+                    "fix_minus_issue_relevant_hunks",
+                    "base_plus_issue_relevant_hunks",
+                ],
+            },
+            "schema_version": SCHEMA_VERSION,
+            "tool_git_sha": _git_sha(tool_git_sha),
+        }
+        record["receipt_sha256"] = _self_hash(record)
+        public_raw = _canonical(record) + b"\n"
+        write_bytes_exclusive(public_path, public_raw)
+        rows.append(
+            {
+                "accepted": verified_evaluation.accepted,
+                "case_id": case_id,
+                "classification": verified_evaluation.classification,
+                "receipt_sha256": hashlib.sha256(public_raw).hexdigest(),
+            }
+        )
+
+    aggregate_record = _aggregate_record(
+        plan=verified_plan,
+        barrier=verified_barrier,
+        evidence=evidence,
+        rows=rows,
+        tool_git_sha=tool_git_sha,
+    )
+    aggregate_record["receipt_sha256"] = _self_hash(aggregate_record)
+    write_bytes_exclusive(aggregate, _canonical(aggregate_record) + b"\n")
+    return verify_v021_automated_evaluation_set(aggregate, receipt_directory=receipt_root)
+
+
+def verify_v021_automated_evaluation_set(
+    path: Path, *, receipt_directory: Path
+) -> VerifiedV021AutomatedEvaluationSet:
+    raw = _read_bounded(Path(path), MAX_RESULT_BYTES, "automated evaluation aggregate")
+    record = _decode_canonical(raw, "automated evaluation aggregate")
+    rows = record.get("results")
+    expected_ids = tuple(f"rk-v0.2-{index:03d}" for index in range(1, CASE_COUNT + 1))
+    if (
+        set(record)
+        != {
+            "algorithm",
+            "automated_evidence_sha256",
+            "benchmark_version",
+            "case_count",
+            "claims",
+            "counts",
+            "generation_barrier_sha256",
+            "lineage_commitment_sha256",
+            "receipt_sha256",
+            "request_set_sha256",
+            "results",
+            "schema_version",
+            "tool_git_sha",
+        }
+        or not _is_sha(record.get("automated_evidence_sha256"))
+        or not _is_sha(record.get("generation_barrier_sha256"))
+        or not _is_sha(record.get("lineage_commitment_sha256"))
+        or not _is_sha(record.get("request_set_sha256"))
+        or record.get("algorithm") != AGGREGATE_ALGORITHM
+        or record.get("schema_version") != SCHEMA_VERSION
+        or record.get("benchmark_version") != "0.2.1"
+        or record.get("case_count") != CASE_COUNT
+        or record.get("receipt_sha256") != _self_hash(record)
+        or not isinstance(rows, list)
+        or tuple(row.get("case_id") for row in rows if isinstance(row, dict)) != expected_ids
+        or record.get("claims")
+        != {
+            "automated_oracle_validated": True,
+            "full_denominator_reported": True,
+            "human_reviewed": False,
+            "l2_causal_claim": False,
+            "maintainer_validated": False,
+        }
+    ):
+        raise _reject("Automated evaluation aggregate identity or claim ceiling is invalid.")
+    receipt_root = Path(receipt_directory)
+    require_private_directory(receipt_root)
+    bindings: dict[str, str] = {}
+    accepted = 0
+    for value in rows:
+        if not isinstance(value, dict) or set(value) != {
+            "accepted",
+            "case_id",
+            "classification",
+            "receipt_sha256",
+        }:
+            raise _reject("Automated evaluation aggregate row is invalid.")
+        case_id = cast(str, value["case_id"])
+        receipt_raw = _read_bounded(
+            receipt_root / f"{case_id}.json", MAX_RESULT_BYTES, "case evaluation receipt"
+        )
+        digest = hashlib.sha256(receipt_raw).hexdigest()
+        if digest != value["receipt_sha256"]:
+            raise _reject("Case evaluation receipt changed after aggregation.")
+        case_record = _decode_canonical(receipt_raw, "case evaluation receipt")
+        outcome = case_record.get("outcome")
+        if (
+            set(case_record)
+            != {
+                "algorithm",
+                "benchmark_version",
+                "candidate",
+                "case_id",
+                "claims",
+                "evaluator_receipt_sha256",
+                "generation",
+                "outcome",
+                "receipt_sha256",
+                "schema_version",
+                "tool_git_sha",
+            }
+            or case_record.get("algorithm") != ALGORITHM
+            or case_record.get("schema_version") != SCHEMA_VERSION
+            or case_record.get("benchmark_version") != "0.2.1"
+            or case_record.get("case_id") != case_id
+            or case_record.get("receipt_sha256") != _self_hash(case_record)
+            or case_record.get("claims")
+            != {
+                "automated_oracle_validated": True,
+                "human_reviewed": False,
+                "l2_causal_claim": False,
+                "maintainer_validated": False,
+            }
+            or not isinstance(outcome, dict)
+            or outcome.get("accepted") is not value["accepted"]
+            or outcome.get("classification") != value["classification"]
+            or outcome.get("claim_level")
+            != ("l1_deterministic" if value["accepted"] is True else "rejected")
+            or outcome.get("remaining_required_controls")
+            != ["fix_minus_issue_relevant_hunks", "base_plus_issue_relevant_hunks"]
+        ):
+            raise _reject("Case evaluation receipt binding is invalid.")
+        bindings[case_id] = digest
+        accepted += int(value["accepted"] is True)
+    counts = record.get("counts")
+    if counts != {"accepted": accepted, "rejected": CASE_COUNT - accepted, "total": CASE_COUNT}:
+        raise _reject("Automated evaluation full-denominator counts are invalid.")
+    authority = object.__new__(VerifiedV021AutomatedEvaluationSet)
+    for name, value in {
+        "path": Path(path),
+        "sha256": hashlib.sha256(raw).hexdigest(),
+        "accepted_count": accepted,
+        "rejected_count": CASE_COUNT - accepted,
+        "receipt_sha256_by_case": bindings,
+        "_issuer": _ISSUER,
+    }.items():
+        object.__setattr__(authority, name, value)
+    return authority
+
+
+def require_v021_automated_evaluation_set(value: object) -> VerifiedV021AutomatedEvaluationSet:
+    if type(value) is not VerifiedV021AutomatedEvaluationSet or value._issuer is not _ISSUER:
+        raise _reject("Fresh verifier-issued automated evaluation set is required.")
+    if value.accepted_count + value.rejected_count != CASE_COUNT:
+        raise _reject("Automated evaluation authority lost its full denominator.")
+    return value
+
+
+def _aggregate_record(
+    *,
+    plan: VerifiedV021RuntimePlan,
+    barrier: VerifiedV021GenerationBarrier,
+    evidence: VerifiedV021AutomatedEvidence,
+    rows: list[dict[str, object]],
+    tool_git_sha: str,
+) -> dict[str, object]:
+    accepted = sum(row["accepted"] is True for row in rows)
+    return {
+        "algorithm": AGGREGATE_ALGORITHM,
+        "automated_evidence_sha256": evidence.sha256,
+        "benchmark_version": "0.2.1",
+        "case_count": CASE_COUNT,
+        "claims": {
+            "automated_oracle_validated": True,
+            "full_denominator_reported": True,
+            "human_reviewed": False,
+            "l2_causal_claim": False,
+            "maintainer_validated": False,
+        },
+        "counts": {"accepted": accepted, "rejected": CASE_COUNT - accepted, "total": CASE_COUNT},
+        "generation_barrier_sha256": barrier.sha256,
+        "lineage_commitment_sha256": plan.lineage_commitment_sha256,
+        "request_set_sha256": plan.request_set_sha256,
+        "results": rows,
+        "schema_version": SCHEMA_VERSION,
+        "tool_git_sha": _git_sha(tool_git_sha),
+    }
+
+
+def _plan_row(plan: VerifiedV021RuntimePlan, case_id: str) -> Mapping[str, object]:
+    row = next((value for value in plan.cases if value.get("case_id") == case_id), None)
+    if row is None:
+        raise _reject("Case is outside the verified runtime plan.")
+    return row
+
+
+def _read_bounded(path: Path, limit: int, label: str) -> bytes:
+    try:
+        with open_regular_file(path) as stream:
+            raw = stream.read(limit + 1)
+    except (OSError, PolicyRejection) as exc:
+        raise _reject(f"Cannot safely read {label}.") from exc
+    if not raw or len(raw) > limit:
+        raise _reject(f"{label.capitalize()} is empty or exceeds its byte limit.")
+    return raw
+
+
+def _decode_canonical(raw: bytes, label: str) -> dict[str, object]:
+    try:
+        value = json.loads(raw, object_pairs_hook=_no_duplicates)
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError, RecursionError) as exc:
+        raise _reject(f"{label.capitalize()} is invalid JSON.") from exc
+    if not isinstance(value, dict) or raw != _canonical(value) + b"\n":
+        raise _reject(f"{label.capitalize()} is not canonical JSON.")
+    return value
+
+
+def _no_duplicates(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    value: dict[str, object] = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError("duplicate JSON key")
+        value[key] = item
+    return value
+
+
+def _self_hash(record: Mapping[str, object]) -> str:
+    unsigned = dict(record)
+    unsigned.pop("receipt_sha256", None)
+    return hashlib.sha256(_canonical(unsigned)).hexdigest()
+
+
+def _git_sha(value: object) -> str:
+    if not isinstance(value, str) or _GIT_SHA.fullmatch(value) is None:
+        raise _reject("Tool Git SHA is invalid.")
+    return value
+
+
+def _is_sha(value: object) -> bool:
+    return isinstance(value, str) and _SHA256.fullmatch(value) is not None
+
+
+def _canonical(value: object) -> bytes:
+    return json.dumps(value, ensure_ascii=True, separators=(",", ":"), sort_keys=True).encode()
+
+
+def _reject(message: str) -> PolicyRejection:
+    return PolicyRejection("benchmark_v021_automated_evaluation", message)
