@@ -255,6 +255,10 @@ def test_prepare_runtime_plan_rederives_all_twenty_request_bindings(tmp_path: Pa
     assert tuple(row["case_id"] for row in prepared.cases) == tuple(request_paths)
 
 
+def test_runtime_plan_bound_can_hold_twenty_individually_bounded_requests() -> None:
+    assert runtime.MAX_PLAN_BYTES >= 20 * 512 * 1024
+
+
 def test_prepare_runtime_plan_rejects_request_path_order_before_write(tmp_path: Path) -> None:
     _, authorization, rows = _fixture(tmp_path)
     capability_path = tmp_path / "capability-index.json"

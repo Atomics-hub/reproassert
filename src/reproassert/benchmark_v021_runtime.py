@@ -26,7 +26,9 @@ RESULT_ALGORITHM = "reproassert-v021-generation-result-v1"
 SCHEMA_VERSION = "1.0.0"
 CASE_COUNT = 20
 REQUEST_SET_ALGORITHM = "reproassert-v021-provider-request-envelope-set-v1"
-MAX_PLAN_BYTES = 2 * 1024 * 1024
+# Twenty frozen request envelopes are each bounded below 512 KiB by the provider
+# adapter. Keep the aggregate finite while allowing the complete denominator.
+MAX_PLAN_BYTES = 16 * 1024 * 1024
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 MAX_RESULT_BYTES = 2 * 1024 * 1024
 _SHA = re.compile(r"[0-9a-f]{64}\Z")
