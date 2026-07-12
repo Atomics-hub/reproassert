@@ -570,7 +570,10 @@ def test_automated_oracle_authority_unlocks_pending_v021_without_human_claim(
         ),
         output_path=tmp_path / "result.json",
         executed_at="2026-07-12T01:02:03Z",
-        tool_git_sha="9" * 40,
+        # The evidence producer and evaluator runtime are independently
+        # attributable commits; a later hardened evaluator must not impersonate
+        # the earlier evidence-producing commit.
+        tool_git_sha="8" * 40,
     )
 
     assert result is sentinel

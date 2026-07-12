@@ -305,7 +305,6 @@ def _require_candidate_execution_authority(
             claims.get("automated_oracle_validated") is not True
             or claims.get("human_reviewed") is not False
             or claims.get("maintainer_validated") is not False
-            or automated.tool_git_sha != tool_git_sha
             or capability.benchmark_amendment_review_status != "pending"
             or capability.benchmark_amendment_receipt_sha256 != automated.amendment_receipt_sha256
             or capability.runtime_manifest_sha256 != evidence.get("runtime_manifest_sha256")
