@@ -898,7 +898,7 @@ def test_exact_scored_entry_evaluates_pytest_and_sympy_after_exact_barrier(
         exact_scored, "require_v02_exact_image_evaluator_capability", lambda value: value
     )
     monkeypatch.setattr(exact_scored, "hidden_case_artifacts", lambda _authority, _case: {})
-    monkeypatch.setattr(exact_scored, "evaluate_instance_candidate", evaluate)
+    monkeypatch.setattr(exact_scored, "_evaluate_instance_candidate_with_ports", evaluate)
     monkeypatch.setattr(
         exact_scored,
         "_verify_reusable_receipt",
@@ -1121,7 +1121,7 @@ def test_exact_scored_reuses_durable_receipt_after_pre_result_crash(
         exact_scored, "require_v02_exact_image_evaluator_capability", lambda value: value
     )
     monkeypatch.setattr(exact_scored, "hidden_case_artifacts", lambda _authority, _case: {})
-    monkeypatch.setattr(exact_scored, "evaluate_instance_candidate", evaluate)
+    monkeypatch.setattr(exact_scored, "_evaluate_instance_candidate_with_ports", evaluate)
     monkeypatch.setattr(
         exact_scored,
         "_verify_reusable_receipt",
@@ -1219,7 +1219,9 @@ def test_exact_scored_case014_preserves_offline_network_failure(
         exact_scored, "require_v02_exact_image_evaluator_capability", lambda value: value
     )
     monkeypatch.setattr(exact_scored, "hidden_case_artifacts", lambda _authority, _case: {})
-    monkeypatch.setattr(exact_scored, "evaluate_instance_candidate", forbidden_evaluator)
+    monkeypatch.setattr(
+        exact_scored, "_evaluate_instance_candidate_with_ports", forbidden_evaluator
+    )
     result = exact_scored.evaluate_v02_exact_frozen_case(
         preregistration_path=preregistration_path,
         exact_preregistration=authority,
@@ -1285,7 +1287,7 @@ def test_preexisting_accepted_receipt_cannot_mint_result_without_executor(
         "_verify_reusable_receipt",
         lambda _path, _run, _artifact, **_kwargs: forged,
     )
-    monkeypatch.setattr(exact_scored, "evaluate_instance_candidate", rejecting_executor)
+    monkeypatch.setattr(exact_scored, "_evaluate_instance_candidate_with_ports", rejecting_executor)
 
     with pytest.raises(PolicyRejection, match="sandbox rejected forgery"):
         exact_scored._evaluate_v02_exact_frozen_case_with_factory(
