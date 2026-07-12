@@ -11,9 +11,18 @@
     "candidate": {"type": "object"},
     "case_id": {"pattern": "^rk-v0\\.2-(?:00[1-9]|01[0-9]|020)$", "type": "string"},
     "claims": {
-      "const": {"automated_oracle_validated": true, "human_reviewed": false, "l2_causal_claim": false, "maintainer_validated": false}
+      "type": "object",
+      "required": ["automated_disposition_validated", "automated_oracle_executed", "human_reviewed", "l2_causal_claim", "maintainer_validated"],
+      "additionalProperties": false,
+      "properties": {
+        "automated_disposition_validated": {"const": true},
+        "automated_oracle_executed": {"type": "boolean"},
+        "human_reviewed": {"const": false},
+        "l2_causal_claim": {"const": false},
+        "maintainer_validated": {"const": false}
+      }
     },
-    "evaluator_receipt_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+    "evaluator_receipt_sha256": {"oneOf": [{"pattern": "^[0-9a-f]{64}$", "type": "string"}, {"type": "null"}]},
     "generation": {"type": "object"},
     "outcome": {"type": "object"},
     "receipt_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},

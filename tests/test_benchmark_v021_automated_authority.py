@@ -19,8 +19,7 @@ VERIFIED_AT = "2026-07-11T10:00:00Z"
 
 def _canonical(value: object) -> bytes:
     return (
-        json.dumps(value, ensure_ascii=True, sort_keys=True, separators=(",", ":")).encode()
-        + b"\n"
+        json.dumps(value, ensure_ascii=True, sort_keys=True, separators=(",", ":")).encode() + b"\n"
     )
 
 
@@ -112,7 +111,7 @@ def _fixtures(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, obje
         mapping_root / "mapping.json",
         {
             "cases": mapping_rows,
-            "hidden_extraction_receipt_sha256": "1" * 64,
+            "hidden_extraction_receipt_sha256": hashlib.sha256(hidden.read_bytes()).hexdigest(),
             "prepared_at": "2026-07-11T07:00:00Z",
             "receipt_sha256": "6" * 64,
             "tool": {"git_sha": TOOL_SHA},
@@ -371,9 +370,7 @@ def test_rejects_wrong_chronology_tool_or_pricing(
         _prepare(values)
 
 
-def test_rejects_fabricated_mapping_review(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_rejects_fabricated_mapping_review(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     values = _fixtures(tmp_path, monkeypatch)
     packet = Path(values["_mapping_root"]) / "packet-001.json"
     record = json.loads(packet.read_bytes())
@@ -381,9 +378,7 @@ def test_rejects_fabricated_mapping_review(
     _write(packet, record)
     mapping = Path(values["mapping_preparation_path"])
     mapping_record = json.loads(mapping.read_bytes())
-    mapping_record["cases"][0]["packet"]["sha256"] = hashlib.sha256(
-        packet.read_bytes()
-    ).hexdigest()
+    mapping_record["cases"][0]["packet"]["sha256"] = hashlib.sha256(packet.read_bytes()).hexdigest()
     _write(mapping, mapping_record)
     with pytest.raises(PolicyRejection, match="no reviews"):
         _prepare(values)

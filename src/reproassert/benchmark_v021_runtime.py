@@ -71,6 +71,7 @@ class V021ProviderRequest:
     case_id: str
     request_sha256: str
     input_sha256: str
+    outbound_request_sha256: str
     call_id: str
     request: Mapping[str, object] = field(repr=False)
 
@@ -93,6 +94,7 @@ class VerifiedV021RuntimePlan:
     preregistration_sha256: str
     lineage_commitment_sha256: str
     request_set_sha256: str
+    preregistration_request_set_sha256: str
     cases: tuple[Mapping[str, object], ...] = field(repr=False)
     _issuer: object = field(repr=False, compare=False)
 
@@ -355,6 +357,7 @@ def verify_v021_runtime_plan(
         "preregistration_sha256": prereg_sha,
         "lineage_commitment_sha256": lineage,
         "request_set_sha256": derived_set,
+        "preregistration_request_set_sha256": authorization.preregistration_request_set_sha256,
         "cases": tuple(normalized),
         "_issuer": _PLAN_ISSUER,
     }.items():
@@ -397,7 +400,7 @@ def require_v021_generation_result(value: object) -> V021GenerationResult:
     return value
 
 
-def execute_v021_case(
+def _execute_v021_case_with_ports(
     *,
     plan: VerifiedV021RuntimePlan,
     authorization: ExecutionAuthorization,
@@ -443,6 +446,9 @@ def execute_v021_case(
             case_id=case_id,
             request_sha256=request_sha,
             input_sha256=cast(str, row["input_sha256"]),
+            outbound_request_sha256=cast(
+                str, _mapping(row["request"], "provider request")["outbound_request_sha256"]
+            ),
             call_id=call_id,
             request=_mapping(
                 _mapping(row["request"], "provider request")["provider_request"],

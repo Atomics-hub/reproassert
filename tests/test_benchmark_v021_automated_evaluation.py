@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -106,6 +107,7 @@ def _fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Any, ...]
         preregistration_sha256=PREREG_SHA,
         lineage_commitment_sha256=LINEAGE_SHA,
         request_set_sha256=REQUEST_SET_SHA,
+        preregistration_request_set_sha256=REQUEST_SET_SHA,
         cases=tuple(plan_rows),
     )
     barrier = SimpleNamespace(
@@ -157,7 +159,7 @@ def test_all_20_bridge_reports_full_denominator_without_human_or_l2_claims(
 ) -> None:
     plan, barrier, evidence, results, inputs, responses, receipts = _fixture(tmp_path, monkeypatch)
     aggregate_path = tmp_path / "aggregate.json"
-    authority = evaluation.evaluate_v021_automated_campaign(
+    authority = evaluation._evaluate_v021_automated_campaign_with_ports(
         plan=plan,
         barrier=barrier,
         generation_results=results,
@@ -174,10 +176,18 @@ def test_all_20_bridge_reports_full_denominator_without_human_or_l2_claims(
 
     assert authority.accepted_count == 10
     assert authority.rejected_count == 10
+    assert type(authority) is evaluation.StructuralV021AutomatedEvaluationSet
+    with pytest.raises(PolicyRejection, match="verifier-issued"):
+        evaluation.require_v021_automated_evaluation_set(authority)
     record = json.loads(aggregate_path.read_bytes())
-    assert record["counts"] == {"accepted": 10, "rejected": 10, "total": 20}
+    assert record["counts"] == {
+        "accepted": 10,
+        "oracle_executed": 20,
+        "rejected": 10,
+        "total": 20,
+    }
     assert record["claims"] == {
-        "automated_oracle_validated": True,
+        "automated_evidence_validated": True,
         "full_denominator_reported": True,
         "human_reviewed": False,
         "l2_causal_claim": False,
@@ -205,7 +215,7 @@ def test_bridge_rejects_response_tamper_before_evaluator(
         raise AssertionError
 
     with pytest.raises(PolicyRejection, match="differs from the generation result commitment"):
-        evaluation.evaluate_v021_automated_campaign(
+        evaluation._evaluate_v021_automated_campaign_with_ports(
             plan=plan,
             barrier=barrier,
             generation_results=results,
@@ -227,7 +237,7 @@ def test_aggregate_verifier_rejects_case_receipt_toctou(
 ) -> None:
     plan, barrier, evidence, results, inputs, responses, receipts = _fixture(tmp_path, monkeypatch)
     aggregate_path = tmp_path / "aggregate.json"
-    evaluation.evaluate_v021_automated_campaign(
+    evaluation._evaluate_v021_automated_campaign_with_ports(
         plan=plan,
         barrier=barrier,
         generation_results=results,
@@ -244,4 +254,59 @@ def test_aggregate_verifier_rejects_case_receipt_toctou(
     case_path = receipts / "rk-v0.2-020.json"
     case_path.write_bytes(case_path.read_bytes() + b" ")
     with pytest.raises(PolicyRejection, match="changed after aggregation"):
-        evaluation.verify_v021_automated_evaluation_set(aggregate_path, receipt_directory=receipts)
+        evaluation._verify_v021_automated_evaluation_set(
+            aggregate_path,
+            receipt_directory=receipts,
+            issuance=None,
+            receipt_verifier=_fake_verifier,
+        )
+
+
+def test_invalid_candidate_is_counted_and_does_not_abort_full_denominator(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plan, barrier, evidence, results, inputs, responses, receipts = _fixture(tmp_path, monkeypatch)
+    original = evaluation.parse_v021_candidate_output
+    parse_calls = 0
+
+    def parse(output: str, **kwargs: object):
+        nonlocal parse_calls
+        parse_calls += 1
+        if parse_calls == 1:
+            raise PolicyRejection("candidate", "invalid candidate")
+        return original(output, **kwargs)  # type: ignore[arg-type]
+
+    evaluator_calls = 0
+
+    def evaluator(**kwargs: object) -> CandidateEvaluationReceipt:
+        nonlocal evaluator_calls
+        evaluator_calls += 1
+        return _fake_evaluator(**kwargs)
+
+    monkeypatch.setattr(evaluation, "parse_v021_candidate_output", parse)
+    authority = evaluation._evaluate_v021_automated_campaign_with_ports(
+        plan=plan,
+        barrier=barrier,
+        generation_results=results,
+        automated_evidence_authority=evidence,
+        response_directory=responses,
+        case_inputs=inputs,
+        receipt_directory=receipts,
+        aggregate_path=tmp_path / "aggregate.json",
+        executed_at="2026-07-12T12:00:00Z",
+        tool_git_sha=TOOL_SHA,
+        evaluator=evaluator,
+        receipt_verifier=_fake_verifier,
+    )
+
+    first = json.loads((receipts / "rk-v0.2-001.json").read_bytes())
+    assert authority.rejected_count >= 1
+    assert evaluator_calls == 19
+    assert first["outcome"]["classification"] == "candidate_contract_rejected"
+    assert first["evaluator_receipt_sha256"] is None
+
+
+def test_public_evaluation_api_has_no_callback_injection() -> None:
+    parameters = inspect.signature(evaluation.evaluate_v021_automated_campaign).parameters
+    assert "evaluator" not in parameters
+    assert "receipt_verifier" not in parameters

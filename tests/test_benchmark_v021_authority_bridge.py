@@ -48,7 +48,7 @@ def _automated_preregistration(tmp_path: Path) -> automated.VerifiedV021Automate
         },
         "evidence": {
             "internal_commitments": {"case_request_set_sha256": legacy_set},
-            "pricing_snapshot_raw_sha256": "b" * 64,
+            "pricing_snapshot_commitment_sha256": "b" * 64,
         },
         "frozen_at": "2026-07-12T00:00:00Z",
         "lineage_commitment_sha256": "c" * 64,

@@ -311,7 +311,11 @@ def _derive(
         raise _reject("Preregistration does not preserve the exact spend and model policy.")
     producer = _git_sha(prereg.get("tool_git_sha"))
     lineage = _sha(prereg.get("lineage_commitment_sha256"))
-    pricing = _sha(evidence.get("pricing_snapshot_raw_sha256"))
+    pricing = _sha(
+        evidence.get("pricing_snapshot_commitment_sha256")
+        if mode == "automated_oracle"
+        else evidence.get("pricing_snapshot_raw_sha256")
+    )
     timestamp = _timestamp(authorized_at)
     frozen = _timestamp(cast(str, prereg.get("frozen_at")))
     if _time_value(timestamp) < _time_value(frozen):

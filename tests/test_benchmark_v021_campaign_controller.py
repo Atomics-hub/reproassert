@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import fcntl
+import inspect
 import os
 from pathlib import Path
 
@@ -10,6 +11,13 @@ from test_benchmark_v021_runtime import _fixture, _Ledger, _private_dirs
 from reproassert import benchmark_v021_campaign_controller as controller
 from reproassert import benchmark_v021_runtime as runtime
 from reproassert.errors import PolicyRejection
+
+
+def test_public_campaign_api_has_no_ledger_or_provider_injection() -> None:
+    parameters = inspect.signature(controller.run_v021_openai_generation_campaign).parameters
+    assert "ledger" not in parameters
+    assert "provider" not in parameters
+    assert not hasattr(runtime, "execute_v021_case")
 
 
 def test_controller_runs_all_20_and_case014_has_no_waiver(tmp_path: Path) -> None:
@@ -24,7 +32,7 @@ def test_controller_runs_all_20_and_case014_has_no_waiver(tmp_path: Path) -> Non
         calls.append(request.case_id)
         return runtime.V021ProviderResponse(f"response-{request.case_id}", "candidate", 1)
 
-    run = controller.run_v021_generation_campaign(
+    run = controller._run_v021_generation_campaign_with_ports(
         plan=plan,
         authorization=authorization,
         ledger=ledger,
@@ -54,7 +62,7 @@ def test_controller_never_forms_barrier_after_unknown_spend(tmp_path: Path) -> N
         calls += 1
         return runtime.V021ProviderResponse("forbidden", "", 0)
 
-    run = controller.run_v021_generation_campaign(
+    run = controller._run_v021_generation_campaign_with_ports(
         plan=plan,
         authorization=authorization,
         ledger=ledger,
@@ -86,7 +94,7 @@ def test_concurrent_controller_is_rejected_before_provider(tmp_path: Path) -> No
 
     try:
         with pytest.raises(PolicyRejection, match=r"Another v0\.2\.1 campaign"):
-            controller.run_v021_generation_campaign(
+            controller._run_v021_generation_campaign_with_ports(
                 plan=plan,
                 authorization=authorization,
                 ledger=ledger,

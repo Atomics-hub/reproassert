@@ -17,7 +17,7 @@ from reproassert.benchmark_v021_runtime import (
     V021GenerationResult,
     V021LedgerPort,
     VerifiedV021RuntimePlan,
-    execute_v021_case,
+    _execute_v021_case_with_ports,
     require_v021_runtime_plan,
 )
 from reproassert.errors import PolicyRejection
@@ -78,7 +78,37 @@ def require_v021_generation_barrier(value: object) -> VerifiedV021GenerationBarr
     return value
 
 
-def run_v021_generation_campaign(
+def run_v021_openai_generation_campaign(
+    *,
+    plan: VerifiedV021RuntimePlan,
+    authorization: ExecutionAuthorization,
+    response_directory: Path,
+    result_directory: Path,
+    progress_path: Path,
+) -> V021CampaignRun:
+    """Production entry: concrete irreversible ledger plus frozen OpenAI adapter only."""
+
+    from reproassert.benchmark_v021_openai_adapter import (
+        V021_FROZEN_OPENAI_PRICING,
+        BoundedV021OpenAIAdapter,
+        invoke_v021_openai_provider,
+    )
+    from reproassert.benchmark_v021_runtime_ledger import V021SpendLedgerPort
+
+    ledger = V021SpendLedgerPort(authorization)
+    adapter = BoundedV021OpenAIAdapter(pricing=V021_FROZEN_OPENAI_PRICING)
+    return _run_v021_generation_campaign_with_ports(
+        plan=plan,
+        authorization=authorization,
+        ledger=ledger,
+        provider=lambda request: invoke_v021_openai_provider(adapter, request),
+        response_directory=response_directory,
+        result_directory=result_directory,
+        progress_path=progress_path,
+    )
+
+
+def _run_v021_generation_campaign_with_ports(
     *,
     plan: VerifiedV021RuntimePlan,
     authorization: ExecutionAuthorization,
@@ -105,7 +135,7 @@ def run_v021_generation_campaign(
     try:
         results: list[V021GenerationResult] = []
         for row in verified.cases:
-            result = execute_v021_case(
+            result = _execute_v021_case_with_ports(
                 plan=verified,
                 authorization=authorization,
                 ledger=ledger,

@@ -9,6 +9,10 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
 
+from reproassert.benchmark_v021_runtime import (
+    V021ProviderRequest,
+    V021ProviderResponse,
+)
 from reproassert.candidate import ValidatedCandidate, validate_candidate_payload
 from reproassert.errors import ReproAssertError
 from reproassert.generator import (
@@ -26,6 +30,7 @@ MAX_V021_CASE_COST_MICROUSD = 250_000
 TOKENS_PER_MILLION = 1_000_000
 OPENAI_API_HOST = "api.openai.com"
 OPENAI_RESPONSES_PATH = "/v1/responses"
+V021_FROZEN_MODEL = "gpt-5.4-mini-2026-03-17"
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _RESPONSE_ID = re.compile(r"[A-Za-z0-9_-]{1,128}\Z")
 _MODEL_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\Z")
@@ -62,6 +67,13 @@ class FrozenOpenAIPricing:
             "input_microusd_per_million_tokens": self.input_microusd_per_million_tokens,
             "output_microusd_per_million_tokens": self.output_microusd_per_million_tokens,
         }
+
+
+V021_FROZEN_OPENAI_PRICING = FrozenOpenAIPricing(
+    input_microusd_per_million_tokens=750_000,
+    cached_input_microusd_per_million_tokens=75_000,
+    output_microusd_per_million_tokens=4_500_000,
+)
 
 
 @dataclass(frozen=True)
@@ -144,6 +156,22 @@ class BoundedV021OpenAIAdapter:
             raise ReproAssertError(
                 "v021_openai_request_hash", "Frozen provider request bytes changed before call."
             )
+        try:
+            request_payload = json.loads(frozen_request_bytes)
+        except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as exc:
+            raise ReproAssertError(
+                "v021_openai_request", "Frozen provider request is invalid JSON."
+            ) from exc
+        if (
+            not isinstance(request_payload, Mapping)
+            or _canonical_json(request_payload) != frozen_request_bytes
+        ):
+            raise ReproAssertError(
+                "v021_openai_request", "Frozen provider request is not canonical JSON."
+            )
+        requested_model = request_payload.get("model")
+        if not isinstance(requested_model, str) or _MODEL_NAME.fullmatch(requested_model) is None:
+            raise ReproAssertError("v021_openai_model", "Frozen requested model is invalid.")
 
         # Deliberately read the credential only at the final provider call point.
         api_key = _read_openai_api_key()
@@ -170,9 +198,33 @@ class BoundedV021OpenAIAdapter:
         return _parse_provider_response(
             response_bytes,
             request_sha256=request_sha256,
+            expected_model=requested_model,
             pricing=self._pricing,
             max_case_cost_microusd=self._max_case_cost_microusd,
         )
+
+
+def invoke_v021_openai_provider(
+    adapter: BoundedV021OpenAIAdapter, request: V021ProviderRequest
+) -> V021ProviderResponse:
+    """Adapt the runtime's exact reserved request to the bounded OpenAI transport."""
+
+    if adapter._pricing != V021_FROZEN_OPENAI_PRICING:
+        raise ReproAssertError(
+            "v021_openai_pricing",
+            "Production adapter pricing differs from the frozen v0.2.1 snapshot.",
+        )
+    if request.request.get("model") != V021_FROZEN_MODEL:
+        raise ReproAssertError(
+            "v021_openai_model", "Runtime request is not the frozen v0.2.1 model."
+        )
+    encoded = _canonical_json(request.request)
+    result = adapter.invoke(encoded, expected_request_sha256=request.outbound_request_sha256)
+    return V021ProviderResponse(
+        response_id=result.response_id,
+        output=result.output_text,
+        cost_microusd=result.cost_microusd,
+    )
 
 
 def parse_v021_candidate_output(
@@ -208,6 +260,7 @@ def _parse_provider_response(
     response_bytes: bytes,
     *,
     request_sha256: str,
+    expected_model: str,
     pricing: FrozenOpenAIPricing,
     max_case_cost_microusd: int,
 ) -> V021OpenAIProviderResult:
@@ -218,6 +271,10 @@ def _parse_provider_response(
     response_model = payload.get("model")
     if not isinstance(response_model, str) or _MODEL_NAME.fullmatch(response_model) is None:
         raise ReproAssertError("v021_openai_model", "OpenAI response model is invalid.")
+    if response_model != expected_model:
+        raise ReproAssertError(
+            "v021_openai_model", "OpenAI response model differs from the frozen request."
+        )
     output_text = _extract_openai_output_text(payload)
     if len(output_text.encode("utf-8")) > MAX_V021_OUTPUT_BYTES:
         raise ReproAssertError("v021_openai_output_limit", "OpenAI output_text exceeded 64 KiB.")

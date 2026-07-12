@@ -380,7 +380,7 @@ def test_reservation_precedes_the_only_provider_call(tmp_path: Path) -> None:
         assert ledger.events == [("reserve", request.case_id)]
         return runtime.V021ProviderResponse("response-1", "candidate", 10_000)
 
-    result = runtime.execute_v021_case(
+    result = runtime._execute_v021_case_with_ports(
         plan=plan,
         authorization=authorization,
         ledger=ledger,
@@ -410,7 +410,7 @@ def test_reserved_without_durable_response_halts_and_never_recalls(tmp_path: Pat
         calls += 1
         raise AssertionError("provider must not be recalled")
 
-    result = runtime.execute_v021_case(
+    result = runtime._execute_v021_case_with_ports(
         plan=plan,
         authorization=authorization,
         ledger=ledger,
@@ -437,7 +437,7 @@ def test_durable_response_recovery_never_recalls_provider(tmp_path: Path) -> Non
         return runtime.V021ProviderResponse("response-1", "candidate", 12_500)
 
     with pytest.raises(RuntimeError, match="simulated crash"):
-        runtime.execute_v021_case(
+        runtime._execute_v021_case_with_ports(
             plan=plan,
             authorization=authorization,
             ledger=ledger,
@@ -446,7 +446,7 @@ def test_durable_response_recovery_never_recalls_provider(tmp_path: Path) -> Non
             response_directory=responses,
             result_directory=results,
         )
-    recovered = runtime.execute_v021_case(
+    recovered = runtime._execute_v021_case_with_ports(
         plan=plan,
         authorization=authorization,
         ledger=ledger,
@@ -465,7 +465,7 @@ def test_tampered_durable_response_cross_binding_is_rejected(tmp_path: Path) -> 
     ledger.fail_response_once = True
     responses, results = _private_dirs(tmp_path)
     with pytest.raises(RuntimeError):
-        runtime.execute_v021_case(
+        runtime._execute_v021_case_with_ports(
             plan=plan,
             authorization=authorization,
             ledger=ledger,
@@ -479,7 +479,7 @@ def test_tampered_durable_response_cross_binding_is_rejected(tmp_path: Path) -> 
     record["case_id"] = "rk-v0.2-014"
     path.write_bytes(_canonical(record) + b"\n")
     with pytest.raises(PolicyRejection, match="stale or cross-case"):
-        runtime.execute_v021_case(
+        runtime._execute_v021_case_with_ports(
             plan=plan,
             authorization=authorization,
             ledger=ledger,
@@ -495,6 +495,7 @@ def test_provider_response_runtime_types_are_enforced() -> None:
         case_id="rk-v0.2-001",
         request_sha256="1" * 64,
         input_sha256="2" * 64,
+        outbound_request_sha256="4" * 64,
         call_id="3" * 64,
         request={},
     )
@@ -509,7 +510,7 @@ def test_generation_result_schema_is_mirrored_and_accepts_runtime_output(tmp_pat
     plan, authorization, _ = _fixture(tmp_path)
     ledger = _Ledger()
     responses, results = _private_dirs(tmp_path)
-    result = runtime.execute_v021_case(
+    result = runtime._execute_v021_case_with_ports(
         plan=plan,
         authorization=authorization,
         ledger=ledger,

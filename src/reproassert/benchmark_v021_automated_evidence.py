@@ -30,9 +30,7 @@ CASE_COUNT = 20
 MAX_BYTES = 2 * 1024 * 1024
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _GIT_SHA = re.compile(r"[0-9a-f]{40}\Z")
-_TIMESTAMP = re.compile(
-    r"20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?Z\Z"
-)
+_TIMESTAMP = re.compile(r"20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?Z\Z")
 _ISSUER = object()
 
 
@@ -269,8 +267,7 @@ def _derive(
         or any(value.provider_calls != 0 for value in (cases, chronology, capability))
     ):
         raise _reject(
-            "Automated evidence requires uniform all-20 evidence with zero "
-            "infrastructure failures."
+            "Automated evidence requires uniform all-20 evidence with zero infrastructure failures."
         )
 
     paths = {
@@ -301,7 +298,6 @@ def _derive(
     case_record = records["case_preparation"]
     capability_record = records["capability_index"]
     mapping_record = records["mapping_preparation"]
-    hidden_record = records["hidden_extraction"]
     gold_record = records["gold_smoke"]
     amendment_record = records["amendment"]
     chronology_record = records["chronology"]
@@ -314,15 +310,14 @@ def _derive(
         or _dict(inputs.get("pricing_snapshot"), "pricing input").get("sha256")
         != hashlib.sha256(raws["pricing_snapshot"]).hexdigest()
         or mapping_record.get("hidden_extraction_receipt_sha256")
-        != hidden_record.get("receipt_sha256")
+        != hashlib.sha256(raws["hidden_extraction"]).hexdigest()
     ):
         raise _reject("Automated evidence mixes artifacts from different lineages.")
 
     if (
         case_record.get("benchmark_version") != "0.2.1"
         or case_record.get("dependency_ready_count") != 0
-        or capability_record.get("algorithm")
-        != "reproassert-v02-exact-image-capability-index-v2"
+        or capability_record.get("algorithm") != "reproassert-v02-exact-image-capability-index-v2"
         or capability_record.get("benchmark_version") != "0.2.1"
         or capability_record.get("tool_git_sha") != producer
         or _dict(case_record.get("tool"), "case tool").get("git_sha") != producer
@@ -354,9 +349,9 @@ def _derive(
     if pricing.requested_model != "gpt-5.4-mini-2026-03-17":
         raise _reject("Pricing snapshot is not the exact frozen model snapshot.")
     evidence: dict[str, object] = {
-        f"{name}_raw_sha256": hashlib.sha256(raw).hexdigest()
-        for name, raw in sorted(raws.items())
+        f"{name}_raw_sha256": hashlib.sha256(raw).hexdigest() for name, raw in sorted(raws.items())
     }
+    evidence["pricing_snapshot_commitment_sha256"] = pricing.sha256
     evidence["runtime_manifest_sha256"] = _sha(expected_runtime_manifest_sha256)
     evidence["internal_commitments"] = {
         "amendment_receipt_sha256": _sha(amendment_record.get("receipt_sha256")),
@@ -365,7 +360,7 @@ def _derive(
         "case_request_set_sha256": _sha(case_record.get("request_set_sha256")),
         "chronology_receipt_sha256": _sha(chronology_record.get("receipt_sha256")),
         "gold_smoke_receipt_sha256": _sha(gold_record.get("receipt_sha256")),
-        "hidden_extraction_receipt_sha256": _sha(hidden_record.get("receipt_sha256")),
+        "hidden_extraction_receipt_sha256": hashlib.sha256(raws["hidden_extraction"]).hexdigest(),
         "mapping_preparation_receipt_sha256": _sha(mapping_record.get("receipt_sha256")),
     }
     lineage = hashlib.sha256(
@@ -488,8 +483,7 @@ def _verify_capability_rows(
             row.get("case_id") != case_id
             or row.get("status") != "runtime_attested_evaluator_preflight_ready"
             or evidence.get("case_id") != case_id
-            or evidence.get("benchmark_amendment_receipt_sha256")
-            != amendment.receipt_sha256
+            or evidence.get("benchmark_amendment_receipt_sha256") != amendment.receipt_sha256
             or hidden.get("production_patch_sha256") != mapping_patches[case_id]
             or type(hidden.get("production_patch_bytes")) is not int
             or cast(int, hidden["production_patch_bytes"]) <= 0

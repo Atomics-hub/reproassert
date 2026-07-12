@@ -36,7 +36,7 @@ from reproassert.benchmark_v021_runtime import (
     require_v021_generation_result,
     require_v021_runtime_plan,
 )
-from reproassert.errors import PolicyRejection
+from reproassert.errors import PolicyRejection, ReproAssertError
 from reproassert.safeio import open_regular_file, require_private_directory, write_bytes_exclusive
 
 ALGORITHM = "reproassert-v021-automated-evaluation-v1"
@@ -89,9 +89,19 @@ class VerifiedV021AutomatedEvaluationSet:
         raise TypeError("VerifiedV021AutomatedEvaluationSet is verifier-issued only")
 
 
+@dataclass(frozen=True)
+class StructuralV021AutomatedEvaluationSet:
+    path: Path
+    sha256: str
+    accepted_count: int
+    rejected_count: int
+    verification_scope: str = "structural_only_no_live_authority"
+
+
 Evaluator = Callable[..., CandidateEvaluationReceipt]
 ReceiptVerifier = Callable[[Path], CandidateEvaluationReceipt]
 _ISSUER = object()
+_LIVE_ISSUANCE = object()
 
 
 def evaluate_v021_automated_campaign(
@@ -106,9 +116,45 @@ def evaluate_v021_automated_campaign(
     aggregate_path: Path,
     executed_at: str,
     tool_git_sha: str,
-    evaluator: Evaluator = evaluate_instance_candidate,
-    receipt_verifier: ReceiptVerifier = verify_instance_candidate_receipt,
 ) -> VerifiedV021AutomatedEvaluationSet:
+    """Production all-20 evaluation using only the built-in sandbox evaluator."""
+
+    issued = _evaluate_v021_automated_campaign_with_ports(
+        plan=plan,
+        barrier=barrier,
+        generation_results=generation_results,
+        automated_evidence_authority=automated_evidence_authority,
+        response_directory=response_directory,
+        case_inputs=case_inputs,
+        receipt_directory=receipt_directory,
+        aggregate_path=aggregate_path,
+        executed_at=executed_at,
+        tool_git_sha=tool_git_sha,
+        evaluator=evaluate_instance_candidate,
+        receipt_verifier=verify_instance_candidate_receipt,
+        issuance=_LIVE_ISSUANCE,
+    )
+    if type(issued) is not VerifiedV021AutomatedEvaluationSet:
+        raise _reject("Production evaluation did not issue live authority.")
+    return issued
+
+
+def _evaluate_v021_automated_campaign_with_ports(
+    *,
+    plan: VerifiedV021RuntimePlan,
+    barrier: VerifiedV021GenerationBarrier,
+    generation_results: Sequence[V021GenerationResult],
+    automated_evidence_authority: VerifiedV021AutomatedEvidence,
+    response_directory: Path,
+    case_inputs: Mapping[str, V021EvaluationCaseInputs],
+    receipt_directory: Path,
+    aggregate_path: Path,
+    executed_at: str,
+    tool_git_sha: str,
+    evaluator: Evaluator,
+    receipt_verifier: ReceiptVerifier,
+    issuance: object | None = None,
+) -> VerifiedV021AutomatedEvaluationSet | StructuralV021AutomatedEvaluationSet:
     """Parse and evaluate exactly 20 durable outputs, or publish no aggregate authority."""
 
     verified_plan = require_v021_runtime_plan(plan)
@@ -120,7 +166,7 @@ def evaluate_v021_automated_campaign(
     if (
         verified_barrier.authorization_sha256 != verified_plan.authorization_sha256
         or verified_barrier.request_set_sha256 != verified_plan.request_set_sha256
-        or evidence.request_set_sha256 != verified_plan.request_set_sha256
+        or evidence.request_set_sha256 != verified_plan.preregistration_request_set_sha256
     ):
         raise _reject("Generation, plan, and automated evidence lineages differ.")
     if tuple(result.case_id for result in generation_results) != expected_ids:
@@ -179,48 +225,57 @@ def evaluate_v021_automated_campaign(
         output = response.get("output")
         inputs = case_inputs[case_id]
         contract = v02_candidate_contract(case_id=case_id, issue_number=inputs.issue_number)
-        candidate = parse_v021_candidate_output(
-            cast(str, output),
-            issue_number=inputs.issue_number,
-            required_test_function=contract.test_function,
-        )
-        artifact = CandidateArtifact(
-            relative_path=contract.relative_path,
-            content=candidate.test_content.encode("utf-8"),
-            test_function=contract.test_function,
-        )
         evaluator_path = receipt_root / f"{case_id}.evaluator.json"
         public_path = receipt_root / f"{case_id}.json"
         for destination in (evaluator_path, public_path):
             if destination.exists() or destination.is_symlink():
                 raise _reject("Refusing to overwrite an automated case evaluation receipt.")
-        evaluated = evaluator(
-            evaluator_capability=inputs.evaluator_capability,
-            verified_hidden=inputs.verified_hidden,
-            gold_smoke_receipt_path=inputs.gold_smoke_receipt_path,
-            gold_specs_path=inputs.gold_specs_path,
-            manifest_path=inputs.manifest_path,
-            expected_manifest_sha256=inputs.expected_manifest_sha256,
-            case_id=case_id,
-            candidate=artifact,
-            output_path=evaluator_path,
-            executed_at=executed_at,
-            tool_git_sha=tool_git_sha,
-            automated_evidence_authority=evidence,
-        )
-        verified_evaluation = receipt_verifier(evaluated.path)
-        evaluator_raw = _read_bounded(
-            verified_evaluation.path, MAX_EVALUATION_RECEIPT_BYTES, "candidate evaluation"
-        )
-        if (
-            hashlib.sha256(evaluator_raw).hexdigest() != verified_evaluation.sha256
-            or verified_evaluation.case_id != case_id
-        ):
-            raise _reject("Candidate evaluator receipt changed or crossed case boundaries.")
-        record = {
-            "algorithm": ALGORITHM,
-            "benchmark_version": "0.2.1",
-            "candidate": {
+        try:
+            candidate = parse_v021_candidate_output(
+                cast(str, output),
+                issue_number=inputs.issue_number,
+                required_test_function=contract.test_function,
+            )
+        except (PolicyRejection, ReproAssertError):
+            candidate_record: dict[str, object] = {
+                "bytes": len(cast(str, output).encode("utf-8")),
+                "output_sha256": hashlib.sha256(cast(str, output).encode()).hexdigest(),
+                "status": "rejected_before_sandbox",
+            }
+            evaluator_receipt_sha256: str | None = None
+            accepted = False
+            classification = "candidate_contract_rejected"
+            remaining_controls = ["candidate_contract"]
+        else:
+            artifact = CandidateArtifact(
+                relative_path=contract.relative_path,
+                content=candidate.test_content.encode("utf-8"),
+                test_function=contract.test_function,
+            )
+            evaluated = evaluator(
+                evaluator_capability=inputs.evaluator_capability,
+                verified_hidden=inputs.verified_hidden,
+                gold_smoke_receipt_path=inputs.gold_smoke_receipt_path,
+                gold_specs_path=inputs.gold_specs_path,
+                manifest_path=inputs.manifest_path,
+                expected_manifest_sha256=inputs.expected_manifest_sha256,
+                case_id=case_id,
+                candidate=artifact,
+                output_path=evaluator_path,
+                executed_at=executed_at,
+                tool_git_sha=tool_git_sha,
+                automated_evidence_authority=evidence,
+            )
+            verified_evaluation = receipt_verifier(evaluated.path)
+            evaluator_raw = _read_bounded(
+                verified_evaluation.path, MAX_EVALUATION_RECEIPT_BYTES, "candidate evaluation"
+            )
+            if (
+                hashlib.sha256(evaluator_raw).hexdigest() != verified_evaluation.sha256
+                or verified_evaluation.case_id != case_id
+            ):
+                raise _reject("Candidate evaluator receipt changed or crossed case boundaries.")
+            candidate_record = {
                 "bytes": len(artifact.content),
                 "expected_symptom_sha256": hashlib.sha256(
                     candidate.expected_symptom.encode()
@@ -228,28 +283,37 @@ def evaluate_v021_automated_campaign(
                 "relative_path": contract.relative_path,
                 "sha256": candidate.sha256,
                 "test_function": contract.test_function,
-            },
+            }
+            evaluator_receipt_sha256 = verified_evaluation.sha256
+            accepted = verified_evaluation.accepted
+            classification = verified_evaluation.classification
+            remaining_controls = [
+                "fix_minus_issue_relevant_hunks",
+                "base_plus_issue_relevant_hunks",
+            ]
+        record = {
+            "algorithm": ALGORITHM,
+            "benchmark_version": "0.2.1",
+            "candidate": candidate_record,
             "case_id": case_id,
             "claims": {
-                "automated_oracle_validated": True,
+                "automated_disposition_validated": True,
+                "automated_oracle_executed": evaluator_receipt_sha256 is not None,
                 "human_reviewed": False,
                 "l2_causal_claim": False,
                 "maintainer_validated": False,
             },
-            "evaluator_receipt_sha256": verified_evaluation.sha256,
+            "evaluator_receipt_sha256": evaluator_receipt_sha256,
             "generation": {
                 "barrier_sha256": verified_barrier.sha256,
                 "response_sha256": result.response_sha256,
                 "result_sha256": result.sha256,
             },
             "outcome": {
-                "accepted": verified_evaluation.accepted,
-                "classification": verified_evaluation.classification,
-                "claim_level": "l1_deterministic" if verified_evaluation.accepted else "rejected",
-                "remaining_required_controls": [
-                    "fix_minus_issue_relevant_hunks",
-                    "base_plus_issue_relevant_hunks",
-                ],
+                "accepted": accepted,
+                "classification": classification,
+                "claim_level": "l1_deterministic" if accepted else "rejected",
+                "remaining_required_controls": remaining_controls,
             },
             "schema_version": SCHEMA_VERSION,
             "tool_git_sha": _git_sha(tool_git_sha),
@@ -259,9 +323,9 @@ def evaluate_v021_automated_campaign(
         write_bytes_exclusive(public_path, public_raw)
         rows.append(
             {
-                "accepted": verified_evaluation.accepted,
+                "accepted": accepted,
                 "case_id": case_id,
-                "classification": verified_evaluation.classification,
+                "classification": classification,
                 "receipt_sha256": hashlib.sha256(public_raw).hexdigest(),
             }
         )
@@ -275,12 +339,40 @@ def evaluate_v021_automated_campaign(
     )
     aggregate_record["receipt_sha256"] = _self_hash(aggregate_record)
     write_bytes_exclusive(aggregate, _canonical(aggregate_record) + b"\n")
-    return verify_v021_automated_evaluation_set(aggregate, receipt_directory=receipt_root)
+    issued = _verify_v021_automated_evaluation_set(
+        aggregate,
+        receipt_directory=receipt_root,
+        issuance=issuance,
+        receipt_verifier=receipt_verifier,
+    )
+    if issuance is _LIVE_ISSUANCE and type(issued) is not VerifiedV021AutomatedEvaluationSet:
+        raise _reject("Live evaluation did not issue nominal aggregate authority.")
+    return issued
 
 
-def verify_v021_automated_evaluation_set(
+def inspect_v021_automated_evaluation_set(
     path: Path, *, receipt_directory: Path
-) -> VerifiedV021AutomatedEvaluationSet:
+) -> StructuralV021AutomatedEvaluationSet:
+    """Structurally inspect public receipts without minting execution authority."""
+
+    inspected = _verify_v021_automated_evaluation_set(
+        path,
+        receipt_directory=receipt_directory,
+        issuance=None,
+        receipt_verifier=verify_instance_candidate_receipt,
+    )
+    if type(inspected) is not StructuralV021AutomatedEvaluationSet:
+        raise _reject("Structural inspection returned live authority.")
+    return inspected
+
+
+def _verify_v021_automated_evaluation_set(
+    path: Path,
+    *,
+    receipt_directory: Path,
+    issuance: object | None,
+    receipt_verifier: ReceiptVerifier,
+) -> VerifiedV021AutomatedEvaluationSet | StructuralV021AutomatedEvaluationSet:
     raw = _read_bounded(Path(path), MAX_RESULT_BYTES, "automated evaluation aggregate")
     record = _decode_canonical(raw, "automated evaluation aggregate")
     rows = record.get("results")
@@ -315,7 +407,7 @@ def verify_v021_automated_evaluation_set(
         or tuple(row.get("case_id") for row in rows if isinstance(row, dict)) != expected_ids
         or record.get("claims")
         != {
-            "automated_oracle_validated": True,
+            "automated_evidence_validated": True,
             "full_denominator_reported": True,
             "human_reviewed": False,
             "l2_causal_claim": False,
@@ -344,6 +436,7 @@ def verify_v021_automated_evaluation_set(
             raise _reject("Case evaluation receipt changed after aggregation.")
         case_record = _decode_canonical(receipt_raw, "case evaluation receipt")
         outcome = case_record.get("outcome")
+        evaluator_sha = case_record.get("evaluator_receipt_sha256")
         if (
             set(case_record)
             != {
@@ -366,7 +459,9 @@ def verify_v021_automated_evaluation_set(
             or case_record.get("receipt_sha256") != _self_hash(case_record)
             or case_record.get("claims")
             != {
-                "automated_oracle_validated": True,
+                "automated_disposition_validated": True,
+                "automated_oracle_executed": case_record.get("evaluator_receipt_sha256")
+                is not None,
                 "human_reviewed": False,
                 "l2_causal_claim": False,
                 "maintainer_validated": False,
@@ -377,14 +472,58 @@ def verify_v021_automated_evaluation_set(
             or outcome.get("claim_level")
             != ("l1_deterministic" if value["accepted"] is True else "rejected")
             or outcome.get("remaining_required_controls")
-            != ["fix_minus_issue_relevant_hunks", "base_plus_issue_relevant_hunks"]
+            != (
+                ["candidate_contract"]
+                if value["classification"] == "candidate_contract_rejected"
+                else ["fix_minus_issue_relevant_hunks", "base_plus_issue_relevant_hunks"]
+            )
         ):
             raise _reject("Case evaluation receipt binding is invalid.")
+        if evaluator_sha is None:
+            candidate = case_record.get("candidate")
+            if (
+                value["classification"] != "candidate_contract_rejected"
+                or not isinstance(candidate, dict)
+                or candidate.get("status") != "rejected_before_sandbox"
+            ):
+                raise _reject("Missing evaluator receipt is not a contract rejection.")
+        else:
+            if not _is_sha(evaluator_sha):
+                raise _reject("Evaluator receipt commitment is invalid.")
+            verifier = (
+                verify_instance_candidate_receipt
+                if issuance is _LIVE_ISSUANCE
+                else receipt_verifier
+            )
+            verified_evaluator = verifier(receipt_root / f"{case_id}.evaluator.json")
+            if (
+                verified_evaluator.sha256 != evaluator_sha
+                or verified_evaluator.case_id != case_id
+                or verified_evaluator.accepted is not value["accepted"]
+                or verified_evaluator.classification != value["classification"]
+            ):
+                raise _reject("Evaluator receipt differs from the live aggregate row.")
         bindings[case_id] = digest
         accepted += int(value["accepted"] is True)
     counts = record.get("counts")
-    if counts != {"accepted": accepted, "rejected": CASE_COUNT - accepted, "total": CASE_COUNT}:
+    oracle_executed = sum(
+        isinstance(value, dict) and value.get("classification") != "candidate_contract_rejected"
+        for value in rows
+    )
+    if counts != {
+        "accepted": accepted,
+        "oracle_executed": oracle_executed,
+        "rejected": CASE_COUNT - accepted,
+        "total": CASE_COUNT,
+    }:
         raise _reject("Automated evaluation full-denominator counts are invalid.")
+    if issuance is not _LIVE_ISSUANCE:
+        return StructuralV021AutomatedEvaluationSet(
+            path=Path(path),
+            sha256=hashlib.sha256(raw).hexdigest(),
+            accepted_count=accepted,
+            rejected_count=CASE_COUNT - accepted,
+        )
     authority = object.__new__(VerifiedV021AutomatedEvaluationSet)
     for name, value in {
         "path": Path(path),
@@ -415,19 +554,25 @@ def _aggregate_record(
     tool_git_sha: str,
 ) -> dict[str, object]:
     accepted = sum(row["accepted"] is True for row in rows)
+    oracle_executed = sum(row["classification"] != "candidate_contract_rejected" for row in rows)
     return {
         "algorithm": AGGREGATE_ALGORITHM,
         "automated_evidence_sha256": evidence.sha256,
         "benchmark_version": "0.2.1",
         "case_count": CASE_COUNT,
         "claims": {
-            "automated_oracle_validated": True,
+            "automated_evidence_validated": True,
             "full_denominator_reported": True,
             "human_reviewed": False,
             "l2_causal_claim": False,
             "maintainer_validated": False,
         },
-        "counts": {"accepted": accepted, "rejected": CASE_COUNT - accepted, "total": CASE_COUNT},
+        "counts": {
+            "accepted": accepted,
+            "oracle_executed": oracle_executed,
+            "rejected": CASE_COUNT - accepted,
+            "total": CASE_COUNT,
+        },
         "generation_barrier_sha256": barrier.sha256,
         "lineage_commitment_sha256": plan.lineage_commitment_sha256,
         "request_set_sha256": plan.request_set_sha256,

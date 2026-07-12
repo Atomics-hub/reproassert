@@ -11,9 +11,19 @@
     "benchmark_version": {"const": "0.2.1"},
     "case_count": {"const": 20},
     "claims": {
-      "const": {"automated_oracle_validated": true, "full_denominator_reported": true, "human_reviewed": false, "l2_causal_claim": false, "maintainer_validated": false}
+      "const": {"automated_evidence_validated": true, "full_denominator_reported": true, "human_reviewed": false, "l2_causal_claim": false, "maintainer_validated": false}
     },
-    "counts": {"type": "object"},
+    "counts": {
+      "type": "object",
+      "required": ["accepted", "oracle_executed", "rejected", "total"],
+      "additionalProperties": false,
+      "properties": {
+        "accepted": {"minimum": 0, "maximum": 20, "type": "integer"},
+        "oracle_executed": {"minimum": 0, "maximum": 20, "type": "integer"},
+        "rejected": {"minimum": 0, "maximum": 20, "type": "integer"},
+        "total": {"const": 20}
+      }
+    },
     "generation_barrier_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
     "lineage_commitment_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
     "receipt_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},

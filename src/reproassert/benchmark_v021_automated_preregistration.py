@@ -36,9 +36,7 @@ PER_CASE_CAP_USD = "0.25"
 MAX_BYTES = 2 * 1024 * 1024
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _GIT_SHA = re.compile(r"[0-9a-f]{40}\Z")
-_TIMESTAMP = re.compile(
-    r"20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?Z\Z"
-)
+_TIMESTAMP = re.compile(r"20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?Z\Z")
 _ISSUER = object()
 
 
@@ -79,9 +77,7 @@ def prepare_v021_automated_preregistration(
     record = _derive(evidence=evidence, frozen_at=frozen_at)
     record["preregistration_sha256"] = _self_hash(record)
     write_bytes_exclusive(destination, _canonical(record) + b"\n")
-    return verify_v021_automated_preregistration(
-        destination, automated_evidence_authority=evidence
-    )
+    return verify_v021_automated_preregistration(destination, automated_evidence_authority=evidence)
 
 
 def verify_v021_automated_preregistration(
@@ -163,9 +159,7 @@ def require_v021_automated_preregistration(
     return value
 
 
-def _derive(
-    *, evidence: VerifiedV021AutomatedEvidence, frozen_at: str
-) -> dict[str, object]:
+def _derive(*, evidence: VerifiedV021AutomatedEvidence, frozen_at: str) -> dict[str, object]:
     frozen = _timestamp(frozen_at)
     if _time(frozen) > datetime.now(timezone.utc):
         raise _reject("Automated preregistration cannot be future-dated.")
@@ -176,8 +170,7 @@ def _derive(
     if (
         evidence_record.get("algorithm") != EVIDENCE_ALGORITHM
         or evidence_record.get("status") != EVIDENCE_STATUS
-        or evidence_record.get("lineage_commitment_sha256")
-        != evidence.lineage_commitment_sha256
+        or evidence_record.get("lineage_commitment_sha256") != evidence.lineage_commitment_sha256
         or evidence_record.get("tool_git_sha") != evidence.tool_git_sha
         or _time(_timestamp(evidence_record.get("verified_at"))) > _time(frozen)
     ):
@@ -197,7 +190,7 @@ def _derive(
     source_evidence = _dict(evidence_record.get("evidence"), "automated evidence")
     commitments = _dict(source_evidence.get("internal_commitments"), "internal commitments")
     policy = _dict(evidence_record.get("policy"), "automated evidence policy")
-    pricing_sha = _sha(source_evidence.get("pricing_snapshot_raw_sha256"))
+    pricing_sha = _sha(source_evidence.get("pricing_snapshot_commitment_sha256"))
     runtime_sha = _sha(source_evidence.get("runtime_manifest_sha256"))
     capability_sha = _sha(source_evidence.get("capability_index_raw_sha256"))
     statement = (
@@ -209,7 +202,7 @@ def _derive(
         "automated_evidence_raw_sha256": evidence.sha256,
         "capability_index_raw_sha256": capability_sha,
         "internal_commitments": commitments,
-        "pricing_snapshot_raw_sha256": pricing_sha,
+        "pricing_snapshot_commitment_sha256": pricing_sha,
         "runtime_manifest_sha256": runtime_sha,
     }
     return {

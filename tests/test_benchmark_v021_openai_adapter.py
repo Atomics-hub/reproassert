@@ -7,10 +7,14 @@ from collections.abc import Callable
 import pytest
 
 from reproassert.benchmark_v021_openai_adapter import (
+    V021_FROZEN_MODEL,
+    V021_FROZEN_OPENAI_PRICING,
     BoundedV021OpenAIAdapter,
     FrozenOpenAIPricing,
+    invoke_v021_openai_provider,
     parse_v021_candidate_output,
 )
+from reproassert.benchmark_v021_runtime import V021ProviderRequest
 from reproassert.errors import PolicyRejection, ReproAssertError
 
 
@@ -64,7 +68,7 @@ def _invoke(
     transport: Callable[..., bytes] | None = None,
 ):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test-not-a-real-key")
-    body = b'{"model":"gpt-test","store":false}'
+    body = b'{"model":"gpt-5.4-mini-2026-03-17","store":false}'
     observed: dict[str, object] = {}
 
     def fake_transport(request_body: bytes, *, api_key: str, timeout_seconds: float) -> bytes:
@@ -84,7 +88,7 @@ def test_exact_frozen_bytes_usage_cost_and_secret_free_metadata(
     result, observed = _invoke(monkeypatch, _response())
 
     assert observed == {
-        "body": b'{"model":"gpt-test","store":false}',
+        "body": b'{"model":"gpt-5.4-mini-2026-03-17","store":false}',
         "key": "sk-test-not-a-real-key",
         "timeout": 3,
     }
@@ -102,6 +106,64 @@ def test_exact_frozen_bytes_usage_cost_and_secret_free_metadata(
     assert result.output_text not in repr(metadata)
 
 
+def test_runtime_provider_wrapper_uses_exact_outbound_request_hash(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-not-a-real-key")
+    request_value = {"model": V021_FROZEN_MODEL, "store": False}
+    encoded = json.dumps(
+        request_value, ensure_ascii=True, allow_nan=False, separators=(",", ":"), sort_keys=True
+    ).encode("ascii")
+    adapter = BoundedV021OpenAIAdapter(
+        pricing=V021_FROZEN_OPENAI_PRICING,
+        transport=lambda *_args, **_kwargs: _response(),
+    )
+    request = V021ProviderRequest(
+        case_id="rk-v0.2-001",
+        request_sha256="1" * 64,
+        input_sha256="2" * 64,
+        outbound_request_sha256=hashlib.sha256(encoded).hexdigest(),
+        call_id="3" * 64,
+        request=request_value,
+    )
+
+    result = invoke_v021_openai_provider(adapter, request)
+
+    assert result.response_id == "resp_test_1"
+    assert result.cost_microusd == 1_065
+    assert result.output == json.dumps(_candidate())
+
+
+def test_runtime_wrapper_rejects_zero_pricing_before_credential_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    request_value = {"model": V021_FROZEN_MODEL, "store": False}
+    encoded = json.dumps(request_value, separators=(",", ":"), sort_keys=True).encode()
+    adapter = BoundedV021OpenAIAdapter(
+        pricing=FrozenOpenAIPricing(0, 0, 0),
+        transport=lambda *_args, **_kwargs: _response(),
+    )
+    request = V021ProviderRequest(
+        case_id="rk-v0.2-001",
+        request_sha256="1" * 64,
+        input_sha256="2" * 64,
+        outbound_request_sha256=hashlib.sha256(encoded).hexdigest(),
+        call_id="3" * 64,
+        request=request_value,
+    )
+
+    with pytest.raises(ReproAssertError) as raised:
+        invoke_v021_openai_provider(adapter, request)
+    assert raised.value.code == "v021_openai_pricing"
+
+
+def test_response_model_must_equal_frozen_request(monkeypatch: pytest.MonkeyPatch) -> None:
+    with pytest.raises(ReproAssertError) as raised:
+        _invoke(monkeypatch, _response(model="different-model"))
+    assert raised.value.code == "v021_openai_model"
+
+
 def test_credential_is_read_only_after_exact_request_validation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -109,7 +171,7 @@ def test_credential_is_read_only_after_exact_request_validation(
     adapter = BoundedV021OpenAIAdapter(
         pricing=_pricing(), transport=lambda *_args, **_kwargs: _response()
     )
-    body = b"{}"
+    body = json.dumps({"model": V021_FROZEN_MODEL}, separators=(",", ":")).encode()
     with pytest.raises(ReproAssertError, match="changed before call"):
         adapter.invoke(body, expected_request_sha256="0" * 64)
     with pytest.raises(ReproAssertError, match="OPENAI_API_KEY is required"):
@@ -119,7 +181,7 @@ def test_credential_is_read_only_after_exact_request_validation(
 @pytest.mark.parametrize("key", [" bad", "bad\nkey", "caf\N{LATIN SMALL LETTER E WITH ACUTE}"])
 def test_credential_format_is_rejected(monkeypatch: pytest.MonkeyPatch, key: str) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", key)
-    body = b"{}"
+    body = json.dumps({"model": V021_FROZEN_MODEL}, separators=(",", ":")).encode()
     adapter = BoundedV021OpenAIAdapter(
         pricing=_pricing(), transport=lambda *_args, **_kwargs: _response()
     )
@@ -151,7 +213,7 @@ def test_missing_or_malformed_usage_fails_closed(
         else json.dumps(
             {
                 "id": "resp_x",
-                "model": "gpt-test",
+                "model": V021_FROZEN_MODEL,
                 "output_text": json.dumps(_candidate()),
                 "status": "completed",
             }
