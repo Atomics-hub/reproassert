@@ -871,7 +871,13 @@ def _verify_capability_inputs(
             capability.case_id != case_id
             or capability.benchmark_amendment_receipt_sha256
             != automated.amendment_receipt_sha256
-            or value != capability.public_record()
+            or value
+            != {
+                **capability.public_record(),
+                "evaluator_public_commitment_sha256": (
+                    capability.evaluator_public_commitment_sha256
+                ),
+            }
         ):
             raise _reject("Automated evidence does not bind this pending evaluator receipt.")
         _digest(amendment_sha, "benchmark amendment receipt")
