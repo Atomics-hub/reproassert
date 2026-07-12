@@ -106,10 +106,7 @@ def _issue_barrier(
     expected = tuple(f"rk-v0.2-{index:03d}" for index in range(1, 21))
     if tuple(result.case_id for result in results) != expected:
         raise _reject("Generation barrier requires all 20 canonical terminal dispositions.")
-    if any(
-        result.outcome != "provider_response_durable_unparsed"
-        for result in results
-    ):
+    if any(result.outcome != "provider_response_durable_unparsed" for result in results):
         raise _reject("Generation barrier cannot include unknown-spend or nonterminal cases.")
     bindings = {result.case_id: result.sha256 for result in results}
     record = {
