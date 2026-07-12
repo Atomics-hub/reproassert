@@ -20,7 +20,11 @@ from reproassert.candidate import (
 from reproassert.candidate_workspace import prepare_candidate_workspace
 from reproassert.context import build_source_context
 from reproassert.errors import PolicyRejection
-from reproassert.generator import CandidateGenerator, GenerationRequest
+from reproassert.generator import (
+    PYTEST_CANDIDATE_PROFILE_V2,
+    CandidateGenerator,
+    GenerationRequest,
+)
 from reproassert.intake import (
     ExtractionLimits,
     download_source_archive,
@@ -89,6 +93,7 @@ def run_issue_workflow(
                 issue_body=issue.body,
                 source_sha=sha,
                 source_context=context,
+                candidate_profile=PYTEST_CANDIDATE_PROFILE_V2,
             )
         )
         generation_metadata = getattr(generator, "metadata", {})

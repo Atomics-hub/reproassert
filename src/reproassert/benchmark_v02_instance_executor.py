@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
 import json
 import math
@@ -35,6 +37,61 @@ _SYMPY_TEST_FILE = re.compile(r"sympy(?:/[A-Za-z0-9_]+)+/tests/test_[A-Za-z0-9_]
 _SYMPY_TEST_IDENTIFIER = re.compile(r"test_[A-Za-z_][A-Za-z0-9_]{0,199}\Z")
 _CONTAINER_ID = re.compile(r"[0-9a-f]{12,64}\Z")
 _CONTAINER_TMP = "/tmp"  # noqa: S108 - isolated container path, never a host path
+_RESULT_VOLUME_BYTES = 2 * 1024 * 1024
+_RESULT_VOLUME_INODES = 64
+_MAX_JUNIT_BASE64_BYTES = 4 * ((MAX_STAGED_BYTES + 2) // 3) + 1
+
+_JUNIT_READER_SCRIPT = r"""
+import base64
+import os
+import stat
+import sys
+
+path = "/results/junit.xml"
+flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+try:
+    descriptor = os.open(path, flags)
+except FileNotFoundError:
+    raise SystemExit(20)
+try:
+    initial = os.fstat(descriptor)
+    snapshot = (
+        initial.st_dev,
+        initial.st_ino,
+        initial.st_mode,
+        initial.st_size,
+        initial.st_mtime_ns,
+        initial.st_ctime_ns,
+        initial.st_nlink,
+    )
+    if (
+        not stat.S_ISREG(initial.st_mode)
+        or initial.st_nlink != 1
+        or initial.st_size < 1
+        or initial.st_size > 2097152
+    ):
+        raise SystemExit(21)
+    content = bytearray()
+    while chunk := os.read(descriptor, 65536):
+        content.extend(chunk)
+        if len(content) > 2097152:
+            raise SystemExit(22)
+    final = os.fstat(descriptor)
+    final_snapshot = (
+        final.st_dev,
+        final.st_ino,
+        final.st_mode,
+        final.st_size,
+        final.st_mtime_ns,
+        final.st_ctime_ns,
+        final.st_nlink,
+    )
+    if final_snapshot != snapshot or len(content) != initial.st_size:
+        raise SystemExit(23)
+    sys.stdout.write(base64.b64encode(bytes(content)).decode("ascii") + "\n")
+finally:
+    os.close(descriptor)
+""".strip()
 
 _COPY_TESTBED_SCRIPT = """set -eu
 cp -a --no-preserve=ownership /testbed/. /workspace/
@@ -130,6 +187,7 @@ class InstanceRuntimeExecutor:
         self.runner = runner or SubprocessDockerRunner()
         self._token = f"instance-{case_id}-{uuid.uuid4().hex[:12]}"
         self._volumes: dict[str, str] = {}
+        self._result_volumes: set[str] = set()
         self._containers: set[str] = set()
         self._acquired = False
         self._prepared = False
@@ -270,7 +328,7 @@ class InstanceRuntimeExecutor:
             script = _PYTEST_SCRIPT
             profile_args = ["--collect-only"] if collect_only else []
             if emit_junit:
-                profile_args.append("--junitxml=/tmp/reproassert-junit.xml")
+                profile_args.append("--junitxml=/results/junit.xml")
         elif self.runtime.test_command_profile == "sympy-bin-test-v1":
             if targets or collect_only or emit_junit:
                 raise self._reject(
@@ -292,59 +350,73 @@ class InstanceRuntimeExecutor:
             *profile_args,
             *checked_targets,
         ]
-        name = self._create_sandbox_container(
-            workspace,
-            command,
-            role=f"test-{workspace}",
-            user="65532:65532",
-            workspace_pythonpath=True,
-        )
+        result_volume = self._create_result_volume() if emit_junit else None
+        anchor = None
         try:
-            result = self._run(
-                ["start", "--attach", name],
-                timeout=self.policy.timeout_seconds,
-                max_output_bytes=self.policy.max_output_bytes,
-                allow_failure=True,
+            if result_volume is not None:
+                anchor = self._start_result_anchor(result_volume)
+            name = self._create_sandbox_container(
+                workspace,
+                command,
+                role=f"test-{workspace}",
+                user="65532:65532",
+                workspace_pythonpath=True,
+                result_volume=result_volume,
             )
-            junit_xml = self._read_junit(name) if emit_junit else None
-            oom_killed = self._container_oom_killed(name)
-            return InstancePytestResult(
-                workspace=workspace,
-                exit_code=result.returncode,
-                output=result.output,
-                timed_out=result.timed_out,
-                output_truncated=result.output_truncated,
-                junit_xml=junit_xml,
-                oom_killed=oom_killed,
-            )
-        finally:
-            self._remove_container(name)
-
-    def _read_junit(self, name: str) -> bytes | None:
-        """Copy a bounded pytest JUnit artifact from a stopped sandbox container."""
-
-        with tempfile.TemporaryDirectory(prefix="reproassert-instance-junit-") as temporary:
-            os.chmod(temporary, 0o700)
-            destination = Path(temporary) / "junit.xml"
-            copied = self._run(
-                ["cp", f"{name}:/tmp/reproassert-junit.xml", str(destination)],
-                timeout=30,
-                allow_failure=True,
-            )
-            if copied.returncode != 0 or copied.timed_out or copied.output_truncated:
-                return None
             try:
-                stat_result = destination.lstat()
-            except FileNotFoundError:
-                # A candidate can terminate pytest before it flushes JUnit.  The
-                # evaluator must score that as missing attribution evidence,
-                # rather than treating it as a controller failure.
-                return None
-            if not destination.is_file() or destination.is_symlink():
-                raise self._reject("Pytest JUnit evidence is not a regular file.")
-            if not 1 <= stat_result.st_size <= MAX_STAGED_BYTES:
-                raise self._reject("Pytest JUnit evidence is empty or exceeds the byte limit.")
-            return destination.read_bytes()
+                result = self._run(
+                    ["start", "--attach", name],
+                    timeout=self.policy.timeout_seconds,
+                    max_output_bytes=self.policy.max_output_bytes,
+                    allow_failure=True,
+                )
+                junit_xml = self._read_junit(anchor) if anchor is not None else None
+                oom_killed = self._container_oom_killed(name)
+                return InstancePytestResult(
+                    workspace=workspace,
+                    exit_code=result.returncode,
+                    output=result.output,
+                    timed_out=result.timed_out,
+                    output_truncated=result.output_truncated,
+                    junit_xml=junit_xml,
+                    oom_killed=oom_killed,
+                )
+            finally:
+                self._remove_container(name)
+        finally:
+            if anchor is not None:
+                self._remove_container(anchor)
+            if result_volume is not None:
+                self._remove_result_volume(result_volume)
+
+    def _read_junit(self, anchor: str) -> bytes | None:
+        """Read one bounded JUnit artifact through the locked-down live anchor."""
+
+        copied = self._run(
+            [
+                "exec",
+                anchor,
+                "/opt/miniconda3/envs/testbed/bin/python",
+                "-I",
+                "-c",
+                _JUNIT_READER_SCRIPT,
+            ],
+            timeout=30,
+            max_output_bytes=_MAX_JUNIT_BASE64_BYTES,
+            allow_failure=True,
+        )
+        if copied.returncode != 0 or copied.timed_out or copied.output_truncated:
+            return None
+        encoded = copied.output.encode("ascii", errors="strict")
+        if not encoded.endswith(b"\n") or encoded.count(b"\n") != 1:
+            return None
+        try:
+            content = base64.b64decode(encoded[:-1], validate=True)
+        except (ValueError, binascii.Error):
+            return None
+        if not 1 <= len(content) <= MAX_STAGED_BYTES:
+            return None
+        return content
 
     def _container_oom_killed(self, name: str) -> bool:
         payload = self._inspect_one(["container", "inspect", name], "container")
@@ -360,6 +432,11 @@ class InstanceRuntimeExecutor:
                 self._remove_container(name)
             except ReproAssertError as exc:
                 errors.append(exc.message)
+        for volume in tuple(self._result_volumes):
+            try:
+                self._remove_result_volume(volume)
+            except ReproAssertError as exc:
+                errors.append(exc.message)
         for role, volume in tuple(self._volumes.items()):
             try:
                 self._run(["volume", "rm", volume], timeout=30)
@@ -368,6 +445,151 @@ class InstanceRuntimeExecutor:
                 errors.append(exc.message)
         if errors:
             raise self._reject("Instance runtime cleanup failed: " + "; ".join(errors))
+
+    def _create_result_volume(self) -> str:
+        """Create one bounded tmpfs volume that outlives the stopped test container."""
+
+        volume = f"reproassert-{self._token}-junit-{uuid.uuid4().hex[:8]}"
+        self._require_absent("volume", volume)
+        options = (
+            f"size={_RESULT_VOLUME_BYTES},nr_inodes={_RESULT_VOLUME_INODES},"
+            "uid=65532,gid=65532,mode=0700"
+        )
+        created = self._run(
+            [
+                "volume",
+                "create",
+                "--label",
+                _LABEL_OWNER,
+                "--label",
+                f"io.reproassert.instance-run={self._token}",
+                "--label",
+                "io.reproassert.instance-role=junit-result",
+                "--driver",
+                "local",
+                "--opt",
+                "type=tmpfs",
+                "--opt",
+                "device=tmpfs",
+                "--opt",
+                f"o={options}",
+                volume,
+            ],
+            timeout=30,
+        )
+        if created.output.strip() != volume:
+            raise self._reject("Docker created an unexpected JUnit result volume.")
+        self._result_volumes.add(volume)
+        try:
+            inspected = self._inspect_one(["volume", "inspect", volume], "result volume")
+            if (
+                inspected.get("Driver") != "local"
+                or inspected.get("Scope") != "local"
+                or inspected.get("Labels")
+                != {
+                    "io.reproassert.instance-owner": "controller-v1",
+                    "io.reproassert.instance-run": self._token,
+                    "io.reproassert.instance-role": "junit-result",
+                }
+                or inspected.get("Options") != {"type": "tmpfs", "device": "tmpfs", "o": options}
+            ):
+                raise self._reject("Docker did not apply the bounded JUnit volume policy.")
+            return volume
+        except BaseException as exc:
+            try:
+                self._remove_result_volume(volume)
+            except BaseException as cleanup_error:
+                raise cleanup_error from exc
+            raise
+
+    def _start_result_anchor(self, volume: str) -> str:
+        """Keep the local-driver tmpfs mounted until its JUnit has been read."""
+
+        name = f"reproassert-{self._token}-junit-anchor-{uuid.uuid4().hex[:8]}"
+        command = ["-I", "-c", "import time; time.sleep(3600)"]
+        args = [
+            "create",
+            "--name",
+            name,
+            "--label",
+            _LABEL_OWNER,
+            "--label",
+            f"io.reproassert.instance-run={self._token}",
+            "--label",
+            "io.reproassert.instance-role=junit-anchor",
+            "--network",
+            "none",
+            "--platform",
+            "linux/amd64",
+            "--cap-drop",
+            "ALL",
+            "--security-opt",
+            "no-new-privileges",
+            "--pids-limit",
+            "16",
+            "--memory",
+            "67108864",
+            "--memory-swap",
+            "67108864",
+            "--cpus",
+            "0.1",
+            "--user",
+            "65532:65532",
+            "--read-only",
+            "--mount",
+            f"type=volume,src={volume},dst=/results",
+            "--entrypoint",
+            "/opt/miniconda3/envs/testbed/bin/python",
+            self.runtime.image_id,
+            *command,
+        ]
+        created = self._run(args, timeout=30)
+        if _CONTAINER_ID.fullmatch(created.output.strip()) is None:
+            raise self._reject("Docker returned an invalid JUnit anchor container ID.")
+        self._containers.add(name)
+        try:
+            self._run(["start", name], timeout=30)
+            payload = self._inspect_one(["container", "inspect", name], "JUnit anchor")
+            config = _mapping(payload.get("Config"), "JUnit anchor config")
+            host = _mapping(payload.get("HostConfig"), "JUnit anchor host config")
+            state = _mapping(payload.get("State"), "JUnit anchor state")
+            mounts = payload.get("Mounts")
+            if not (
+                payload.get("Image") == self.runtime.image_id
+                and config.get("User") == "65532:65532"
+                and config.get("Entrypoint") == ["/opt/miniconda3/envs/testbed/bin/python"]
+                and config.get("Cmd") == command
+                and host.get("NetworkMode") == "none"
+                and host.get("ReadonlyRootfs") is True
+                and host.get("CapDrop") == ["ALL"]
+                and host.get("SecurityOpt") == ["no-new-privileges"]
+                and host.get("PidsLimit") == 16
+                and host.get("Memory") == 67_108_864
+                and host.get("MemorySwap") == 67_108_864
+                and host.get("NanoCpus") == 100_000_000
+                and isinstance(mounts, list)
+                and len(mounts) == 1
+                and mounts[0].get("Type") == "volume"
+                and mounts[0].get("Name") == volume
+                and mounts[0].get("Destination") == "/results"
+                and mounts[0].get("RW") is True
+                and state.get("Running") is True
+                and state.get("OOMKilled") is False
+            ):
+                raise self._reject("Effective JUnit anchor policy differs from the request.")
+            return name
+        except BaseException as exc:
+            try:
+                self._remove_container(name)
+            except BaseException as cleanup_error:
+                raise cleanup_error from exc
+            raise
+
+    def _remove_result_volume(self, volume: str) -> None:
+        if volume not in self._result_volumes:
+            return
+        self._run(["volume", "rm", volume], timeout=30)
+        self._result_volumes.discard(volume)
 
     def _copy_pristine_testbed(self, role: str) -> None:
         command = [
@@ -458,6 +680,7 @@ class InstanceRuntimeExecutor:
         user: str = "0:0",
         cap_add: tuple[str, ...] = (),
         workspace_pythonpath: bool = False,
+        result_volume: str | None = None,
     ) -> str:
         volume = self._volumes[workspace]
         name = f"reproassert-{self._token}-{role}-{uuid.uuid4().hex[:8]}"
@@ -502,6 +725,10 @@ class InstanceRuntimeExecutor:
             args.extend(["--cap-add", capability])
         if input_volume is not None:
             args.extend(["--mount", f"type=volume,src={input_volume},dst=/input"])
+        if result_volume is not None:
+            if result_volume not in self._result_volumes:
+                raise self._reject("JUnit result volume is not controller-owned.")
+            args.extend(["--mount", f"type=volume,src={result_volume},dst=/results"])
         if read_only:
             args.append("--read-only")
         args.extend(["--entrypoint", command[0], self.runtime.image_id, *command[1:]])
@@ -519,6 +746,7 @@ class InstanceRuntimeExecutor:
             user=user,
             cap_add=cap_add,
             workspace_pythonpath=workspace_pythonpath,
+            result_volume=result_volume,
         )
         return name
 
@@ -533,6 +761,7 @@ class InstanceRuntimeExecutor:
         user: str,
         cap_add: tuple[str, ...],
         workspace_pythonpath: bool,
+        result_volume: str | None,
     ) -> None:
         payload = self._inspect_one(["container", "inspect", name], "container")
         config = _mapping(payload.get("Config"), "container config")
@@ -563,6 +792,8 @@ class InstanceRuntimeExecutor:
         expected_mounts = {(volume, "/workspace")}
         if input_volume is not None:
             expected_mounts.add((input_volume, "/input"))
+        if result_volume is not None:
+            expected_mounts.add((result_volume, "/results"))
         actual_mounts = (
             {
                 (item.get("Name"), item.get("Destination"))

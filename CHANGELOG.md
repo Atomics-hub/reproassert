@@ -4,7 +4,14 @@ All notable changes to ReproAssert will be documented here. The format follows [
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-07-12
+
 ### Added
+
+- A zero-key `reproassert demo` that automatically builds the pinned verifier image when missing
+  and runs the public issue #1 proof at its exact buggy commit.
+- A successor provider contract that states the candidate policy actually enforced by the
+  verifier while preserving the frozen v0.2.1 request profile byte-for-byte.
 
 - The complete public v0.2.1 result bundle: 20/20 frozen cases evaluated, 0/20 accepted, 17
   candidate-contract rejections, three exact-image evaluator rejections, and $0.688111 total spend.
@@ -15,12 +22,18 @@ All notable changes to ReproAssert will be documented here. The format follows [
 
 ### Changed
 
+- Made the README lead with a one-command, model-free proof and clarified that `HEAD` is pinned
+  automatically while historical buggy revisions remain an explicit user choice.
+
 - Bound the source-context path manifest to 128 KiB while retaining every selected source file,
   keeping conservative per-case model reservations within the frozen benchmark spend cap.
 - Replaced the unrun benchmark status across the README, docs, release notes, and proof site with
   the measured failed result and its strict no-L2/no-human/no-maintainer claim ceiling.
 
 ### Security
+
+- Replaced stopped-container JUnit copying with a quota-bounded, controller-owned result volume and
+  locked-down live reader so exact-image evidence survives container exit and still fails closed.
 
 - Bound resumed evaluator receipts to the exact generated candidate, target, evaluator commit, and
   aggregate; removed public executor injection; made terminal recovery idempotent; required exact

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import base64
 import json
 from dataclasses import replace
-from pathlib import Path
 from typing import ClassVar
 
 import pytest
@@ -49,6 +49,7 @@ class FakeDocker:
     ) -> None:
         self.commands = []
         self.containers: dict[str, dict[str, object]] = {}
+        self.volumes: dict[str, dict[str, object]] = {}
         self.created_policies: list[dict[str, object]] = []
         self.runtime = runtime or _runtime()
         self.policy = policy or SandboxPolicy(image=self.runtime.image_id)
@@ -81,9 +82,23 @@ class FakeDocker:
                 )
             )
         if args[:2] == ["volume", "inspect"]:
+            if args[2] in self.volumes:
+                return self._result(json.dumps([self.volumes[args[2]]]))
             return self._result("not found", returncode=1)
         if args[:2] == ["volume", "create"]:
+            labels = [args[index + 1] for index, value in enumerate(args) if value == "--label"]
+            options = [args[index + 1] for index, value in enumerate(args) if value == "--opt"]
+            name = args[-1]
+            self.volumes[name] = {
+                "Driver": "local",
+                "Scope": "local",
+                "Labels": dict(label.split("=", 1) for label in labels),
+                "Options": dict(option.split("=", 1) for option in options),
+            }
             return self._result(args[-1] + "\n")
+        if args[:2] == ["volume", "rm"]:
+            self.volumes.pop(args[2], None)
+            return self._result("")
         if args[0] == "create":
             name = args[args.index("--name") + 1]
             mount_args = [args[index + 1] for index, value in enumerate(args) if value == "--mount"]
@@ -115,23 +130,27 @@ class FakeDocker:
                         if value == "--cap-add"
                     ],
                     "CapDrop": ["ALL"],
-                    "Memory": self.policy.memory_bytes,
-                    "MemorySwap": self.policy.memory_bytes,
-                    "NanoCpus": int(self.policy.cpus * 1_000_000_000),
+                    "Memory": int(args[args.index("--memory") + 1]),
+                    "MemorySwap": int(args[args.index("--memory-swap") + 1]),
+                    "NanoCpus": int(float(args[args.index("--cpus") + 1]) * 1_000_000_000),
                     "NetworkMode": "none",
-                    "PidsLimit": self.policy.pids,
+                    "PidsLimit": int(args[args.index("--pids-limit") + 1]),
                     "ReadonlyRootfs": "--read-only" in args,
                     "SecurityOpt": ["no-new-privileges"],
-                    "Tmpfs": {
-                        "/tmp": (
-                            "rw,noexec,nosuid,nodev,"
-                            f"size={self.policy.tmpfs_bytes},"
-                            f"nr_inodes={self.policy.tmpfs_inodes}"
-                        )
-                    },
+                    "Tmpfs": (
+                        {
+                            "/tmp": (
+                                "rw,noexec,nosuid,nodev,"
+                                f"size={self.policy.tmpfs_bytes},"
+                                f"nr_inodes={self.policy.tmpfs_inodes}"
+                            )
+                        }
+                        if "--tmpfs" in args
+                        else None
+                    ),
                 },
                 "Image": image_id,
-                "State": {"OOMKilled": False},
+                "State": {"OOMKilled": False, "Running": False},
                 "Mounts": [
                     {
                         "Destination": mount["dst"],
@@ -149,11 +168,14 @@ class FakeDocker:
         if args[:3] == ["container", "rm", "--force"]:
             self.containers.pop(args[3], None)
             return self._result("")
-        if args[0] == "cp" and args[1].endswith(":/tmp/reproassert-junit.xml"):
-            Path(args[2]).write_bytes(
+        if args[0] == "exec" and "junit-anchor" in args[1]:
+            payload = (
                 b'<testsuite tests="1"><testcase><failure>expected</failure></testcase></testsuite>'
             )
-            return self._result("")
+            return self._result(base64.b64encode(payload).decode() + "\n")
+        if args[0] == "start" and args[1] != "--attach":
+            self.containers[args[1]]["State"] = {"OOMKilled": False, "Running": True}
+            return self._result(args[1] + "\n")
         if args[:2] == ["start", "--attach"] and "test-base" in args[2]:
             return self._result("one failed\n", returncode=1)
         return self._result("")
@@ -263,16 +285,24 @@ def test_pytest_execution_returns_bounded_junit_and_oom_evidence() -> None:
     assert result.junit_xml is not None
     assert b"<testcase>" in result.junit_xml
     assert result.oom_killed is False
-    assert any(command[0] == "cp" for command in fake.commands)
+    assert any(command[0] == "exec" and "junit-anchor" in command[1] for command in fake.commands)
+    pytest_create = next(
+        command
+        for command in fake.commands
+        if command[0] == "create" and "test-base" in " ".join(command)
+    )
+    assert "--junitxml=/results/junit.xml" in pytest_create
+    assert any("dst=/results" in value for value in pytest_create)
     executor.cleanup()
+    assert not fake.volumes
 
 
-def test_pytest_execution_allows_successful_copy_without_junit_file() -> None:
+def test_pytest_execution_allows_missing_junit_file() -> None:
     class MissingJunitDocker(FakeDocker):
         def run(self, args: list[str], **kwargs: object) -> CommandResult:
-            if args[0] == "cp" and args[1].endswith(":/tmp/reproassert-junit.xml"):
+            if args[0] == "exec" and "junit-anchor" in args[1]:
                 self.commands.append(list(args))
-                return self._result("")
+                return self._result("", returncode=20)
             return super().run(args, **kwargs)  # type: ignore[arg-type]
 
     fake = MissingJunitDocker()
@@ -290,6 +320,32 @@ def test_pytest_execution_allows_successful_copy_without_junit_file() -> None:
     )
 
     assert result.junit_xml is None
+
+
+@pytest.mark.parametrize(
+    "reader_result",
+    [
+        CommandResult(returncode=0, output="missing-newline"),
+        CommandResult(returncode=0, output="two\nlines\n"),
+        CommandResult(returncode=0, output="not-base64!\n"),
+        CommandResult(returncode=0, output=base64.b64encode(b"").decode() + "\n"),
+        CommandResult(returncode=0, output="", timed_out=True),
+        CommandResult(returncode=0, output="", output_truncated=True),
+    ],
+)
+def test_junit_reader_fails_closed_on_untrusted_transport(
+    reader_result: CommandResult,
+) -> None:
+    class UntrustedJunitDocker(FakeDocker):
+        def run(self, args: list[str], **kwargs: object) -> CommandResult:
+            if args[0] == "exec" and "junit-anchor" in args[1]:
+                self.commands.append(list(args))
+                return reader_result
+            return super().run(args, **kwargs)  # type: ignore[arg-type]
+
+    executor = _executor(UntrustedJunitDocker())
+
+    assert executor._read_junit("reproassert-junit-anchor") is None
     executor.cleanup()
 
 

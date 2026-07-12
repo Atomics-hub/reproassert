@@ -114,6 +114,7 @@ from reproassert.benchmark_v021_preregistration import (
     prepare_v021_preregistration,
     verify_v021_preregistration,
 )
+from reproassert.candidate import validate_candidate_payload
 from reproassert.dependency_execution_receipt import load_dependency_execution_receipt
 from reproassert.errors import ReproAssertError
 from reproassert.generator import (
@@ -3547,6 +3548,62 @@ def doctor(image: str) -> None:
     console.print(table)
     if not (status.cli_available and status.engine_available and status.image_available):
         raise click.exceptions.Exit(1)
+
+
+_DEMO_ISSUE_URL = "https://github.com/Atomics-hub/reproassert/issues/1"
+_DEMO_BUGGY_SHA = "7b03e8f7f4b7312f1785e7853892efa123e48699"
+
+
+@main.command("demo")
+@click.option(
+    "--run-base",
+    type=click.Path(path_type=Path, file_okay=False),
+    default=_default_run_base,
+    show_default="user state directory",
+)
+@click.option("--sandbox-image", default=DEFAULT_IMAGE, show_default=True)
+@click.option("--json-output", is_flag=True, help="Print the final summary as JSON.")
+def demo_command(run_base: Path, sandbox_image: str, json_output: bool) -> None:
+    """Run the public zero-key issue-to-failing-test proof end to end."""
+
+    try:
+        sandbox = DockerSandbox(SandboxPolicy(image=sandbox_image))
+        status = sandbox.doctor()
+        if not status.cli_available:
+            raise ReproAssertError("sandbox_unavailable", "Docker CLI is required.")
+        if not status.engine_available:
+            raise ReproAssertError("sandbox_unavailable", "Docker engine is not running.")
+        if not status.image_available:
+            if not json_output:
+                console.print("[dim]Building the pinned verifier image (first run only)...[/dim]")
+            sandbox.build_image()
+        sandbox.require_ready()
+        candidate = validate_candidate_payload(
+            {
+                "test_content": (
+                    "from examples.fixtures.buggy_slug.slugger import slugify\n\n\n"
+                    "def test_issue_1_reproduction() -> None:\n"
+                    '    assert slugify("Alpha  Beta") == "alpha-beta", '
+                    '"duplicate separators remain"\n'
+                ),
+                "expected_symptom": "duplicate separators remain",
+                "rationale": "Two adjacent spaces should collapse to one slug separator.",
+            },
+            issue_number=1,
+        )
+        result = run_issue_workflow(
+            _DEMO_ISSUE_URL,
+            requested_ref=_DEMO_BUGGY_SHA,
+            generator=StaticGenerator(candidate),
+            sandbox=sandbox,
+            run_base=run_base,
+            repeats=3,
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    _render_result(result, json_output=json_output)
+    if result.outcome != "repeatable_base_failure":
+        raise click.exceptions.Exit(2)
 
 
 @main.group("sandbox")

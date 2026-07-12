@@ -15,8 +15,9 @@ This is the complete public result projection from the first frozen v0.2.1 campa
 | L2 / human-reviewed / maintainer-validated | 0 / 0 / 0 |
 
 Cases 003, 007, and 011 each produced three base exit-code failures and three fixed-tree passes, but
-none produced the required stable attributable JUnit failure fingerprint. They are rejected, not
-near-miss successes. The other 17 outputs failed the preregistered candidate contract before
+the evaluator wrote JUnit into container tmpfs and attempted to copy it only after exit, when those
+bytes no longer existed. Without the required attributable fingerprint they remain rejected, not
+retroactive successes. The other 17 outputs failed the preregistered candidate contract before
 sandbox execution. The frozen rules were not relaxed and no case was regenerated after outcomes
 were visible.
 
