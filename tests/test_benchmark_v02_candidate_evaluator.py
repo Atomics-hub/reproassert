@@ -1192,6 +1192,9 @@ def test_candidate_evaluator_helpers_reject_malformed_execution_evidence() -> No
         )
         is None
     )
+    assert evaluator._candidate_fingerprint_with_validity(
+        result(exit_code=0, junit_xml=None), profile=pytest_profile
+    ) == (None, False)
 
     with pytest.raises(PolicyRejection, match="phase evidence is invalid"):
         evaluator._verify_evidence({})

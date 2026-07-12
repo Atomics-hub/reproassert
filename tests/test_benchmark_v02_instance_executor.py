@@ -267,6 +267,32 @@ def test_pytest_execution_returns_bounded_junit_and_oom_evidence() -> None:
     executor.cleanup()
 
 
+def test_pytest_execution_allows_successful_copy_without_junit_file() -> None:
+    class MissingJunitDocker(FakeDocker):
+        def run(self, args: list[str], **kwargs: object) -> CommandResult:
+            if args[0] == "cp" and args[1].endswith(":/tmp/reproassert-junit.xml"):
+                self.commands.append(list(args))
+                return self._result("")
+            return super().run(args, **kwargs)  # type: ignore[arg-type]
+
+    fake = MissingJunitDocker()
+    executor = _executor(fake)
+    executor.acquire()
+    executor.prepare_workspaces(fixed_patch=b"diff --git a/a b/a\n")
+    executor.stage_candidate(
+        relative_path="tests/test_reproassert_issue_14305.py",
+        content=b"def test_repro():\n    assert False\n",
+    )
+
+    result = executor.run_pytest(
+        workspace="base",
+        targets=("tests/test_reproassert_issue_14305.py::test_repro",),
+    )
+
+    assert result.junit_xml is None
+    executor.cleanup()
+
+
 @pytest.mark.parametrize(
     "target",
     [

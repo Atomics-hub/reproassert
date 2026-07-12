@@ -119,6 +119,17 @@ def evaluate_v021_automated_campaign(
 ) -> VerifiedV021AutomatedEvaluationSet:
     """Production all-20 evaluation using only the built-in sandbox evaluator."""
 
+    def verify_live_receipt(path: Path) -> CandidateEvaluationReceipt:
+        case_id = path.name.removesuffix(".evaluator.json")
+        inputs = case_inputs.get(case_id)
+        if inputs is None:
+            raise _reject("Evaluator receipt is for an unknown case.")
+        return verify_instance_candidate_receipt(
+            path,
+            automated_evidence_authority=automated_evidence_authority,
+            expected_capability=inputs.evaluator_capability,
+        )
+
     issued = _evaluate_v021_automated_campaign_with_ports(
         plan=plan,
         barrier=barrier,
@@ -131,7 +142,7 @@ def evaluate_v021_automated_campaign(
         executed_at=executed_at,
         tool_git_sha=tool_git_sha,
         evaluator=evaluate_instance_candidate,
-        receipt_verifier=verify_instance_candidate_receipt,
+        receipt_verifier=verify_live_receipt,
         issuance=_LIVE_ISSUANCE,
     )
     if type(issued) is not VerifiedV021AutomatedEvaluationSet:
@@ -223,13 +234,15 @@ def _evaluate_v021_automated_campaign_with_ports(
         ):
             raise _reject("Provider response has stale or cross-case bindings.")
         output = response.get("output")
+        if not isinstance(output, str):
+            raise _reject("Provider response output is not a string.")
         inputs = case_inputs[case_id]
         contract = v02_candidate_contract(case_id=case_id, issue_number=inputs.issue_number)
         evaluator_path = receipt_root / f"{case_id}.evaluator.json"
         public_path = receipt_root / f"{case_id}.json"
         try:
             candidate = parse_v021_candidate_output(
-                cast(str, output),
+                output,
                 issue_number=inputs.issue_number,
                 required_test_function=contract.test_function,
             )
@@ -237,8 +250,8 @@ def _evaluate_v021_automated_campaign_with_ports(
             if evaluator_path.exists() or evaluator_path.is_symlink():
                 raise _reject("Contract rejection conflicts with an evaluator receipt.") from None
             candidate_record: dict[str, object] = {
-                "bytes": len(cast(str, output).encode("utf-8")),
-                "output_sha256": hashlib.sha256(cast(str, output).encode()).hexdigest(),
+                "bytes": len(output.encode("utf-8")),
+                "output_sha256": hashlib.sha256(output.encode()).hexdigest(),
                 "status": "rejected_before_sandbox",
             }
             evaluator_receipt_sha256: str | None = None
@@ -251,14 +264,11 @@ def _evaluate_v021_automated_campaign_with_ports(
                 content=candidate.test_content.encode("utf-8"),
                 test_function=contract.test_function,
             )
-            if evaluator_path.exists() and public_path.exists():
+            if evaluator_path.exists() and not evaluator_path.is_symlink():
                 verified_evaluation = receipt_verifier(evaluator_path)
-            elif (
-                evaluator_path.exists()
-                or evaluator_path.is_symlink()
-                or public_path.exists()
-                or public_path.is_symlink()
-            ):
+                if public_path.is_symlink():
+                    raise _reject("Case evaluation receipt path is unsafe.")
+            elif evaluator_path.is_symlink() or public_path.exists() or public_path.is_symlink():
                 raise _reject("Partial evaluation receipt requires reconciliation.")
             else:
                 evaluated = evaluator(
