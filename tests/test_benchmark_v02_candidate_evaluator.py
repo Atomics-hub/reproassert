@@ -1180,6 +1180,19 @@ def test_candidate_evaluator_helpers_reject_malformed_execution_evidence() -> No
         with pytest.raises(PolicyRejection, match=message):
             evaluator._junit_fingerprint(result(junit_xml=junit), expected_failure=expected_failure)
 
+    pytest_profile = evaluator.CandidateExecutionProfile(
+        profile_id="pytest-v1",
+        command_profile="pytest-v1",
+        staging_path="reproassert_tests/test_issue_001.py",
+        required_function="test_reproassert_issue_001",
+    )
+    assert (
+        evaluator._candidate_fingerprint_or_none(
+            result(exit_code=1, junit_xml=None), profile=pytest_profile
+        )
+        is None
+    )
+
     with pytest.raises(PolicyRejection, match="phase evidence is invalid"):
         evaluator._verify_evidence({})
     invalid_evidence = evaluator._evidence(result())

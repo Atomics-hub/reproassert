@@ -1163,16 +1163,23 @@ def _candidate_fingerprint_or_none(
     ):
         return None
     if profile.profile_id == "pytest-v1":
-        return _junit_fingerprint(result, expected_failure=result.exit_code == 1)
+        try:
+            return _junit_fingerprint(result, expected_failure=result.exit_code == 1)
+        except PolicyRejection:
+            # The sandbox completed, but the candidate did not produce the exact
+            # assertion evidence required for attribution.  This is a scored
+            # candidate failure, not a controller failure: preserve the bounded
+            # run evidence and let _classify_candidate reject the fingerprint.
+            return None
     if result.exit_code == 0:
         return None
     if profile.required_function not in result.output:
-        raise _reject("SymPy native output does not identify the required test function.")
+        return None
     normalized = re.sub(r"0x[0-9a-fA-F]+", "0xADDR", result.output)
     normalized = re.sub(r"\b[0-9]+(?:\.[0-9]+)?(?:ms|s| seconds?)\b", "DURATION", normalized)
     normalized = re.sub(r"[ \t]+", " ", normalized).strip()
     if not normalized:
-        raise _reject("SymPy native base failure has no attributable output.")
+        return None
     return hashlib.sha256(normalized.encode()).hexdigest()
 
 
