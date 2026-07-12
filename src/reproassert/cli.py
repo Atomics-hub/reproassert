@@ -110,6 +110,10 @@ from reproassert.benchmark_v021_amendment_review import (
     verify_v021_amendment_review_consensus,
     verify_v021_amendment_review_handoff,
 )
+from reproassert.benchmark_v021_preregistration import (
+    prepare_v021_preregistration,
+    verify_v021_preregistration,
+)
 from reproassert.dependency_execution_receipt import load_dependency_execution_receipt
 from reproassert.errors import ReproAssertError
 from reproassert.generator import (
@@ -1145,6 +1149,249 @@ def benchmark_verify_v021_amendment_review_consensus(
     except (ReproAssertError, OSError, ValueError) as exc:
         _fail(exc)
     result = asdict(verified)
+    result["verified"] = True
+    click.echo(json.dumps(result, indent=2, sort_keys=True, default=str))
+
+
+def _v021_preregistration_options(function: Callable[..., Any]) -> Callable[..., Any]:
+    options = (
+        click.option(
+            "--amendment-consensus",
+            type=click.Path(path_type=Path, exists=True, dir_okay=False),
+            required=True,
+        ),
+        click.option(
+            "--amendment-handoff",
+            type=click.Path(path_type=Path, exists=True, dir_okay=False),
+            required=True,
+        ),
+        click.option(
+            "--cases-preparation",
+            type=click.Path(path_type=Path, exists=True, dir_okay=False),
+            required=True,
+        ),
+        click.option(
+            "--cohort-plan",
+            type=click.Path(path_type=Path, exists=True, dir_okay=False),
+            required=True,
+        ),
+        click.option(
+            "--chronology",
+            type=click.Path(path_type=Path, exists=True, dir_okay=False),
+            required=True,
+        ),
+        click.option(
+            "--issue-responses-root",
+            type=click.Path(path_type=Path, exists=True, file_okay=False),
+            required=True,
+        ),
+        click.option(
+            "--mapping-consensus",
+            type=click.Path(path_type=Path, exists=True, dir_okay=False),
+            required=True,
+        ),
+        click.option(
+            "--capability-index",
+            type=click.Path(path_type=Path, exists=True, dir_okay=False),
+            required=True,
+        ),
+        click.option(
+            "--pricing-snapshot",
+            type=click.Path(path_type=Path, exists=True, dir_okay=False),
+            required=True,
+        ),
+    )
+    for option in reversed(options):
+        function = option(function)
+    return _v021_review_chain_options(function)
+
+
+def _verified_v021_preregistration_chain(
+    *,
+    amendment_receipt: Path,
+    original_gold_specs: Path,
+    amended_gold_specs: Path,
+    original_gold_smoke_receipt: Path,
+    amended_gold_smoke_receipt: Path,
+    instance_runtime_manifest: Path,
+    expected_manifest_sha256: str,
+    hidden_extraction_receipt: Path,
+    mapping_handoff: Path,
+    mapping_preparation: Path,
+    amendment_handoff: Path,
+    amendment_consensus: Path,
+) -> tuple[Any, Any]:
+    amendment = _verified_pending_amendment(
+        amendment_receipt,
+        original_gold_specs,
+        amended_gold_specs,
+        original_gold_smoke_receipt,
+        amended_gold_smoke_receipt,
+        instance_runtime_manifest,
+        expected_manifest_sha256,
+        hidden_extraction_receipt,
+    )
+    handoff = verify_v021_amendment_review_handoff(
+        amendment_handoff,
+        amendment_authority=amendment,
+        mapping_handoff_path=mapping_handoff,
+        mapping_preparation_path=mapping_preparation,
+    )
+    consensus = verify_v021_amendment_review_consensus(
+        amendment_consensus, handoff_authority=handoff
+    )
+    return amendment, consensus
+
+
+def _v021_preregistration_result(verified: Any) -> dict[str, object]:
+    """Project verifier authority without serializing its private issuer sentinel."""
+
+    return {
+        "approval_statement": verified.approval_statement,
+        "approval_statement_sha256": verified.approval_statement_sha256,
+        "case_count": verified.case_count,
+        "dependency_ready_count": verified.dependency_ready_count,
+        "execution_enabled": verified.execution_enabled,
+        "lineage_commitment_sha256": verified.lineage_commitment_sha256,
+        "path": str(verified.path),
+        "provider_calls": verified.provider_calls,
+        "sha256": verified.sha256,
+    }
+
+
+@benchmark_group.command("prepare-v021-preregistration")
+@click.argument("amendment_receipt", type=click.Path(path_type=Path, exists=True, dir_okay=False))
+@_v021_preregistration_options
+@click.option("--frozen-at", required=True)
+@click.option("--tool-git-sha", required=True)
+@click.option("--output", type=click.Path(path_type=Path, dir_okay=False), required=True)
+def benchmark_prepare_v021_preregistration(
+    amendment_receipt: Path,
+    original_gold_specs: Path,
+    amended_gold_specs: Path,
+    original_gold_smoke_receipt: Path,
+    amended_gold_smoke_receipt: Path,
+    instance_runtime_manifest: Path,
+    expected_manifest_sha256: str,
+    hidden_extraction_receipt: Path,
+    mapping_handoff: Path,
+    mapping_preparation: Path,
+    amendment_consensus: Path,
+    amendment_handoff: Path,
+    cases_preparation: Path,
+    cohort_plan: Path,
+    chronology: Path,
+    issue_responses_root: Path,
+    mapping_consensus: Path,
+    capability_index: Path,
+    pricing_snapshot: Path,
+    frozen_at: str,
+    tool_git_sha: str,
+    output: Path,
+) -> None:
+    """Freeze approved v0.2.1 evidence while keeping execution unavailable."""
+    try:
+        _ensure_private_output_root(output.parent)
+        amendment, consensus = _verified_v021_preregistration_chain(
+            amendment_receipt=amendment_receipt,
+            original_gold_specs=original_gold_specs,
+            amended_gold_specs=amended_gold_specs,
+            original_gold_smoke_receipt=original_gold_smoke_receipt,
+            amended_gold_smoke_receipt=amended_gold_smoke_receipt,
+            instance_runtime_manifest=instance_runtime_manifest,
+            expected_manifest_sha256=expected_manifest_sha256,
+            hidden_extraction_receipt=hidden_extraction_receipt,
+            mapping_handoff=mapping_handoff,
+            mapping_preparation=mapping_preparation,
+            amendment_handoff=amendment_handoff,
+            amendment_consensus=amendment_consensus,
+        )
+        verified = prepare_v021_preregistration(
+            amendment_authority=amendment,
+            amendment_consensus_authority=consensus,
+            cases_preparation_path=cases_preparation,
+            cohort_plan_path=cohort_plan,
+            chronology_path=chronology,
+            hidden_extraction_receipt=hidden_extraction_receipt,
+            issue_responses_root=issue_responses_root,
+            mapping_preparation_path=mapping_preparation,
+            mapping_consensus_path=mapping_consensus,
+            capability_index_path=capability_index,
+            runtime_manifest_path=instance_runtime_manifest,
+            expected_runtime_manifest_sha256=expected_manifest_sha256,
+            gold_smoke_receipt_path=amended_gold_smoke_receipt,
+            pricing_snapshot_path=pricing_snapshot,
+            frozen_at=frozen_at,
+            tool_git_sha=tool_git_sha,
+            output_path=output,
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    click.echo(json.dumps(_v021_preregistration_result(verified), indent=2, sort_keys=True))
+
+
+@benchmark_group.command("verify-v021-preregistration")
+@click.argument("preregistration", type=click.Path(path_type=Path, exists=True, dir_okay=False))
+@click.argument("amendment_receipt", type=click.Path(path_type=Path, exists=True, dir_okay=False))
+@_v021_preregistration_options
+def benchmark_verify_v021_preregistration(
+    preregistration: Path,
+    amendment_receipt: Path,
+    original_gold_specs: Path,
+    amended_gold_specs: Path,
+    original_gold_smoke_receipt: Path,
+    amended_gold_smoke_receipt: Path,
+    instance_runtime_manifest: Path,
+    expected_manifest_sha256: str,
+    hidden_extraction_receipt: Path,
+    mapping_handoff: Path,
+    mapping_preparation: Path,
+    amendment_consensus: Path,
+    amendment_handoff: Path,
+    cases_preparation: Path,
+    cohort_plan: Path,
+    chronology: Path,
+    issue_responses_root: Path,
+    mapping_consensus: Path,
+    capability_index: Path,
+    pricing_snapshot: Path,
+) -> None:
+    """Freshly verify the disabled v0.2.1 preregistration lineage."""
+    try:
+        amendment, consensus = _verified_v021_preregistration_chain(
+            amendment_receipt=amendment_receipt,
+            original_gold_specs=original_gold_specs,
+            amended_gold_specs=amended_gold_specs,
+            original_gold_smoke_receipt=original_gold_smoke_receipt,
+            amended_gold_smoke_receipt=amended_gold_smoke_receipt,
+            instance_runtime_manifest=instance_runtime_manifest,
+            expected_manifest_sha256=expected_manifest_sha256,
+            hidden_extraction_receipt=hidden_extraction_receipt,
+            mapping_handoff=mapping_handoff,
+            mapping_preparation=mapping_preparation,
+            amendment_handoff=amendment_handoff,
+            amendment_consensus=amendment_consensus,
+        )
+        verified = verify_v021_preregistration(
+            preregistration,
+            amendment_authority=amendment,
+            amendment_consensus_authority=consensus,
+            cases_preparation_path=cases_preparation,
+            cohort_plan_path=cohort_plan,
+            chronology_path=chronology,
+            hidden_extraction_receipt=hidden_extraction_receipt,
+            issue_responses_root=issue_responses_root,
+            mapping_preparation_path=mapping_preparation,
+            mapping_consensus_path=mapping_consensus,
+            capability_index_path=capability_index,
+            runtime_manifest_path=instance_runtime_manifest,
+            expected_runtime_manifest_sha256=expected_manifest_sha256,
+            gold_smoke_receipt_path=amended_gold_smoke_receipt,
+            pricing_snapshot_path=pricing_snapshot,
+        )
+    except (ReproAssertError, OSError, ValueError) as exc:
+        _fail(exc)
+    result = _v021_preregistration_result(verified)
     result["verified"] = True
     click.echo(json.dumps(result, indent=2, sort_keys=True, default=str))
 

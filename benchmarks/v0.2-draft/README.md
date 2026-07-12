@@ -1,5 +1,10 @@
 # Benchmark v0.2 draft
 
+> v0.2.1 preparation note: an approved amendment can now be frozen with
+> `prepare-v021-preregistration`, but the emitted artifact remains
+> `execution_disabled_until_v021_runtime_migration`. There is intentionally no
+> v0.2.1 run command. See [ADR 0019](../../docs/decisions/0019-approved-v021-preregistration-stays-provider-disabled.md).
+
 This directory contains the public selection freeze for the unrun v0.2 benchmark. It is not a
 campaign result: model outputs remain 0/20 and maintainer validations remain zero.
 
