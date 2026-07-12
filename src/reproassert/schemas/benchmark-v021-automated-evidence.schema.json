@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reproassert.dev/schemas/benchmark-v021-automated-evidence.schema.json",
+  "title": "ReproAssert v0.2.1 Automated Oracle Evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["algorithm", "benchmark_version", "case_count", "claims", "evidence", "lineage_commitment_sha256", "policy", "receipt_sha256", "schema_version", "status", "tool_git_sha", "verified_at"],
+  "properties": {
+    "algorithm": {"const": "reproassert-v021-automated-oracle-evidence-v1"},
+    "benchmark_version": {"const": "0.2.1"},
+    "case_count": {"const": 20},
+    "claims": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["automated_oracle_validated", "evaluator_preflight_ready_count", "human_reviewed", "infrastructure_failure_count", "maintainer_validated", "mapping_packet_count", "model_or_provider_invoked", "provider_calls"],
+      "properties": {
+        "automated_oracle_validated": {"const": true},
+        "evaluator_preflight_ready_count": {"const": 20},
+        "human_reviewed": {"const": false},
+        "infrastructure_failure_count": {"const": 0},
+        "maintainer_validated": {"const": false},
+        "mapping_packet_count": {"const": 20},
+        "model_or_provider_invoked": {"const": false},
+        "provider_calls": {"const": 0}
+      }
+    },
+    "evidence": {"type": "object", "minProperties": 11},
+    "lineage_commitment_sha256": {"$ref": "#/$defs/sha256"},
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["human_consensus_used", "human_identity_fields_allowed", "mapping_decisions_generated", "oracle_bytes_public", "pricing_effective_at", "pricing_model"],
+      "properties": {
+        "human_consensus_used": {"const": false},
+        "human_identity_fields_allowed": {"const": false},
+        "mapping_decisions_generated": {"const": false},
+        "oracle_bytes_public": {"const": false},
+        "pricing_effective_at": {"type": "string"},
+        "pricing_model": {"const": "gpt-5.4-mini-2026-03-17"}
+      }
+    },
+    "receipt_sha256": {"$ref": "#/$defs/sha256"},
+    "schema_version": {"const": "1.0.0"},
+    "status": {"const": "automated_oracle_validated_provider_disabled"},
+    "tool_git_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "verified_at": {"type": "string", "format": "date-time"}
+  },
+  "$defs": {"sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}
+}

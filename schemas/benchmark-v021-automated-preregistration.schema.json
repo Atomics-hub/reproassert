@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reproassert.dev/schemas/benchmark-v021-automated-preregistration.schema.json",
+  "title": "ReproAssert v0.2.1 Automated Oracle Preregistration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["algorithm", "approval", "benchmark_version", "case_count", "claims", "evidence", "frozen_at", "lineage_commitment_sha256", "policy", "preregistration_sha256", "schema_version", "status", "tool_git_sha"],
+  "properties": {
+    "algorithm": {"const": "reproassert-v021-automated-oracle-preregistration-v1"},
+    "approval": {"type": "object", "required": ["authorized", "required_exact_statement", "required_exact_statement_sha256"], "additionalProperties": false, "properties": {"authorized": {"const": false}, "required_exact_statement": {"type": "string", "minLength": 100}, "required_exact_statement_sha256": {"$ref": "#/$defs/sha256"}}},
+    "benchmark_version": {"const": "0.2.1"},
+    "case_count": {"const": 20},
+    "claims": {"type": "object", "required": ["automated_oracle_validated", "dependency_ready_count", "evaluator_preflight_ready_count", "human_reviewed", "infrastructure_failure_count", "maintainer_validated", "model_or_provider_invoked", "provider_calls"], "additionalProperties": false, "properties": {"automated_oracle_validated": {"const": true}, "dependency_ready_count": {"const": 20}, "evaluator_preflight_ready_count": {"const": 20}, "human_reviewed": {"const": false}, "infrastructure_failure_count": {"const": 0}, "maintainer_validated": {"const": false}, "model_or_provider_invoked": {"const": false}, "provider_calls": {"const": 0}}},
+    "evidence": {"type": "object", "required": ["automated_evidence_raw_sha256", "capability_index_raw_sha256", "internal_commitments", "pricing_snapshot_raw_sha256", "runtime_manifest_sha256"]},
+    "frozen_at": {"type": "string", "format": "date-time"},
+    "lineage_commitment_sha256": {"$ref": "#/$defs/sha256"},
+    "policy": {"type": "object", "required": ["case_cap_usd", "case_count", "credential_fields_allowed", "execution_enabled", "model", "overage_allowed", "pricing_effective_at", "pricing_snapshot_status", "total_cap_usd"], "additionalProperties": false, "properties": {"case_cap_usd": {"const": "0.25"}, "case_count": {"const": 20}, "credential_fields_allowed": {"const": false}, "execution_enabled": {"const": false}, "model": {"const": "gpt-5.4-mini-2026-03-17"}, "overage_allowed": {"const": false}, "pricing_effective_at": {"type": "string"}, "pricing_snapshot_status": {"const": "exact_public_snapshot_hash_bound"}, "total_cap_usd": {"const": "5.00"}}},
+    "preregistration_sha256": {"$ref": "#/$defs/sha256"},
+    "schema_version": {"const": "1.0.0"},
+    "status": {"const": "automated_oracle_preregistered_execution_requires_explicit_authorization"},
+    "tool_git_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"}
+  },
+  "$defs": {"sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}
+}
