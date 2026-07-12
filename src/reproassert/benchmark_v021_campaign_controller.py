@@ -17,7 +17,7 @@ from reproassert.benchmark_v021_runtime import (
     V021GenerationResult,
     V021LedgerPort,
     VerifiedV021RuntimePlan,
-    execute_v021_case,
+    _execute_v021_case_with_ports,
     require_v021_runtime_plan,
 )
 from reproassert.errors import PolicyRejection
@@ -47,7 +47,68 @@ class V021CampaignRun:
     barrier: VerifiedV021GenerationBarrier | None
 
 
-def run_v021_generation_campaign(
+def require_v021_generation_barrier(value: object) -> VerifiedV021GenerationBarrier:
+    """Require the controller-issued all-20 terminal generation barrier."""
+
+    if type(value) is not VerifiedV021GenerationBarrier or value._issuer is not _BARRIER_ISSUER:
+        raise _reject("Controller-issued v0.2.1 generation barrier is required.")
+    expected = tuple(f"rk-v0.2-{index:03d}" for index in range(1, 21))
+    if tuple(value.result_sha256_by_case) != expected:
+        raise _reject("Generation barrier does not preserve the exact 20-case denominator.")
+    for digest in (
+        value.sha256,
+        value.authorization_sha256,
+        value.request_set_sha256,
+        *value.result_sha256_by_case.values(),
+    ):
+        if (
+            not isinstance(digest, str)
+            or len(digest) != 64
+            or any(character not in "0123456789abcdef" for character in digest)
+        ):
+            raise _reject("Generation barrier contains an invalid digest.")
+    record = {
+        "algorithm": BARRIER_ALGORITHM,
+        "authorization_sha256": value.authorization_sha256,
+        "request_set_sha256": value.request_set_sha256,
+        "results": value.result_sha256_by_case,
+    }
+    if hashlib.sha256(_canonical(record)).hexdigest() != value.sha256:
+        raise _reject("Generation barrier identity is invalid.")
+    return value
+
+
+def run_v021_openai_generation_campaign(
+    *,
+    plan: VerifiedV021RuntimePlan,
+    authorization: ExecutionAuthorization,
+    response_directory: Path,
+    result_directory: Path,
+    progress_path: Path,
+) -> V021CampaignRun:
+    """Production entry: concrete irreversible ledger plus frozen OpenAI adapter only."""
+
+    from reproassert.benchmark_v021_openai_adapter import (
+        V021_FROZEN_OPENAI_PRICING,
+        BoundedV021OpenAIAdapter,
+        invoke_v021_openai_provider,
+    )
+    from reproassert.benchmark_v021_runtime_ledger import V021SpendLedgerPort
+
+    ledger = V021SpendLedgerPort(authorization)
+    adapter = BoundedV021OpenAIAdapter(pricing=V021_FROZEN_OPENAI_PRICING)
+    return _run_v021_generation_campaign_with_ports(
+        plan=plan,
+        authorization=authorization,
+        ledger=ledger,
+        provider=lambda request: invoke_v021_openai_provider(adapter, request),
+        response_directory=response_directory,
+        result_directory=result_directory,
+        progress_path=progress_path,
+    )
+
+
+def _run_v021_generation_campaign_with_ports(
     *,
     plan: VerifiedV021RuntimePlan,
     authorization: ExecutionAuthorization,
@@ -74,7 +135,7 @@ def run_v021_generation_campaign(
     try:
         results: list[V021GenerationResult] = []
         for row in verified.cases:
-            result = execute_v021_case(
+            result = _execute_v021_case_with_ports(
                 plan=verified,
                 authorization=authorization,
                 ledger=ledger,

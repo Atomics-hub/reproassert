@@ -43,6 +43,10 @@ from reproassert.benchmark_v02_instance_runtime import (
     InstanceRuntimeManifest,
     load_instance_runtime_manifest,
 )
+from reproassert.benchmark_v021_automated_evidence import (
+    VerifiedV021AutomatedEvidence,
+    require_v021_automated_evidence,
+)
 from reproassert.errors import PolicyRejection
 from reproassert.safeio import open_regular_file, write_bytes_exclusive
 from reproassert.sandbox import SandboxPolicy
@@ -112,6 +116,9 @@ class CandidateEvaluationReceipt:
     classification: str
     accepted: bool
     evaluator_wall_ms: int
+    candidate_sha256: str
+    candidate_target: str
+    tool_git_sha: str
 
 
 @dataclass(frozen=True)
@@ -266,14 +273,49 @@ def _require_candidate_execution_authority(
     evaluator_capability: VerifiedV02ExactImageEvaluatorCapability,
     *,
     amendment_authority: VerifiedV02BenchmarkAmendment | None,
+    automated_evidence_authority: VerifiedV021AutomatedEvidence | None,
+    tool_git_sha: str,
 ) -> VerifiedV02ExactImageEvaluatorCapability:
     """Fail before private resolution or sandbox construction on unapproved v0.2.1 evidence."""
 
     capability = require_v02_exact_image_evaluator_capability(evaluator_capability)
     algorithm = getattr(capability, "capability_algorithm", None)
     if algorithm != CAPABILITY_ALGORITHM_V2:
-        if amendment_authority is not None:
+        if amendment_authority is not None or automated_evidence_authority is not None:
             raise _reject("Legacy candidate execution cannot accept amendment authority.")
+        return capability
+    if automated_evidence_authority is not None:
+        if amendment_authority is not None:
+            raise _reject("Candidate execution requires exactly one v0.2.1 authority mode.")
+        automated = require_v021_automated_evidence(automated_evidence_authority)
+        raw = _read_regular_bounded(automated.path, MAX_HIDDEN_PATCH_BYTES, "automated evidence")
+        if hashlib.sha256(raw).hexdigest() != automated.sha256:
+            raise _reject("Automated evidence changed after authority verification.")
+        try:
+            record = json.loads(raw)
+        except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as exc:
+            raise _reject("Automated evidence is invalid JSON.") from exc
+        if not isinstance(record, dict) or raw != _canonical(record) + b"\n":
+            raise _reject("Automated evidence is not canonical JSON.")
+        claims = record.get("claims")
+        evidence = record.get("evidence")
+        if not isinstance(claims, dict) or not isinstance(evidence, dict):
+            raise _reject("Automated evidence fields are invalid.")
+        commitments = evidence.get("internal_commitments")
+        if not isinstance(commitments, dict):
+            raise _reject("Automated evidence commitments are invalid.")
+        if (
+            claims.get("automated_oracle_validated") is not True
+            or claims.get("human_reviewed") is not False
+            or claims.get("maintainer_validated") is not False
+            or capability.benchmark_amendment_review_status != "pending"
+            or capability.benchmark_amendment_receipt_sha256 != automated.amendment_receipt_sha256
+            or capability.runtime_manifest_sha256 != evidence.get("runtime_manifest_sha256")
+            or capability.hidden_extraction_receipt_sha256
+            != commitments.get("hidden_extraction_receipt_sha256")
+            or capability.gold_smoke_receipt_sha256 != evidence.get("gold_smoke_raw_sha256")
+        ):
+            raise _reject("Automated authority does not bind the exact evaluator evidence.")
         return capability
     amendment = require_approved_v02_benchmark_amendment(amendment_authority)
     if (
@@ -300,8 +342,8 @@ def evaluate_instance_candidate(
     output_path: Path,
     executed_at: str,
     tool_git_sha: str,
-    executor_factory: ExecutorFactory | None = None,
     amendment_authority: VerifiedV02BenchmarkAmendment | None = None,
+    automated_evidence_authority: VerifiedV021AutomatedEvidence | None = None,
 ) -> CandidateEvaluationReceipt:
     """Resolve private inputs from verified authority, then evaluate one candidate.
 
@@ -310,9 +352,49 @@ def evaluate_instance_candidate(
     files; the evaluator derives and byte-verifies the private inputs internally.
     """
 
+    return _evaluate_instance_candidate_with_ports(
+        evaluator_capability=evaluator_capability,
+        verified_hidden=verified_hidden,
+        gold_smoke_receipt_path=gold_smoke_receipt_path,
+        gold_specs_path=gold_specs_path,
+        manifest_path=manifest_path,
+        expected_manifest_sha256=expected_manifest_sha256,
+        case_id=case_id,
+        candidate=candidate,
+        output_path=output_path,
+        executed_at=executed_at,
+        tool_git_sha=tool_git_sha,
+        amendment_authority=amendment_authority,
+        automated_evidence_authority=automated_evidence_authority,
+        executor_factory=None,
+    )
+
+
+def _evaluate_instance_candidate_with_ports(
+    *,
+    evaluator_capability: VerifiedV02ExactImageEvaluatorCapability,
+    verified_hidden: VerifiedV02HiddenExtraction,
+    gold_smoke_receipt_path: Path,
+    gold_specs_path: Path,
+    manifest_path: Path,
+    expected_manifest_sha256: str,
+    case_id: str,
+    candidate: CandidateArtifact,
+    output_path: Path,
+    executed_at: str,
+    tool_git_sha: str,
+    amendment_authority: VerifiedV02BenchmarkAmendment | None = None,
+    automated_evidence_authority: VerifiedV021AutomatedEvidence | None = None,
+    executor_factory: ExecutorFactory | None = None,
+) -> CandidateEvaluationReceipt:
+    """Private test seam; production always uses the built-in Docker executor."""
+
     evaluator_started_monotonic = time.monotonic()
     capability = _require_candidate_execution_authority(
-        evaluator_capability, amendment_authority=amendment_authority
+        evaluator_capability,
+        amendment_authority=amendment_authority,
+        automated_evidence_authority=automated_evidence_authority,
+        tool_git_sha=tool_git_sha,
     )
     hidden = _resolve_hidden_evaluator_inputs(
         evaluator_capability=capability,
@@ -333,6 +415,7 @@ def evaluate_instance_candidate(
         executor_factory=executor_factory,
         evaluator_started_monotonic=evaluator_started_monotonic,
         amendment_authority=amendment_authority,
+        automated_evidence_authority=automated_evidence_authority,
     )
 
 
@@ -350,6 +433,7 @@ def _evaluate_instance_candidate_with_resolved_hidden(
     executor_factory: ExecutorFactory | None = None,
     evaluator_started_monotonic: float | None = None,
     amendment_authority: VerifiedV02BenchmarkAmendment | None = None,
+    automated_evidence_authority: VerifiedV021AutomatedEvidence | None = None,
 ) -> CandidateEvaluationReceipt:
     """Execute with private inputs already resolved by the scored public boundary.
 
@@ -362,7 +446,10 @@ def _evaluate_instance_candidate_with_resolved_hidden(
         time.monotonic() if evaluator_started_monotonic is None else evaluator_started_monotonic
     )
     capability = _require_candidate_execution_authority(
-        evaluator_capability, amendment_authority=amendment_authority
+        evaluator_capability,
+        amendment_authority=amendment_authority,
+        automated_evidence_authority=automated_evidence_authority,
+        tool_git_sha=tool_git_sha,
     )
     checked_case = _case_id(case_id)
     if capability.case_id != checked_case:
@@ -442,6 +529,7 @@ def _evaluate_instance_candidate_with_resolved_hidden(
     base_results: list[InstancePytestResult] = []
     fixed_results: list[InstancePytestResult] = []
     base_fingerprints: list[str | None] = []
+    candidate_evidence_validity: list[bool] = []
     for workspace in RUN_ORDER:
         # Each scored observation receives new base/fixed volumes. Nothing from a prior collect or
         # test process can survive into the next observation.
@@ -465,7 +553,10 @@ def _evaluate_instance_candidate_with_resolved_hidden(
                     sympy_test_file=profile.staging_path,
                     sympy_test_identifier=profile.required_function,
                 )
-            fingerprint = _candidate_fingerprint_or_none(result, profile=profile)
+            fingerprint, evidence_valid = _candidate_fingerprint_with_validity(
+                result, profile=profile
+            )
+            candidate_evidence_validity.append(evidence_valid)
             candidate_runs.append(
                 {
                     "collection": collection_evidence,
@@ -483,6 +574,10 @@ def _evaluate_instance_candidate_with_resolved_hidden(
     classification, accepted, reason = _classify_candidate(
         tuple(base_results), tuple(fixed_results), tuple(base_fingerprints)
     )
+    if accepted and not all(candidate_evidence_validity):
+        classification = "wrong_or_flaky_failure"
+        accepted = False
+        reason = "A candidate run lacked attributable assertion evidence."
 
     candidate_sha256 = hashlib.sha256(candidate.content).hexdigest()
     record: dict[str, object] = {
@@ -551,11 +646,19 @@ def _evaluate_instance_candidate_with_resolved_hidden(
         classification=classification,
         accepted=accepted,
         evaluator_wall_ms=cast(int, record["evaluator_wall_ms"]),
+        candidate_sha256=candidate_sha256,
+        candidate_target=candidate_target,
+        tool_git_sha=cast(str, record["tool_git_sha"]),
     )
 
 
 def verify_instance_candidate_receipt(
-    path: Path, *, raw: bytes | None = None
+    path: Path,
+    *,
+    raw: bytes | None = None,
+    automated_evidence_authority: VerifiedV021AutomatedEvidence | None = None,
+    expected_capability: VerifiedV02ExactImageEvaluatorCapability | None = None,
+    structural_pending: bool = False,
 ) -> CandidateEvaluationReceipt:
     """Verify canonical encoding, self-commitment, redaction claims, and outcome invariants."""
 
@@ -614,7 +717,13 @@ def verify_instance_candidate_receipt(
         "provider_calls": 0,
     }:
         raise _reject("Candidate evaluation trust claims are invalid.")
-    _verify_capability_inputs(value.get("inputs"), case_id=case_id)
+    _verify_capability_inputs(
+        value.get("inputs"),
+        case_id=case_id,
+        automated_evidence_authority=automated_evidence_authority,
+        expected_capability=expected_capability,
+        structural_pending=structural_pending,
+    )
     outcome = value.get("outcome")
     controls = value.get("causal_controls")
     if not isinstance(outcome, dict) or not isinstance(controls, dict):
@@ -753,7 +862,7 @@ def verify_instance_candidate_receipt(
             raise _reject("Fixed candidate run contains a failure fingerprint.")
     if accepted and len(set(base_fingerprints)) != 1:
         raise _reject("Accepted candidate base fingerprints are inconsistent.")
-    _verify_recomputed_candidate_outcome(runs, outcome)
+    _verify_recomputed_candidate_outcome(runs, outcome, profile_id=profile_id)
     return CandidateEvaluationReceipt(
         path=path,
         sha256=hashlib.sha256(raw).hexdigest(),
@@ -761,10 +870,20 @@ def verify_instance_candidate_receipt(
         classification=str(outcome.get("classification")),
         accepted=accepted,
         evaluator_wall_ms=evaluator_wall_ms,
+        candidate_sha256=cast(str, candidate["sha256"]),
+        candidate_target=cast(str, candidate["target"]),
+        tool_git_sha=cast(str, value["tool_git_sha"]),
     )
 
 
-def _verify_capability_inputs(value: object, *, case_id: str) -> None:
+def _verify_capability_inputs(
+    value: object,
+    *,
+    case_id: str,
+    automated_evidence_authority: VerifiedV021AutomatedEvidence | None = None,
+    expected_capability: VerifiedV02ExactImageEvaluatorCapability | None = None,
+    structural_pending: bool = False,
+) -> None:
     if not isinstance(value, dict) or set(value) != {
         "algorithm",
         "benchmark_amendment_receipt_sha256",
@@ -792,6 +911,27 @@ def _verify_capability_inputs(value: object, *, case_id: str) -> None:
     if algorithm.endswith("-v1"):
         if amendment_sha is not None or amendment_status is not None:
             raise _reject("Legacy exact-image authority cannot bind a benchmark amendment.")
+    elif amendment_status == "pending":
+        if structural_pending:
+            if automated_evidence_authority is not None or expected_capability is not None:
+                raise _reject("Structural pending inspection cannot accept live authority.")
+        else:
+            automated = require_v021_automated_evidence(automated_evidence_authority)
+            capability = require_v02_exact_image_evaluator_capability(expected_capability)
+            if (
+                capability.case_id != case_id
+                or capability.benchmark_amendment_receipt_sha256
+                != automated.amendment_receipt_sha256
+                or value
+                != {
+                    **capability.public_record(),
+                    "evaluator_public_commitment_sha256": (
+                        capability.evaluator_public_commitment_sha256
+                    ),
+                }
+            ):
+                raise _reject("Automated evidence does not bind this pending evaluator receipt.")
+        _digest(amendment_sha, "benchmark amendment receipt")
     elif amendment_status != "approved":
         raise _reject("v0.2.1 benchmark amendment review is not approved for execution.")
     else:
@@ -1105,6 +1245,12 @@ def _junit_fingerprint(result: InstancePytestResult, *, expected_failure: bool) 
 def _candidate_fingerprint_or_none(
     result: InstancePytestResult, *, profile: CandidateExecutionProfile
 ) -> str | None:
+    return _candidate_fingerprint_with_validity(result, profile=profile)[0]
+
+
+def _candidate_fingerprint_with_validity(
+    result: InstancePytestResult, *, profile: CandidateExecutionProfile
+) -> tuple[str | None, bool]:
     if (
         result.timed_out
         or result.oom_killed
@@ -1112,19 +1258,29 @@ def _candidate_fingerprint_or_none(
         or _has_infrastructure_marker(result.output)
         or result.exit_code not in {0, 1}
     ):
-        return None
+        return None, False
     if profile.profile_id == "pytest-v1":
-        return _junit_fingerprint(result, expected_failure=result.exit_code == 1)
+        try:
+            return (
+                _junit_fingerprint(result, expected_failure=result.exit_code == 1),
+                True,
+            )
+        except PolicyRejection:
+            # The sandbox completed, but the candidate did not produce the exact
+            # assertion evidence required for attribution.  This is a scored
+            # candidate failure, not a controller failure: preserve the bounded
+            # run evidence and let _classify_candidate reject the fingerprint.
+            return None, False
     if result.exit_code == 0:
-        return None
+        return None, True
     if profile.required_function not in result.output:
-        raise _reject("SymPy native output does not identify the required test function.")
+        return None, False
     normalized = re.sub(r"0x[0-9a-fA-F]+", "0xADDR", result.output)
     normalized = re.sub(r"\b[0-9]+(?:\.[0-9]+)?(?:ms|s| seconds?)\b", "DURATION", normalized)
     normalized = re.sub(r"[ \t]+", " ", normalized).strip()
     if not normalized:
-        raise _reject("SymPy native base failure has no attributable output.")
-    return hashlib.sha256(normalized.encode()).hexdigest()
+        return None, False
+    return hashlib.sha256(normalized.encode()).hexdigest(), True
 
 
 def _verify_gold_receipt_evidence(phases: dict[str, object], *, profile_id: object) -> None:
@@ -1140,7 +1296,9 @@ def _verify_gold_receipt_evidence(phases: dict[str, object], *, profile_id: obje
                 raise _reject("Receipt gold collection evidence is not clean.")
 
 
-def _verify_recomputed_candidate_outcome(runs: list[object], outcome: dict[str, object]) -> None:
+def _verify_recomputed_candidate_outcome(
+    runs: list[object], outcome: dict[str, object], *, profile_id: object
+) -> None:
     base = [
         cast(dict[str, object], cast(dict[str, object], run)["result"])
         for run in runs
@@ -1169,6 +1327,10 @@ def _verify_recomputed_candidate_outcome(runs: list[object], outcome: dict[str, 
         classification = "does_not_fail_on_base"
     elif {result["exit_code"] for result in fixed} != {0}:
         classification = "does_not_pass_on_fixed"
+    elif profile_id == "pytest-v1" and any(
+        result["junit_sha256"] is None for result in all_results
+    ):
+        classification = "wrong_or_flaky_failure"
     else:
         fingerprints = [
             cast(dict[str, object], run)["failure_fingerprint_sha256"]

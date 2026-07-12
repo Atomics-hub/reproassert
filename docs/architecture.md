@@ -307,9 +307,9 @@ adapter is reachable from this command.
 | `rejected` | Yes | Candidate failed static policy or collection-level evidence. |
 | `collected` | Yes | Candidate collected but did not meet the repeatable intended-failure contract. |
 | `repeatable_base_failure` | Yes, maximum | The exact generated test failed consistently on the pinned base under strict v1. |
-| `differential_reproduction` | Not from ordinary issue/replay | Requires an application-issued evaluator capability and three matching base failures plus three exact fixed passes. Public results remain 0/20. |
+| `differential_reproduction` | Not from ordinary issue/replay | Requires an application-issued evaluator capability and three matching base failures plus three exact fixed passes with attributable evidence. The v0.2.1 campaign accepted 0/20. |
 | `maintainer_validated` | No | Requires recorded independent maintainer evidence. |
 
-The historical benchmark still adds causal controls and blinded semantic review beyond the
-differential primitive. See [evaluation.md](evaluation.md). Its current status is 0/20 scored runs,
-0/20 public L1 results, and 0/20 semantic-valid results.
+The historical benchmark keeps semantic claims separate from the differential primitive. See
+[evaluation.md](evaluation.md). V0.2.1 evaluated 20/20 cases, accepted 0/20 at L1, and issued no L2
+or semantic-valid result.

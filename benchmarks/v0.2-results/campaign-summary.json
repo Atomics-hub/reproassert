@@ -1,0 +1,56 @@
+{
+  "aggregate_file_sha256": "3953135b3d151dbfbb76bfb3da3bdc7707257fa9ea73babc0e7844b1e5096d62",
+  "aggregate_receipt_sha256": "861e0d492775feaa1df8210cc98313b0713e4e425608be288feb7dce0f08e87c",
+  "automated_evidence_sha256": "ba92058705788ccb228a2e86cf71cf770227deadf05ec55b5d5502f6f5044823",
+  "benchmark_version": "0.2.1",
+  "claims": {
+    "human_reviewed": false,
+    "l2_causal_claim": false,
+    "maintainer_validated": false,
+    "semantic_validity_claim": false
+  },
+  "counts": {
+    "accepted_l1": 0,
+    "candidate_contract_rejected": 17,
+    "oracle_executed": 3,
+    "provider_calls": 20,
+    "rejected": 20,
+    "total": 20,
+    "wrong_or_flaky_failure": 3
+  },
+  "evaluated_at": "2026-07-12T17:32:41Z",
+  "evaluation": {
+    "base_runs_per_sandboxed_candidate": 3,
+    "fixed_runs_per_sandboxed_candidate": 3,
+    "sandboxed_case_ids": [
+      "rk-v0.2-003",
+      "rk-v0.2-007",
+      "rk-v0.2-011"
+    ]
+  },
+  "generation": {
+    "authorization_sha256": "ebc5f4066384f89d21b8949ecb3ab8ef6a4509a317bcbc06392811745f45e057",
+    "completed_at": "2026-07-12T16:59:45.236539Z",
+    "generation_barrier_sha256": "fd99cdf3e0682511562582f1a6d8656d1267bb8e8a29eff14e213d1ef8370d48",
+    "lineage_commitment_sha256": "1e3fe1c74d0c2254294ce64e509aa21f8ed9fc6e0fac1a2a30999760239f0cae",
+    "model": "gpt-5.4-mini-2026-03-17",
+    "request_set_sha256": "6e247092cbfa56cccdda69665858d93baa1e99038f3df0625ca61d04c63bd134",
+    "started_at": "2026-07-12T16:55:49Z"
+  },
+  "outcome": "continuation_gate_failed",
+  "schema_version": "1.0.0",
+  "spend": {
+    "authorized_overage": false,
+    "ledger_file_sha256": "b83854480b3caad05242a1924f032a92ad873cc75fbbb56009362680da6bc770",
+    "ledger_head_event_sha256": "22e79e849c85717777719b1d35fd24622f4191084a1bc01247a5c6d33a31266f",
+    "maximum_case_usd": "0.051351",
+    "minimum_case_usd": "0.022471",
+    "per_case_cap_usd": "0.25",
+    "pricing_commitment_sha256": "bba98c7af8ea03023dcf1f14f07ffb127228ee60822817b731beb340182da715",
+    "success_cost_usd": null,
+    "total_cap_usd": "5.00",
+    "total_usd": "0.688111",
+    "unknown_spend_cases": 0
+  },
+  "tool_git_sha": "d1905a25c93034fcfbc580a63e333026484ec959"
+}

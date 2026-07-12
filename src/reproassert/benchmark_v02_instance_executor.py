@@ -335,8 +335,11 @@ class InstanceRuntimeExecutor:
                 return None
             try:
                 stat_result = destination.lstat()
-            except FileNotFoundError as exc:
-                raise self._reject("Pytest did not produce its required JUnit evidence.") from exc
+            except FileNotFoundError:
+                # A candidate can terminate pytest before it flushes JUnit.  The
+                # evaluator must score that as missing attribution evidence,
+                # rather than treating it as a controller failure.
+                return None
             if not destination.is_file() or destination.is_symlink():
                 raise self._reject("Pytest JUnit evidence is not a regular file.")
             if not 1 <= stat_result.st_size <= MAX_STAGED_BYTES:

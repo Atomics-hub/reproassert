@@ -19,13 +19,10 @@ issue-marked failure on the pinned base revision across repeated sandboxed runs.
 
 ## Quick start
 
-ReproAssert currently installs from source. You need Python 3.10+, [uv](https://docs.astral.sh/uv/),
-and Docker Engine or Docker Desktop.
+You need Python 3.10+, [uv](https://docs.astral.sh/uv/), and Docker Engine or Docker Desktop.
 
 ```console
-git clone https://github.com/Atomics-hub/reproassert.git
-cd reproassert
-uv tool install .
+uv tool install git+https://github.com/Atomics-hub/reproassert.git
 
 reproassert sandbox build
 reproassert doctor
@@ -56,11 +53,9 @@ accepted by a maintainer.
 ### Without uv
 
 ```console
-git clone https://github.com/Atomics-hub/reproassert.git
-cd reproassert
 python3 -m venv .venv
 . .venv/bin/activate
-python -m pip install .
+python -m pip install git+https://github.com/Atomics-hub/reproassert.git
 
 reproassert sandbox build
 reproassert doctor
@@ -227,12 +222,16 @@ Measured results remain intentionally separate from product capability.
 - v0.1 is immutable at **0/20** because of its [provenance erratum](benchmarks/v0.1/ERRATA.md).
 - v0.2 freezes 20 leak-audited cases from pinned upstream data and independently attests the parser
   boundary and exact Git object graph.
-- The v0.2 cohort remains **0/20 scored runs, 0/20 L1, 0/20 L2, and zero maintainer validations**.
-- No scored model spend or maintainer outreach has occurred.
-- The zero-spend preparation lane has authentically extracted 20/20 hidden evaluator records and
-  built 20/20 provider-disabled pre-review packets. Exact images are runtime-attested for 20/20;
-  hidden-gold preflight is valid for 19/20, with case 014 retained as a network-dependent
-  infrastructure failure. Campaign-ready remains 0/20 pending genuine mapping review.
+- The v0.2.1 campaign evaluated the complete **20/20 denominator** and accepted **0/20** as L1
+  deterministic reproductions. Seventeen outputs failed the frozen candidate contract; three
+  reached six-run Docker evaluation and were rejected for missing a stable attributable failure
+  fingerprint.
+- The frozen OpenAI run made exactly 20 calls for **$0.688111 total**, with a maximum case cost of
+  **$0.051351**, under the approved $5 total / $0.25 per-case zero-overage limits. Cost per success
+  is undefined because there were no successes.
+- The result has **0 L2 claims, 0 human reviews, 0 maintainer validations, and no outreach**. It
+  misses the preregistered 6/20 continuation gate and is evidence against claiming benchmark-ready
+  accuracy for the current generation profile.
 
 The v0.2 preparation and evaluation machinery is default-deny: source, dependency, hidden-fix,
 request, pricing, authorization, causal-control, and reviewer commitments must be bound before a
@@ -241,17 +240,14 @@ hash-bound chronology receipt. The dataset title/body snapshots remain
 `historical_public_contamination_exposed` because full pre-fix revision capture is unavailable; no
 historical-cleanliness claim is implied.
 
-The final exact-image authorization is also fail-closed on spend. `reproassert benchmark
-prepare-v02-execution-freeze` recomputes all 20 worst-case request reservations and binds the merged
-controller SHA before emitting its final hash. A separate `authorize-v02-execution` command accepts
-only a later $5 total / $0.25 per-case zero-overage approval naming that exact hash. Neither command
-reads a provider key or makes a provider call. See
-[ADR 0014](docs/decisions/0014-exact-image-campaign-freeze-and-request-cap.md).
+The executed v0.2.1 path was fail-closed on spend: it reserved each case before inference, persisted
+provider response cost before completion, disallowed overage, and resumed only from hash-bound
+durable receipts. The public result bundle contains the aggregate and redacted per-case evidence;
+provider responses, hidden fixes, credentials, and private evaluator paths are not published.
 
 See the [v0.2 protocol](benchmarks/v0.2-draft/README.md), [evaluation model](docs/evaluation.md), and
-[market-validation gates](docs/market-validation.md). Passing the internal 6/20 continuation gate
-would justify more validation; it would not establish a general 30% success rate, superiority, or
-maintainer demand.
+[market-validation gates](docs/market-validation.md). The failed 6/20 continuation gate means the
+next work is generator/contract diagnosis, not a larger paid run or a performance claim.
 
 ## Development
 

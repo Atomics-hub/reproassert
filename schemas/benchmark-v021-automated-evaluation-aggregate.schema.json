@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reproassert.com/schemas/benchmark-v021-automated-evaluation-aggregate.schema.json",
+  "title": "ReproAssert v0.2.1 automated evaluation aggregate",
+  "type": "object",
+  "required": ["algorithm", "automated_evidence_sha256", "benchmark_version", "case_count", "claims", "counts", "generation_barrier_sha256", "lineage_commitment_sha256", "receipt_sha256", "request_set_sha256", "results", "schema_version", "tool_git_sha"],
+  "additionalProperties": false,
+  "properties": {
+    "algorithm": {"const": "reproassert-v021-automated-evaluation-aggregate-v1"},
+    "automated_evidence_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+    "benchmark_version": {"const": "0.2.1"},
+    "case_count": {"const": 20},
+    "claims": {
+      "const": {"automated_evidence_validated": true, "full_denominator_reported": true, "human_reviewed": false, "l2_causal_claim": false, "maintainer_validated": false}
+    },
+    "counts": {
+      "type": "object",
+      "required": ["accepted", "oracle_executed", "rejected", "total"],
+      "additionalProperties": false,
+      "properties": {
+        "accepted": {"minimum": 0, "maximum": 20, "type": "integer"},
+        "oracle_executed": {"minimum": 0, "maximum": 20, "type": "integer"},
+        "rejected": {"minimum": 0, "maximum": 20, "type": "integer"},
+        "total": {"const": 20}
+      }
+    },
+    "generation_barrier_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+    "lineage_commitment_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+    "receipt_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+    "request_set_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+    "results": {"items": {"type": "object"}, "maxItems": 20, "minItems": 20, "type": "array"},
+    "schema_version": {"const": "1.0.0"},
+    "tool_git_sha": {"pattern": "^[0-9a-f]{40}$", "type": "string"}
+  }
+}

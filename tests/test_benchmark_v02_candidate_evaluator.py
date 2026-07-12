@@ -12,6 +12,7 @@ import pytest
 import reproassert.benchmark_v02_amendment as amendment_module
 import reproassert.benchmark_v02_candidate_evaluator as evaluator
 import reproassert.benchmark_v02_exact_capability as capability_module
+import reproassert.benchmark_v021_automated_evidence as automated_evidence
 from reproassert.benchmark_v02_candidate_evaluator import CandidateArtifact
 from reproassert.benchmark_v02_instance_controller import GoldSmokeReceipt
 from reproassert.benchmark_v02_instance_executor import InstancePytestResult
@@ -395,6 +396,11 @@ def test_public_scored_api_derives_private_inputs_and_gold_targets(
         gold_target="tests/test_gold.py::test_gold",
     )
     fake = FakeExecutor()
+    monkeypatch.setattr(
+        evaluator,
+        "_executor_factory",
+        lambda _manifest, _case, policy: _factory(fake, policy),
+    )
 
     result = evaluator.evaluate_instance_candidate(
         evaluator_capability=authority,
@@ -412,7 +418,6 @@ def test_public_scored_api_derives_private_inputs_and_gold_targets(
         output_path=tmp_path / "public-receipt.json",
         executed_at="2026-07-11T01:02:03Z",
         tool_git_sha="9" * 40,
-        executor_factory=lambda _manifest, _case, policy: _factory(fake, policy),
     )
 
     assert result.accepted is True
@@ -422,6 +427,7 @@ def test_public_scored_api_derives_private_inputs_and_gold_targets(
     assert "hidden" not in parameters
     assert "gold_targets" not in parameters
     assert "verified_hidden" in parameters
+    assert "executor_factory" not in parameters
 
     with pytest.raises(TypeError, match="unexpected keyword argument 'hidden'"):
         evaluator.evaluate_instance_candidate(  # type: ignore[call-arg]
@@ -472,6 +478,7 @@ def test_pending_v021_amendment_rejects_before_hidden_resolution_or_executor(
         raise AssertionError("executor construction must not run")
 
     monkeypatch.setattr(evaluator, "_resolve_hidden_evaluator_inputs", forbidden_hidden)
+    monkeypatch.setattr(evaluator, "_executor_factory", forbidden_executor)
     output = tmp_path / "pending-v021.json"
     with pytest.raises(PolicyRejection, match="review is pending"):
         evaluator.evaluate_instance_candidate(
@@ -491,11 +498,90 @@ def test_pending_v021_amendment_rejects_before_hidden_resolution_or_executor(
             output_path=output,
             executed_at="2026-07-11T01:02:03Z",
             tool_git_sha="9" * 40,
-            executor_factory=forbidden_executor,  # type: ignore[arg-type]
         )
     assert hidden_calls == 0
     assert executor_calls == 0
     assert not output.exists()
+
+
+def test_automated_oracle_authority_unlocks_pending_v021_without_human_claim(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest, digest = _manifest(tmp_path)
+    capability = _capability(
+        manifest,
+        case_id="rk-v0.2-001",
+        production_patch=b"PRIVATE PRODUCTION FIX",
+        developer_tests=b"PRIVATE GOLD TESTS",
+        v2=True,
+    )
+    record = {
+        "claims": {
+            "automated_oracle_validated": True,
+            "human_reviewed": False,
+            "maintainer_validated": False,
+        },
+        "evidence": {
+            "gold_smoke_raw_sha256": capability.gold_smoke_receipt_sha256,
+            "runtime_manifest_sha256": capability.runtime_manifest_sha256,
+            "internal_commitments": {
+                "hidden_extraction_receipt_sha256": capability.hidden_extraction_receipt_sha256
+            },
+        },
+    }
+    raw = evaluator._canonical(record) + b"\n"
+    path = tmp_path / "automated-evidence.json"
+    path.write_bytes(raw)
+    authority = object.__new__(automated_evidence.VerifiedV021AutomatedEvidence)
+    for name, value in {
+        "path": path,
+        "sha256": hashlib.sha256(raw).hexdigest(),
+        "lineage_commitment_sha256": "1" * 64,
+        "amendment_receipt_sha256": capability.benchmark_amendment_receipt_sha256,
+        "request_set_sha256": "2" * 64,
+        "tool_git_sha": "9" * 40,
+        "case_count": 20,
+        "provider_calls": 0,
+        "human_reviewed": False,
+        "maintainer_validated": False,
+        "_issuer": automated_evidence._ISSUER,
+    }.items():
+        object.__setattr__(authority, name, value)
+    sentinel = SimpleNamespace(classification="accepted")
+    monkeypatch.setattr(
+        evaluator,
+        "_resolve_hidden_evaluator_inputs",
+        lambda **_kwargs: evaluator._ResolvedHiddenEvaluatorInputs(b"fix", b"tests", ("target",)),
+    )
+    monkeypatch.setattr(
+        evaluator,
+        "_evaluate_instance_candidate_with_resolved_hidden",
+        lambda **_kwargs: sentinel,
+    )
+
+    result = evaluator.evaluate_instance_candidate(
+        evaluator_capability=capability,
+        automated_evidence_authority=authority,
+        verified_hidden=SimpleNamespace(),  # type: ignore[arg-type]
+        gold_smoke_receipt_path=tmp_path / "gold.json",
+        gold_specs_path=tmp_path / "specs.json",
+        manifest_path=manifest,
+        expected_manifest_sha256=digest,
+        case_id="rk-v0.2-001",
+        candidate=CandidateArtifact(
+            "tests/reproassert/test_generated.py",
+            b"def test_bug():\n    assert True\n",
+            "test_bug",
+        ),
+        output_path=tmp_path / "result.json",
+        executed_at="2026-07-12T01:02:03Z",
+        # The evidence producer and evaluator runtime are independently
+        # attributable commits; a later hardened evaluator must not impersonate
+        # the earlier evidence-producing commit.
+        tool_git_sha="8" * 40,
+    )
+
+    assert result is sentinel
 
 
 def test_hidden_resolution_rejects_forged_authority_and_post_verification_mutation(
@@ -1101,6 +1187,22 @@ def test_candidate_evaluator_helpers_reject_malformed_execution_evidence() -> No
     ):
         with pytest.raises(PolicyRejection, match=message):
             evaluator._junit_fingerprint(result(junit_xml=junit), expected_failure=expected_failure)
+
+    pytest_profile = evaluator.CandidateExecutionProfile(
+        profile_id="pytest-v1",
+        command_profile="pytest-v1",
+        staging_path="reproassert_tests/test_issue_001.py",
+        required_function="test_reproassert_issue_001",
+    )
+    assert (
+        evaluator._candidate_fingerprint_or_none(
+            result(exit_code=1, junit_xml=None), profile=pytest_profile
+        )
+        is None
+    )
+    assert evaluator._candidate_fingerprint_with_validity(
+        result(exit_code=0, junit_xml=None), profile=pytest_profile
+    ) == (None, False)
 
     with pytest.raises(PolicyRejection, match="phase evidence is invalid"):
         evaluator._verify_evidence({})

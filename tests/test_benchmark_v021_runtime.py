@@ -232,6 +232,56 @@ def _private_dirs(tmp_path: Path) -> tuple[Path, Path]:
     return responses, results
 
 
+def test_prepare_runtime_plan_rederives_all_twenty_request_bindings(tmp_path: Path) -> None:
+    plan, authorization, rows = _fixture(tmp_path)
+    capability_path = tmp_path / "capability-index.json"
+    prereg = _prereg(tmp_path, capability_raw=capability_path.read_bytes())
+    request_paths: dict[str, Path] = {}
+    for row in rows:
+        case_id = str(row["case_id"])
+        path = tmp_path / f"{case_id}-request.json"
+        path.write_bytes(_canonical(row["request"]) + b"\n")
+        request_paths[case_id] = path
+
+    prepared = runtime.prepare_v021_runtime_plan(
+        preregistration=prereg,
+        authorization=authorization,
+        capability_index_path=capability_path,
+        request_envelope_paths=request_paths,
+        output_path=tmp_path / "prepared-plan.json",
+    )
+
+    assert prepared.request_set_sha256 == plan.request_set_sha256
+    assert tuple(row["case_id"] for row in prepared.cases) == tuple(request_paths)
+
+
+def test_runtime_plan_bound_can_hold_twenty_individually_bounded_requests() -> None:
+    assert runtime.MAX_PLAN_BYTES >= 20 * 512 * 1024
+
+
+def test_prepare_runtime_plan_rejects_request_path_order_before_write(tmp_path: Path) -> None:
+    _, authorization, rows = _fixture(tmp_path)
+    capability_path = tmp_path / "capability-index.json"
+    prereg = _prereg(tmp_path, capability_raw=capability_path.read_bytes())
+    request_paths: dict[str, Path] = {}
+    for row in reversed(rows):
+        case_id = str(row["case_id"])
+        path = tmp_path / f"{case_id}-request.json"
+        path.write_bytes(_canonical(row["request"]) + b"\n")
+        request_paths[case_id] = path
+    output = tmp_path / "prepared-plan.json"
+
+    with pytest.raises(PolicyRejection, match="exact sorted 20 request paths"):
+        runtime.prepare_v021_runtime_plan(
+            preregistration=prereg,
+            authorization=authorization,
+            capability_index_path=capability_path,
+            request_envelope_paths=request_paths,
+            output_path=output,
+        )
+    assert not output.exists()
+
+
 def test_preflight_rejects_case014_waiver_before_provider(tmp_path: Path) -> None:
     plan, authorization, rows = _fixture(tmp_path)
     record = json.loads(plan.path.read_text())
@@ -334,7 +384,7 @@ def test_reservation_precedes_the_only_provider_call(tmp_path: Path) -> None:
         assert ledger.events == [("reserve", request.case_id)]
         return runtime.V021ProviderResponse("response-1", "candidate", 10_000)
 
-    result = runtime.execute_v021_case(
+    result = runtime._execute_v021_case_with_ports(
         plan=plan,
         authorization=authorization,
         ledger=ledger,
@@ -364,7 +414,7 @@ def test_reserved_without_durable_response_halts_and_never_recalls(tmp_path: Pat
         calls += 1
         raise AssertionError("provider must not be recalled")
 
-    result = runtime.execute_v021_case(
+    result = runtime._execute_v021_case_with_ports(
         plan=plan,
         authorization=authorization,
         ledger=ledger,
@@ -391,7 +441,7 @@ def test_durable_response_recovery_never_recalls_provider(tmp_path: Path) -> Non
         return runtime.V021ProviderResponse("response-1", "candidate", 12_500)
 
     with pytest.raises(RuntimeError, match="simulated crash"):
-        runtime.execute_v021_case(
+        runtime._execute_v021_case_with_ports(
             plan=plan,
             authorization=authorization,
             ledger=ledger,
@@ -400,7 +450,7 @@ def test_durable_response_recovery_never_recalls_provider(tmp_path: Path) -> Non
             response_directory=responses,
             result_directory=results,
         )
-    recovered = runtime.execute_v021_case(
+    recovered = runtime._execute_v021_case_with_ports(
         plan=plan,
         authorization=authorization,
         ledger=ledger,
@@ -419,7 +469,7 @@ def test_tampered_durable_response_cross_binding_is_rejected(tmp_path: Path) -> 
     ledger.fail_response_once = True
     responses, results = _private_dirs(tmp_path)
     with pytest.raises(RuntimeError):
-        runtime.execute_v021_case(
+        runtime._execute_v021_case_with_ports(
             plan=plan,
             authorization=authorization,
             ledger=ledger,
@@ -433,7 +483,7 @@ def test_tampered_durable_response_cross_binding_is_rejected(tmp_path: Path) -> 
     record["case_id"] = "rk-v0.2-014"
     path.write_bytes(_canonical(record) + b"\n")
     with pytest.raises(PolicyRejection, match="stale or cross-case"):
-        runtime.execute_v021_case(
+        runtime._execute_v021_case_with_ports(
             plan=plan,
             authorization=authorization,
             ledger=ledger,
@@ -449,6 +499,7 @@ def test_provider_response_runtime_types_are_enforced() -> None:
         case_id="rk-v0.2-001",
         request_sha256="1" * 64,
         input_sha256="2" * 64,
+        outbound_request_sha256="4" * 64,
         call_id="3" * 64,
         request={},
     )
@@ -463,7 +514,7 @@ def test_generation_result_schema_is_mirrored_and_accepts_runtime_output(tmp_pat
     plan, authorization, _ = _fixture(tmp_path)
     ledger = _Ledger()
     responses, results = _private_dirs(tmp_path)
-    result = runtime.execute_v021_case(
+    result = runtime._execute_v021_case_with_ports(
         plan=plan,
         authorization=authorization,
         ledger=ledger,

@@ -18,7 +18,7 @@ from reproassert.benchmark_v02_candidate_evaluator import (
     CandidateArtifact,
     CandidateEvaluationReceipt,
     ExecutorFactory,
-    evaluate_instance_candidate,
+    _evaluate_instance_candidate_with_ports,
     verify_instance_candidate_receipt,
 )
 from reproassert.benchmark_v02_exact_capability import (
@@ -299,7 +299,7 @@ def _evaluate_v02_exact_frozen_case_with_factory(
         if trusted_completed_receipt:
             verified = cast(CandidateEvaluationReceipt, prior)
         else:
-            receipt = evaluate_instance_candidate(
+            receipt = _evaluate_instance_candidate_with_ports(
                 evaluator_capability=capability,
                 verified_hidden=verified_hidden,
                 gold_smoke_receipt_path=Path(gold_smoke_receipt_path),

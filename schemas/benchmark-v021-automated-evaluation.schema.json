@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reproassert.com/schemas/benchmark-v021-automated-evaluation.schema.json",
+  "title": "ReproAssert v0.2.1 automated evaluation receipt",
+  "type": "object",
+  "required": ["algorithm", "benchmark_version", "candidate", "case_id", "claims", "evaluator_receipt_sha256", "generation", "outcome", "receipt_sha256", "schema_version", "tool_git_sha"],
+  "additionalProperties": false,
+  "properties": {
+    "algorithm": {"const": "reproassert-v021-automated-evaluation-v1"},
+    "benchmark_version": {"const": "0.2.1"},
+    "candidate": {"type": "object"},
+    "case_id": {"pattern": "^rk-v0\\.2-(?:00[1-9]|01[0-9]|020)$", "type": "string"},
+    "claims": {
+      "type": "object",
+      "required": ["automated_disposition_validated", "automated_oracle_executed", "human_reviewed", "l2_causal_claim", "maintainer_validated"],
+      "additionalProperties": false,
+      "properties": {
+        "automated_disposition_validated": {"const": true},
+        "automated_oracle_executed": {"type": "boolean"},
+        "human_reviewed": {"const": false},
+        "l2_causal_claim": {"const": false},
+        "maintainer_validated": {"const": false}
+      }
+    },
+    "evaluator_receipt_sha256": {"oneOf": [{"pattern": "^[0-9a-f]{64}$", "type": "string"}, {"type": "null"}]},
+    "generation": {"type": "object"},
+    "outcome": {"type": "object"},
+    "receipt_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+    "schema_version": {"const": "1.0.0"},
+    "tool_git_sha": {"pattern": "^[0-9a-f]{40}$", "type": "string"}
+  }
+}
