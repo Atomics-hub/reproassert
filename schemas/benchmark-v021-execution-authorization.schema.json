@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atomics-hub.github.io/reproassert/schemas/benchmark-v021-execution-authorization.schema.json",
+  "title": "ReproAssert v0.2.1 execution authorization",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["algorithm", "authorization", "authorization_sha256", "authorized_at", "benchmark_version", "case_ids", "ledger", "policy", "preregistration", "requests", "schema_version", "status"],
+  "properties": {
+    "algorithm": {"const": "reproassert-v021-execution-authorization-v1"},
+    "authorization": {"type": "object", "additionalProperties": false, "required": ["authorization_ref", "execution_statement", "execution_statement_sha256", "operator_nonce"], "properties": {"authorization_ref": {"type": "string", "minLength": 3, "maxLength": 200, "pattern": "^[ -~]+$"}, "execution_statement": {"type": "string", "minLength": 1, "maxLength": 4096}, "execution_statement_sha256": {"$ref": "#/$defs/sha256"}, "operator_nonce": {"$ref": "#/$defs/sha256"}}},
+    "authorization_sha256": {"$ref": "#/$defs/sha256"},
+    "authorized_at": {"type": "string", "format": "date-time"},
+    "benchmark_version": {"const": "0.2.1"},
+    "case_ids": {"type": "array", "minItems": 20, "maxItems": 20, "uniqueItems": true, "items": {"type": "string", "pattern": "^rk-v0\\.2-(00[1-9]|01[0-9]|020)$"}},
+    "ledger": {"type": "object", "additionalProperties": false, "required": ["absolute_path", "identity_sha256"], "properties": {"absolute_path": {"type": "string", "pattern": "^/"}, "identity_sha256": {"$ref": "#/$defs/sha256"}}},
+    "policy": {"type": "object", "additionalProperties": false, "required": ["model", "overage_allowed", "per_case_cap_usd", "pricing_effective_at", "total_cap_usd"], "properties": {"model": {"const": "gpt-5.4-mini-2026-03-17"}, "overage_allowed": {"const": false}, "per_case_cap_usd": {"const": "0.25"}, "pricing_effective_at": {"type": "string", "format": "date-time"}, "total_cap_usd": {"const": "5.00"}}},
+    "preregistration": {"type": "object", "additionalProperties": false, "required": ["approval_statement_sha256", "lineage_commitment_sha256", "pricing_snapshot_sha256", "preregistration_request_set_sha256", "raw_sha256", "request_set_sha256", "tool_git_sha"], "properties": {"approval_statement_sha256": {"$ref": "#/$defs/sha256"}, "lineage_commitment_sha256": {"$ref": "#/$defs/sha256"}, "pricing_snapshot_sha256": {"$ref": "#/$defs/sha256"}, "preregistration_request_set_sha256": {"$ref": "#/$defs/sha256"}, "raw_sha256": {"$ref": "#/$defs/sha256"}, "request_set_sha256": {"$ref": "#/$defs/sha256"}, "tool_git_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"}}},
+    "requests": {"type": "array", "minItems": 20, "maxItems": 20, "items": {"type": "object", "additionalProperties": false, "required": ["case_id", "request_envelope_sha256"], "properties": {"case_id": {"type": "string", "pattern": "^rk-v0\\.2-(00[1-9]|01[0-9]|020)$"}, "request_envelope_sha256": {"$ref": "#/$defs/sha256"}}}},
+    "schema_version": {"const": "1.0.0"},
+    "status": {"const": "authorized_not_started"}
+  },
+  "$defs": {"sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}
+}
