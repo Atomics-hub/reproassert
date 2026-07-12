@@ -617,6 +617,7 @@ def verify_instance_candidate_receipt(
     raw: bytes | None = None,
     automated_evidence_authority: VerifiedV021AutomatedEvidence | None = None,
     expected_capability: VerifiedV02ExactImageEvaluatorCapability | None = None,
+    structural_pending: bool = False,
 ) -> CandidateEvaluationReceipt:
     """Verify canonical encoding, self-commitment, redaction claims, and outcome invariants."""
 
@@ -680,6 +681,7 @@ def verify_instance_candidate_receipt(
         case_id=case_id,
         automated_evidence_authority=automated_evidence_authority,
         expected_capability=expected_capability,
+        structural_pending=structural_pending,
     )
     outcome = value.get("outcome")
     controls = value.get("causal_controls")
@@ -836,6 +838,7 @@ def _verify_capability_inputs(
     case_id: str,
     automated_evidence_authority: VerifiedV021AutomatedEvidence | None = None,
     expected_capability: VerifiedV02ExactImageEvaluatorCapability | None = None,
+    structural_pending: bool = False,
 ) -> None:
     if not isinstance(value, dict) or set(value) != {
         "algorithm",
@@ -865,21 +868,25 @@ def _verify_capability_inputs(
         if amendment_sha is not None or amendment_status is not None:
             raise _reject("Legacy exact-image authority cannot bind a benchmark amendment.")
     elif amendment_status == "pending":
-        automated = require_v021_automated_evidence(automated_evidence_authority)
-        capability = require_v02_exact_image_evaluator_capability(expected_capability)
-        if (
-            capability.case_id != case_id
-            or capability.benchmark_amendment_receipt_sha256
-            != automated.amendment_receipt_sha256
-            or value
-            != {
-                **capability.public_record(),
-                "evaluator_public_commitment_sha256": (
-                    capability.evaluator_public_commitment_sha256
-                ),
-            }
-        ):
-            raise _reject("Automated evidence does not bind this pending evaluator receipt.")
+        if structural_pending:
+            if automated_evidence_authority is not None or expected_capability is not None:
+                raise _reject("Structural pending inspection cannot accept live authority.")
+        else:
+            automated = require_v021_automated_evidence(automated_evidence_authority)
+            capability = require_v02_exact_image_evaluator_capability(expected_capability)
+            if (
+                capability.case_id != case_id
+                or capability.benchmark_amendment_receipt_sha256
+                != automated.amendment_receipt_sha256
+                or value
+                != {
+                    **capability.public_record(),
+                    "evaluator_public_commitment_sha256": (
+                        capability.evaluator_public_commitment_sha256
+                    ),
+                }
+            ):
+                raise _reject("Automated evidence does not bind this pending evaluator receipt.")
         _digest(amendment_sha, "benchmark amendment receipt")
     elif amendment_status != "approved":
         raise _reject("v0.2.1 benchmark amendment review is not approved for execution.")

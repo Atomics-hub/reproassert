@@ -387,7 +387,9 @@ def inspect_v021_automated_evaluation_set(
         path,
         receipt_directory=receipt_directory,
         issuance=None,
-        receipt_verifier=verify_instance_candidate_receipt,
+        receipt_verifier=lambda receipt_path: verify_instance_candidate_receipt(
+            receipt_path, structural_pending=True
+        ),
     )
     if type(inspected) is not StructuralV021AutomatedEvaluationSet:
         raise _reject("Structural inspection returned live authority.")
@@ -518,12 +520,9 @@ def _verify_v021_automated_evaluation_set(
         else:
             if not _is_sha(evaluator_sha):
                 raise _reject("Evaluator receipt commitment is invalid.")
-            verifier = (
-                verify_instance_candidate_receipt
-                if issuance is _LIVE_ISSUANCE
-                else receipt_verifier
+            verified_evaluator = receipt_verifier(
+                receipt_root / f"{case_id}.evaluator.json"
             )
-            verified_evaluator = verifier(receipt_root / f"{case_id}.evaluator.json")
             if (
                 verified_evaluator.sha256 != evaluator_sha
                 or verified_evaluator.case_id != case_id
