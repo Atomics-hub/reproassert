@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Atomics-hub/reproassert/blob/main/schemas/benchmark-v021-preregistration.schema.json",
+  "title": "ReproAssert v0.2.1 provider-disabled preregistration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["algorithm", "approval", "benchmark_version", "case_count", "claims", "evidence", "frozen_at", "lineage_commitment_sha256", "policy", "preregistration_sha256", "schema_version", "status", "tool_git_sha"],
+  "properties": {
+    "algorithm": {"const": "reproassert-v021-provider-disabled-preregistration-v1"},
+    "approval": {
+      "type": "object", "additionalProperties": false,
+      "required": ["authorized", "required_exact_statement", "required_exact_statement_sha256"],
+      "properties": {
+        "authorized": {"const": false},
+        "required_exact_statement": {"type": "string", "minLength": 200, "maxLength": 400},
+        "required_exact_statement_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "benchmark_version": {"const": "0.2.1"},
+    "case_count": {"const": 20},
+    "claims": {"const": {"amendment_review_approved": true, "dependency_ready_count_after_consensus": 20, "dependency_ready_count_before_consensus": 0, "evaluator_preflight_ready_count": 20, "infrastructure_failure_count": 0, "mapping_approved_count": 20, "model_or_provider_invoked": false, "provider_calls": 0}},
+    "evidence": {
+      "type": "object", "additionalProperties": false,
+      "required": ["amendment_consensus_raw_sha256", "amendment_raw_sha256", "capability_index_raw_sha256", "cases_preparation_raw_sha256", "chronology_raw_sha256", "cohort_plan_raw_sha256", "cohort_plan_sha256", "gold_smoke_receipt_raw_sha256", "hidden_extraction_receipt_raw_sha256", "internal_commitments", "mapping_consensus_raw_sha256", "mapping_preparation_raw_sha256", "pricing_snapshot_raw_sha256", "runtime_manifest_sha256"],
+      "properties": {
+        "amendment_consensus_raw_sha256": {"$ref": "#/$defs/sha256"},
+        "amendment_raw_sha256": {"$ref": "#/$defs/sha256"},
+        "capability_index_raw_sha256": {"$ref": "#/$defs/sha256"},
+        "cases_preparation_raw_sha256": {"$ref": "#/$defs/sha256"},
+        "chronology_raw_sha256": {"$ref": "#/$defs/sha256"},
+        "cohort_plan_raw_sha256": {"$ref": "#/$defs/sha256"},
+        "cohort_plan_sha256": {"$ref": "#/$defs/sha256"},
+        "gold_smoke_receipt_raw_sha256": {"$ref": "#/$defs/sha256"},
+        "hidden_extraction_receipt_raw_sha256": {"$ref": "#/$defs/sha256"},
+        "internal_commitments": {
+          "type": "object", "additionalProperties": false,
+          "required": ["amendment_consensus_seal_sha256", "amendment_receipt_sha256", "capability_index_sha256", "case_preparation_set_sha256", "case_request_set_sha256", "chronology_receipt_sha256", "gold_smoke_receipt_sha256", "hidden_extraction_receipt_sha256", "mapping_consensus_seal_sha256"],
+          "properties": {
+            "amendment_consensus_seal_sha256": {"$ref": "#/$defs/sha256"},
+            "amendment_receipt_sha256": {"$ref": "#/$defs/sha256"},
+            "capability_index_sha256": {"$ref": "#/$defs/sha256"},
+            "case_preparation_set_sha256": {"$ref": "#/$defs/sha256"},
+            "case_request_set_sha256": {"$ref": "#/$defs/sha256"},
+            "chronology_receipt_sha256": {"$ref": "#/$defs/sha256"},
+            "gold_smoke_receipt_sha256": {"$ref": "#/$defs/sha256"},
+            "hidden_extraction_receipt_sha256": {"$ref": "#/$defs/sha256"},
+            "mapping_consensus_seal_sha256": {"$ref": "#/$defs/sha256"}
+          }
+        },
+        "mapping_consensus_raw_sha256": {"$ref": "#/$defs/sha256"},
+        "mapping_preparation_raw_sha256": {"$ref": "#/$defs/sha256"},
+        "pricing_snapshot_raw_sha256": {"$ref": "#/$defs/sha256"},
+        "runtime_manifest_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "frozen_at": {"type": "string", "format": "date-time", "pattern": "Z$"},
+    "lineage_commitment_sha256": {"$ref": "#/$defs/sha256"},
+    "policy": {"const": {"case_cap_usd": "0.25", "case_count": 20, "credential_fields_allowed": false, "execution_enabled": false, "model": "gpt-5.4-mini-2026-03-17", "overage_allowed": false, "pricing_effective_at": "2026-07-10T00:00:00Z", "pricing_snapshot_status": "exact_public_snapshot_hash_bound", "total_cap_usd": "5.00"}},
+    "preregistration_sha256": {"$ref": "#/$defs/sha256"},
+    "schema_version": {"const": "1.0.0"},
+    "status": {"const": "execution_disabled_until_v021_runtime_migration"},
+    "tool_git_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"}
+  },
+  "$defs": {"sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}
+}
