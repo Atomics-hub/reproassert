@@ -47,6 +47,37 @@ class V021CampaignRun:
     barrier: VerifiedV021GenerationBarrier | None
 
 
+def require_v021_generation_barrier(value: object) -> VerifiedV021GenerationBarrier:
+    """Require the controller-issued all-20 terminal generation barrier."""
+
+    if type(value) is not VerifiedV021GenerationBarrier or value._issuer is not _BARRIER_ISSUER:
+        raise _reject("Controller-issued v0.2.1 generation barrier is required.")
+    expected = tuple(f"rk-v0.2-{index:03d}" for index in range(1, 21))
+    if tuple(value.result_sha256_by_case) != expected:
+        raise _reject("Generation barrier does not preserve the exact 20-case denominator.")
+    for digest in (
+        value.sha256,
+        value.authorization_sha256,
+        value.request_set_sha256,
+        *value.result_sha256_by_case.values(),
+    ):
+        if (
+            not isinstance(digest, str)
+            or len(digest) != 64
+            or any(character not in "0123456789abcdef" for character in digest)
+        ):
+            raise _reject("Generation barrier contains an invalid digest.")
+    record = {
+        "algorithm": BARRIER_ALGORITHM,
+        "authorization_sha256": value.authorization_sha256,
+        "request_set_sha256": value.request_set_sha256,
+        "results": value.result_sha256_by_case,
+    }
+    if hashlib.sha256(_canonical(record)).hexdigest() != value.sha256:
+        raise _reject("Generation barrier identity is invalid.")
+    return value
+
+
 def run_v021_generation_campaign(
     *,
     plan: VerifiedV021RuntimePlan,

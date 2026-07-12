@@ -43,6 +43,10 @@ from reproassert.benchmark_v02_instance_runtime import (
     InstanceRuntimeManifest,
     load_instance_runtime_manifest,
 )
+from reproassert.benchmark_v021_automated_evidence import (
+    VerifiedV021AutomatedEvidence,
+    require_v021_automated_evidence,
+)
 from reproassert.errors import PolicyRejection
 from reproassert.safeio import open_regular_file, write_bytes_exclusive
 from reproassert.sandbox import SandboxPolicy
@@ -266,14 +270,50 @@ def _require_candidate_execution_authority(
     evaluator_capability: VerifiedV02ExactImageEvaluatorCapability,
     *,
     amendment_authority: VerifiedV02BenchmarkAmendment | None,
+    automated_evidence_authority: VerifiedV021AutomatedEvidence | None,
+    tool_git_sha: str,
 ) -> VerifiedV02ExactImageEvaluatorCapability:
     """Fail before private resolution or sandbox construction on unapproved v0.2.1 evidence."""
 
     capability = require_v02_exact_image_evaluator_capability(evaluator_capability)
     algorithm = getattr(capability, "capability_algorithm", None)
     if algorithm != CAPABILITY_ALGORITHM_V2:
-        if amendment_authority is not None:
+        if amendment_authority is not None or automated_evidence_authority is not None:
             raise _reject("Legacy candidate execution cannot accept amendment authority.")
+        return capability
+    if automated_evidence_authority is not None:
+        if amendment_authority is not None:
+            raise _reject("Candidate execution requires exactly one v0.2.1 authority mode.")
+        automated = require_v021_automated_evidence(automated_evidence_authority)
+        raw = _read_regular_bounded(automated.path, MAX_HIDDEN_PATCH_BYTES, "automated evidence")
+        if hashlib.sha256(raw).hexdigest() != automated.sha256:
+            raise _reject("Automated evidence changed after authority verification.")
+        try:
+            record = json.loads(raw)
+        except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as exc:
+            raise _reject("Automated evidence is invalid JSON.") from exc
+        if not isinstance(record, dict) or raw != _canonical(record) + b"\n":
+            raise _reject("Automated evidence is not canonical JSON.")
+        claims = record.get("claims")
+        evidence = record.get("evidence")
+        if not isinstance(claims, dict) or not isinstance(evidence, dict):
+            raise _reject("Automated evidence fields are invalid.")
+        commitments = evidence.get("internal_commitments")
+        if not isinstance(commitments, dict):
+            raise _reject("Automated evidence commitments are invalid.")
+        if (
+            claims.get("automated_oracle_validated") is not True
+            or claims.get("human_reviewed") is not False
+            or claims.get("maintainer_validated") is not False
+            or automated.tool_git_sha != tool_git_sha
+            or capability.benchmark_amendment_review_status != "pending"
+            or capability.benchmark_amendment_receipt_sha256 != automated.amendment_receipt_sha256
+            or capability.runtime_manifest_sha256 != evidence.get("runtime_manifest_sha256")
+            or capability.hidden_extraction_receipt_sha256
+            != commitments.get("hidden_extraction_receipt_sha256")
+            or capability.gold_smoke_receipt_sha256 != evidence.get("gold_smoke_raw_sha256")
+        ):
+            raise _reject("Automated authority does not bind the exact evaluator evidence.")
         return capability
     amendment = require_approved_v02_benchmark_amendment(amendment_authority)
     if (
@@ -302,6 +342,7 @@ def evaluate_instance_candidate(
     tool_git_sha: str,
     executor_factory: ExecutorFactory | None = None,
     amendment_authority: VerifiedV02BenchmarkAmendment | None = None,
+    automated_evidence_authority: VerifiedV021AutomatedEvidence | None = None,
 ) -> CandidateEvaluationReceipt:
     """Resolve private inputs from verified authority, then evaluate one candidate.
 
@@ -312,7 +353,10 @@ def evaluate_instance_candidate(
 
     evaluator_started_monotonic = time.monotonic()
     capability = _require_candidate_execution_authority(
-        evaluator_capability, amendment_authority=amendment_authority
+        evaluator_capability,
+        amendment_authority=amendment_authority,
+        automated_evidence_authority=automated_evidence_authority,
+        tool_git_sha=tool_git_sha,
     )
     hidden = _resolve_hidden_evaluator_inputs(
         evaluator_capability=capability,
@@ -333,6 +377,7 @@ def evaluate_instance_candidate(
         executor_factory=executor_factory,
         evaluator_started_monotonic=evaluator_started_monotonic,
         amendment_authority=amendment_authority,
+        automated_evidence_authority=automated_evidence_authority,
     )
 
 
@@ -350,6 +395,7 @@ def _evaluate_instance_candidate_with_resolved_hidden(
     executor_factory: ExecutorFactory | None = None,
     evaluator_started_monotonic: float | None = None,
     amendment_authority: VerifiedV02BenchmarkAmendment | None = None,
+    automated_evidence_authority: VerifiedV021AutomatedEvidence | None = None,
 ) -> CandidateEvaluationReceipt:
     """Execute with private inputs already resolved by the scored public boundary.
 
@@ -362,7 +408,10 @@ def _evaluate_instance_candidate_with_resolved_hidden(
         time.monotonic() if evaluator_started_monotonic is None else evaluator_started_monotonic
     )
     capability = _require_candidate_execution_authority(
-        evaluator_capability, amendment_authority=amendment_authority
+        evaluator_capability,
+        amendment_authority=amendment_authority,
+        automated_evidence_authority=automated_evidence_authority,
+        tool_git_sha=tool_git_sha,
     )
     checked_case = _case_id(case_id)
     if capability.case_id != checked_case:

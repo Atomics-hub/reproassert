@@ -14,9 +14,11 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import cast
 
-from reproassert.benchmark_v021_preregistration import (
-    VerifiedV021Preregistration,
-    require_v021_preregistration,
+from reproassert.benchmark_v021_preregistration_authority import (
+    V021ExecutionPreregistration,
+)
+from reproassert.benchmark_v021_preregistration_authority import (
+    require_v021_execution_preregistration as _require_v021_execution_preregistration,
 )
 from reproassert.errors import PolicyRejection
 from reproassert.safeio import open_regular_file, require_private_directory, write_bytes_exclusive
@@ -36,6 +38,10 @@ _GIT_SHA = re.compile(r"[0-9a-f]{40}\Z")
 _TIME = re.compile(r"20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?Z\Z")
 _AUTHORIZATION_REF = re.compile(r"[ -~]{3,200}\Z")
 _ISSUER = object()
+
+# Kept as a module-level seam for the original adversarial authorization tests. The
+# production default is the nominal two-mode verifier, not structural duck typing.
+require_v021_preregistration = _require_v021_execution_preregistration
 
 
 @dataclass(frozen=True, init=False)
@@ -69,7 +75,7 @@ class VerifiedV021ExecutionAuthorization:
 
 def prepare_v021_execution_authorization(
     *,
-    preregistration: VerifiedV021Preregistration,
+    preregistration: V021ExecutionPreregistration,
     execution_statement: str,
     authorization_ref: str,
     operator_nonce: str,
@@ -107,7 +113,7 @@ def prepare_v021_execution_authorization(
 def verify_v021_execution_authorization(
     path: Path,
     *,
-    preregistration: VerifiedV021Preregistration,
+    preregistration: V021ExecutionPreregistration,
     expected_ledger_path: Path,
 ) -> VerifiedV021ExecutionAuthorization:
     authority = require_v021_preregistration(preregistration)
@@ -227,7 +233,7 @@ def require_v021_execution_authorization(value: object) -> VerifiedV021Execution
 
 def _derive(
     *,
-    authority: VerifiedV021Preregistration,
+    authority: V021ExecutionPreregistration,
     prereg: dict[str, object],
     execution_statement: str,
     authorization_ref: str,
@@ -266,11 +272,22 @@ def _derive(
     request_set = hashlib.sha256(
         _canonical({"algorithm": REQUEST_SET_ALGORITHM, "requests": rows})
     ).hexdigest()
+    identity = (prereg.get("algorithm"), prereg.get("status"))
+    automated_identity = (
+        "reproassert-v021-automated-oracle-preregistration-v1",
+        "automated_oracle_preregistered_execution_requires_explicit_authorization",
+    )
+    human_identity = (
+        "reproassert-v021-provider-disabled-preregistration-v1",
+        "execution_disabled_until_v021_runtime_migration",
+    )
+    if identity not in {automated_identity, human_identity}:
+        raise _reject("Preregistration execution mode is invalid.")
+    mode = "automated_oracle" if identity == automated_identity else "human_consensus"
+    claims = _object(prereg.get("claims"), "preregistration claims")
     if (
-        prereg.get("algorithm") != "reproassert-v021-provider-disabled-preregistration-v1"
-        or prereg.get("schema_version") != "1.0.0"
+        prereg.get("schema_version") != "1.0.0"
         or prereg.get("benchmark_version") != "0.2.1"
-        or prereg.get("status") != "execution_disabled_until_v021_runtime_migration"
         or approval.get("authorized") is not False
         or approval.get("required_exact_statement") != authority.approval_statement
         or approval.get("required_exact_statement_sha256") != authority.approval_statement_sha256
@@ -282,6 +299,14 @@ def _derive(
         or policy.get("credential_fields_allowed") is not False
         or policy.get("pricing_snapshot_status") != "exact_public_snapshot_hash_bound"
         or prereg.get("case_count") != 20
+        or (
+            mode == "automated_oracle"
+            and (
+                claims.get("automated_oracle_validated") is not True
+                or claims.get("human_reviewed") is not False
+                or claims.get("maintainer_validated") is not False
+            )
+        )
     ):
         raise _reject("Preregistration does not preserve the exact spend and model policy.")
     producer = _git_sha(prereg.get("tool_git_sha"))
@@ -458,7 +483,7 @@ def _claim_state_root() -> Path:
     return root
 
 
-def _read_preregistration(authority: VerifiedV021Preregistration) -> dict[str, object]:
+def _read_preregistration(authority: V021ExecutionPreregistration) -> dict[str, object]:
     raw = _read(authority.path, MAX_BYTES, "v0.2.1 preregistration")
     if hashlib.sha256(raw).hexdigest() != authority.sha256:
         raise _reject("Preregistration changed after verification.")

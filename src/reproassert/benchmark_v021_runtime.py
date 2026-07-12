@@ -14,7 +14,9 @@ from reproassert.benchmark_v021_authorization import (
     VerifiedV021ExecutionAuthorization,
     require_v021_execution_authorization,
 )
-from reproassert.benchmark_v021_preregistration import require_v021_preregistration
+from reproassert.benchmark_v021_preregistration_authority import (
+    require_v021_execution_preregistration,
+)
 from reproassert.errors import PolicyRejection
 from reproassert.safeio import open_regular_file, require_private_directory, write_bytes_exclusive
 
@@ -111,6 +113,70 @@ class V021GenerationResult:
         raise TypeError("V021GenerationResult is runtime-issued only")
 
 
+def prepare_v021_runtime_plan(
+    *,
+    preregistration: object,
+    authorization: ExecutionAuthorization,
+    capability_index_path: Path,
+    request_envelope_paths: Mapping[str, Path],
+    output_path: Path,
+) -> VerifiedV021RuntimePlan:
+    """Build the exact all-20 plan, then reverify it before issuing authority."""
+
+    authority = require_v021_execution_authorization(authorization)
+    destination = Path(output_path)
+    require_private_directory(destination.parent)
+    if destination.exists() or destination.is_symlink():
+        raise _reject("Refusing to overwrite a v0.2.1 runtime plan.")
+    expected_ids = tuple(f"rk-v0.2-{index:03d}" for index in range(1, CASE_COUNT + 1))
+    if tuple(request_envelope_paths) != expected_ids:
+        raise _reject("Runtime plan requires the exact sorted 20 request paths.")
+
+    capability_raw = _read(Path(capability_index_path), MAX_PLAN_BYTES, "capability index")
+    capability_record = _decode_canonical(capability_raw, "capability index")
+    capability_values = capability_record.get("cases")
+    if not isinstance(capability_values, list) or len(capability_values) != CASE_COUNT:
+        raise _reject("Capability index must contain exactly 20 cases.")
+
+    rows: list[dict[str, object]] = []
+    for case_id, capability_value in zip(expected_ids, capability_values, strict=True):
+        capability = _mapping(capability_value, "capability row")
+        evidence = _mapping(capability.get("evidence"), "capability evidence")
+        request_raw = _read(
+            Path(request_envelope_paths[case_id]), MAX_PLAN_BYTES, "request envelope"
+        )
+        request = _decode_canonical(request_raw, "request envelope")
+        rows.append(
+            {
+                "capability_sha256": capability.get("evaluator_public_commitment_sha256"),
+                "capability_status": "semantic_valid",
+                "case_id": case_id,
+                "input_sha256": request.get("rendered_input_sha256"),
+                "request": request,
+                "request_sha256": hashlib.sha256(request_raw).hexdigest(),
+                "runtime_manifest_sha256": evidence.get("runtime_manifest_sha256"),
+            }
+        )
+
+    record = {
+        "algorithm": PLAN_ALGORITHM,
+        "authorization_sha256": authority.sha256,
+        "benchmark_version": "0.2.1",
+        "cases": rows,
+        "lineage_commitment_sha256": authority.lineage_commitment_sha256,
+        "preregistration_sha256": authority.preregistration_sha256,
+        "request_set_sha256": authority.request_set_sha256,
+        "schema_version": SCHEMA_VERSION,
+    }
+    write_bytes_exclusive(destination, _canonical(record) + b"\n")
+    return verify_v021_runtime_plan(
+        destination,
+        preregistration=preregistration,
+        authorization=authority,
+        capability_index_path=capability_index_path,
+    )
+
+
 def verify_v021_runtime_plan(
     path: Path,
     *,
@@ -120,7 +186,7 @@ def verify_v021_runtime_plan(
 ) -> VerifiedV021RuntimePlan:
     """Verify every case capability and request before issuing runtime authority."""
 
-    preregistration = require_v021_preregistration(preregistration)
+    preregistration = require_v021_execution_preregistration(preregistration)
     prereg_sha = _digest(preregistration.sha256, "preregistration")
     lineage = _digest(getattr(preregistration, "lineage_commitment_sha256", None), "lineage")
     authorization = require_v021_execution_authorization(authorization)
@@ -299,6 +365,35 @@ def verify_v021_runtime_plan(
 def require_v021_runtime_plan(value: object) -> VerifiedV021RuntimePlan:
     if type(value) is not VerifiedV021RuntimePlan or value._issuer is not _PLAN_ISSUER:
         raise _reject("Fresh verifier-issued v0.2.1 runtime plan is required.")
+    return value
+
+
+def require_v021_generation_result(value: object) -> V021GenerationResult:
+    """Revalidate a runtime-issued result and its current durable bytes."""
+
+    if type(value) is not V021GenerationResult or value._issuer is not _RESULT_ISSUER:
+        raise _reject("Runtime-issued v0.2.1 generation result is required.")
+    case_ids = {f"rk-v0.2-{index:03d}" for index in range(1, CASE_COUNT + 1)}
+    if value.case_id not in case_ids or value.outcome not in {
+        "provider_response_durable_unparsed",
+        "unknown_spend_halt",
+    }:
+        raise _reject("Generation result identity is invalid.")
+    raw = _read(value.path, MAX_RESULT_BYTES, "generation result")
+    if hashlib.sha256(raw).hexdigest() != _digest(value.sha256, "result SHA"):
+        raise _reject("Generation result changed after runtime issuance.")
+    record = _decode_canonical(raw, "generation result")
+    if (
+        record.get("algorithm") != RESULT_ALGORITHM
+        or record.get("schema_version") != SCHEMA_VERSION
+        or record.get("benchmark_version") != "0.2.1"
+        or record.get("case_id") != value.case_id
+        or record.get("outcome") != value.outcome
+        or record.get("response_sha256") != value.response_sha256
+    ):
+        raise _reject("Generation result durable identity is invalid.")
+    if value.response_sha256 is not None:
+        _digest(value.response_sha256, "response SHA")
     return value
 
 
