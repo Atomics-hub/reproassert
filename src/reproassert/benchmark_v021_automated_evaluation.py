@@ -62,7 +62,7 @@ class V021EvaluationCaseInputs:
     gold_specs_path: Path = field(repr=False)
     manifest_path: Path = field(repr=False)
     expected_manifest_sha256: str
-    amendment_authority: VerifiedV02BenchmarkAmendment = field(repr=False)
+    amendment_authority: VerifiedV02BenchmarkAmendment | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)
@@ -206,7 +206,6 @@ def evaluate_v021_automated_campaign(
             output_path=evaluator_path,
             executed_at=executed_at,
             tool_git_sha=tool_git_sha,
-            amendment_authority=inputs.amendment_authority,
             automated_evidence_authority=evidence,
         )
         verified_evaluation = receipt_verifier(evaluated.path)
