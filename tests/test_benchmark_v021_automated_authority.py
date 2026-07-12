@@ -290,6 +290,13 @@ def test_automated_evidence_and_preregistration_are_honest_and_schema_valid(
     assert evidence_record["claims"]["human_reviewed"] is False
     assert evidence_record["claims"]["maintainer_validated"] is False
     assert evidence_record["claims"]["provider_calls"] == 0
+    amendment = values["amendment_authority"]
+    assert (
+        evidence.amendment_receipt_sha256
+        == hashlib.sha256(
+            amendment.receipt_path.read_bytes()  # type: ignore[union-attr]
+        ).hexdigest()
+    )
     assert prereg.dependency_ready_count == 20
     assert prereg.execution_enabled is False
     assert prereg.lineage_commitment_sha256 in prereg.approval_statement

@@ -227,9 +227,6 @@ def _evaluate_v021_automated_campaign_with_ports(
         contract = v02_candidate_contract(case_id=case_id, issue_number=inputs.issue_number)
         evaluator_path = receipt_root / f"{case_id}.evaluator.json"
         public_path = receipt_root / f"{case_id}.json"
-        for destination in (evaluator_path, public_path):
-            if destination.exists() or destination.is_symlink():
-                raise _reject("Refusing to overwrite an automated case evaluation receipt.")
         try:
             candidate = parse_v021_candidate_output(
                 cast(str, output),
@@ -237,6 +234,8 @@ def _evaluate_v021_automated_campaign_with_ports(
                 required_test_function=contract.test_function,
             )
         except (PolicyRejection, ReproAssertError):
+            if evaluator_path.exists() or evaluator_path.is_symlink():
+                raise _reject("Contract rejection conflicts with an evaluator receipt.") from None
             candidate_record: dict[str, object] = {
                 "bytes": len(cast(str, output).encode("utf-8")),
                 "output_sha256": hashlib.sha256(cast(str, output).encode()).hexdigest(),
@@ -252,21 +251,31 @@ def _evaluate_v021_automated_campaign_with_ports(
                 content=candidate.test_content.encode("utf-8"),
                 test_function=contract.test_function,
             )
-            evaluated = evaluator(
-                evaluator_capability=inputs.evaluator_capability,
-                verified_hidden=inputs.verified_hidden,
-                gold_smoke_receipt_path=inputs.gold_smoke_receipt_path,
-                gold_specs_path=inputs.gold_specs_path,
-                manifest_path=inputs.manifest_path,
-                expected_manifest_sha256=inputs.expected_manifest_sha256,
-                case_id=case_id,
-                candidate=artifact,
-                output_path=evaluator_path,
-                executed_at=executed_at,
-                tool_git_sha=tool_git_sha,
-                automated_evidence_authority=evidence,
-            )
-            verified_evaluation = receipt_verifier(evaluated.path)
+            if evaluator_path.exists() and public_path.exists():
+                verified_evaluation = receipt_verifier(evaluator_path)
+            elif (
+                evaluator_path.exists()
+                or evaluator_path.is_symlink()
+                or public_path.exists()
+                or public_path.is_symlink()
+            ):
+                raise _reject("Partial evaluation receipt requires reconciliation.")
+            else:
+                evaluated = evaluator(
+                    evaluator_capability=inputs.evaluator_capability,
+                    verified_hidden=inputs.verified_hidden,
+                    gold_smoke_receipt_path=inputs.gold_smoke_receipt_path,
+                    gold_specs_path=inputs.gold_specs_path,
+                    manifest_path=inputs.manifest_path,
+                    expected_manifest_sha256=inputs.expected_manifest_sha256,
+                    case_id=case_id,
+                    candidate=artifact,
+                    output_path=evaluator_path,
+                    executed_at=executed_at,
+                    tool_git_sha=tool_git_sha,
+                    automated_evidence_authority=evidence,
+                )
+                verified_evaluation = receipt_verifier(evaluated.path)
             evaluator_raw = _read_bounded(
                 verified_evaluation.path, MAX_EVALUATION_RECEIPT_BYTES, "candidate evaluation"
             )
@@ -320,7 +329,16 @@ def _evaluate_v021_automated_campaign_with_ports(
         }
         record["receipt_sha256"] = _self_hash(record)
         public_raw = _canonical(record) + b"\n"
-        write_bytes_exclusive(public_path, public_raw)
+        if public_path.exists():
+            if (
+                _read_bounded(public_path, MAX_RESULT_BYTES, "case evaluation receipt")
+                != public_raw
+            ):
+                raise _reject("Existing case evaluation receipt differs from live evidence.")
+        elif public_path.is_symlink():
+            raise _reject("Case evaluation receipt path is unsafe.")
+        else:
+            write_bytes_exclusive(public_path, public_raw)
         rows.append(
             {
                 "accepted": accepted,

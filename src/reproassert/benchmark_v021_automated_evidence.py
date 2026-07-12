@@ -185,7 +185,7 @@ def verify_v021_automated_evidence(
         "path": output,
         "sha256": hashlib.sha256(raw).hexdigest(),
         "lineage_commitment_sha256": record["lineage_commitment_sha256"],
-        "amendment_receipt_sha256": commitments["amendment_receipt_sha256"],
+        "amendment_receipt_sha256": _sha(evidence["amendment_raw_sha256"]),
         "request_set_sha256": commitments["case_request_set_sha256"],
         "tool_git_sha": record["tool_git_sha"],
         "case_count": CASE_COUNT,
