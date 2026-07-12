@@ -116,6 +116,9 @@ class CandidateEvaluationReceipt:
     classification: str
     accepted: bool
     evaluator_wall_ms: int
+    candidate_sha256: str
+    candidate_target: str
+    tool_git_sha: str
 
 
 @dataclass(frozen=True)
@@ -339,7 +342,6 @@ def evaluate_instance_candidate(
     output_path: Path,
     executed_at: str,
     tool_git_sha: str,
-    executor_factory: ExecutorFactory | None = None,
     amendment_authority: VerifiedV02BenchmarkAmendment | None = None,
     automated_evidence_authority: VerifiedV021AutomatedEvidence | None = None,
 ) -> CandidateEvaluationReceipt:
@@ -349,6 +351,43 @@ def evaluate_instance_candidate(
     public scored API. The caller supplies fresh hidden-extraction authority plus committed evidence
     files; the evaluator derives and byte-verifies the private inputs internally.
     """
+
+    return _evaluate_instance_candidate_with_ports(
+        evaluator_capability=evaluator_capability,
+        verified_hidden=verified_hidden,
+        gold_smoke_receipt_path=gold_smoke_receipt_path,
+        gold_specs_path=gold_specs_path,
+        manifest_path=manifest_path,
+        expected_manifest_sha256=expected_manifest_sha256,
+        case_id=case_id,
+        candidate=candidate,
+        output_path=output_path,
+        executed_at=executed_at,
+        tool_git_sha=tool_git_sha,
+        amendment_authority=amendment_authority,
+        automated_evidence_authority=automated_evidence_authority,
+        executor_factory=None,
+    )
+
+
+def _evaluate_instance_candidate_with_ports(
+    *,
+    evaluator_capability: VerifiedV02ExactImageEvaluatorCapability,
+    verified_hidden: VerifiedV02HiddenExtraction,
+    gold_smoke_receipt_path: Path,
+    gold_specs_path: Path,
+    manifest_path: Path,
+    expected_manifest_sha256: str,
+    case_id: str,
+    candidate: CandidateArtifact,
+    output_path: Path,
+    executed_at: str,
+    tool_git_sha: str,
+    amendment_authority: VerifiedV02BenchmarkAmendment | None = None,
+    automated_evidence_authority: VerifiedV021AutomatedEvidence | None = None,
+    executor_factory: ExecutorFactory | None = None,
+) -> CandidateEvaluationReceipt:
+    """Private test seam; production always uses the built-in Docker executor."""
 
     evaluator_started_monotonic = time.monotonic()
     capability = _require_candidate_execution_authority(
@@ -607,6 +646,9 @@ def _evaluate_instance_candidate_with_resolved_hidden(
         classification=classification,
         accepted=accepted,
         evaluator_wall_ms=cast(int, record["evaluator_wall_ms"]),
+        candidate_sha256=candidate_sha256,
+        candidate_target=candidate_target,
+        tool_git_sha=cast(str, record["tool_git_sha"]),
     )
 
 
@@ -828,6 +870,9 @@ def verify_instance_candidate_receipt(
         classification=str(outcome.get("classification")),
         accepted=accepted,
         evaluator_wall_ms=evaluator_wall_ms,
+        candidate_sha256=cast(str, candidate["sha256"]),
+        candidate_target=cast(str, candidate["target"]),
+        tool_git_sha=cast(str, value["tool_git_sha"]),
     )
 
 

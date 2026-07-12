@@ -126,8 +126,23 @@ def _fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Any, ...]
 
 def _fake_evaluator(**kwargs: object) -> CandidateEvaluationReceipt:
     case_id = str(kwargs["case_id"])
+    candidate = cast(evaluation.CandidateArtifact, kwargs["candidate"])
+    candidate_sha256 = hashlib.sha256(candidate.content).hexdigest()
+    candidate_target = f"{candidate.relative_path}::{candidate.test_function}"
+    tool_git_sha = str(kwargs["tool_git_sha"])
     output_path = Path(cast(str | Path, kwargs["output_path"]))
-    raw = _canonical({"case_id": case_id, "private_paths_emitted": False}) + b"\n"
+    raw = (
+        _canonical(
+            {
+                "candidate_sha256": candidate_sha256,
+                "candidate_target": candidate_target,
+                "case_id": case_id,
+                "private_paths_emitted": False,
+                "tool_git_sha": tool_git_sha,
+            }
+        )
+        + b"\n"
+    )
     output_path.write_bytes(raw)
     accepted = int(case_id[-3:]) % 2 == 1
     return CandidateEvaluationReceipt(
@@ -137,12 +152,16 @@ def _fake_evaluator(**kwargs: object) -> CandidateEvaluationReceipt:
         classification="causal_reproduction" if accepted else "wrong_exit_pattern",
         accepted=accepted,
         evaluator_wall_ms=1,
+        candidate_sha256=candidate_sha256,
+        candidate_target=candidate_target,
+        tool_git_sha=tool_git_sha,
     )
 
 
 def _fake_verifier(path: Path) -> CandidateEvaluationReceipt:
     raw = path.read_bytes()
-    case_id = json.loads(raw)["case_id"]
+    record = json.loads(raw)
+    case_id = record["case_id"]
     accepted = int(case_id[-3:]) % 2 == 1
     return CandidateEvaluationReceipt(
         path=path,
@@ -151,6 +170,9 @@ def _fake_verifier(path: Path) -> CandidateEvaluationReceipt:
         classification="causal_reproduction" if accepted else "wrong_exit_pattern",
         accepted=accepted,
         evaluator_wall_ms=1,
+        candidate_sha256=record["candidate_sha256"],
+        candidate_target=record["candidate_target"],
+        tool_git_sha=record["tool_git_sha"],
     )
 
 
@@ -304,6 +326,38 @@ def test_invalid_candidate_is_counted_and_does_not_abort_full_denominator(
     assert evaluator_calls == 19
     assert first["outcome"]["classification"] == "candidate_contract_rejected"
     assert first["evaluator_receipt_sha256"] is None
+
+
+def test_resume_rejects_evaluator_receipt_for_a_different_candidate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plan, barrier, evidence, results, inputs, responses, receipts = _fixture(tmp_path, monkeypatch)
+    _fake_evaluator(
+        case_id="rk-v0.2-001",
+        candidate=evaluation.CandidateArtifact(
+            relative_path="tests/reproassert/test_issue_001.py",
+            content=b"def test_reproassert_issue_001():\n    assert False, 'different'\n",
+            test_function="test_reproassert_issue_001",
+        ),
+        output_path=receipts / "rk-v0.2-001.evaluator.json",
+        tool_git_sha=TOOL_SHA,
+    )
+
+    with pytest.raises(PolicyRejection, match="current candidate"):
+        evaluation._evaluate_v021_automated_campaign_with_ports(
+            plan=plan,
+            barrier=barrier,
+            generation_results=results,
+            automated_evidence_authority=evidence,
+            response_directory=responses,
+            case_inputs=inputs,
+            receipt_directory=receipts,
+            aggregate_path=tmp_path / "aggregate.json",
+            executed_at="2026-07-12T12:00:00Z",
+            tool_git_sha=TOOL_SHA,
+            evaluator=_fake_evaluator,
+            receipt_verifier=_fake_verifier,
+        )
 
 
 def test_public_evaluation_api_has_no_callback_injection() -> None:

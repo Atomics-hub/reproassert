@@ -190,8 +190,8 @@ def _evaluate_v021_automated_campaign_with_ports(
     require_private_directory(response_root)
     require_private_directory(receipt_root)
     require_private_directory(aggregate.parent)
-    if aggregate.exists() or aggregate.is_symlink():
-        raise _reject("Refusing to overwrite an automated evaluation aggregate.")
+    if aggregate.is_symlink():
+        raise _reject("Automated evaluation aggregate path is unsafe.")
 
     rows: list[dict[str, object]] = []
     for result_value in generation_results:
@@ -304,6 +304,16 @@ def _evaluate_v021_automated_campaign_with_ports(
                 "test_function": contract.test_function,
             }
             evaluator_receipt_sha256 = verified_evaluation.sha256
+            expected_candidate_sha256 = hashlib.sha256(artifact.content).hexdigest()
+            expected_target = f"{artifact.relative_path}::{artifact.test_function}"
+            if (
+                verified_evaluation.candidate_sha256 != expected_candidate_sha256
+                or verified_evaluation.candidate_target != expected_target
+                or verified_evaluation.tool_git_sha != tool_git_sha
+            ):
+                raise _reject(
+                    "Evaluator receipt differs from the current candidate or evaluator runtime."
+                )
             accepted = verified_evaluation.accepted
             classification = verified_evaluation.classification
             remaining_controls = [
@@ -366,7 +376,15 @@ def _evaluate_v021_automated_campaign_with_ports(
         tool_git_sha=tool_git_sha,
     )
     aggregate_record["receipt_sha256"] = _self_hash(aggregate_record)
-    write_bytes_exclusive(aggregate, _canonical(aggregate_record) + b"\n")
+    aggregate_raw = _canonical(aggregate_record) + b"\n"
+    if aggregate.exists():
+        existing_aggregate = _read_bounded(
+            aggregate, MAX_RESULT_BYTES, "automated evaluation aggregate"
+        )
+        if existing_aggregate != aggregate_raw:
+            raise _reject("Existing automated evaluation aggregate differs from live evidence.")
+    else:
+        write_bytes_exclusive(aggregate, aggregate_raw)
     issued = _verify_v021_automated_evaluation_set(
         aggregate,
         receipt_directory=receipt_root,
@@ -520,14 +538,21 @@ def _verify_v021_automated_evaluation_set(
         else:
             if not _is_sha(evaluator_sha):
                 raise _reject("Evaluator receipt commitment is invalid.")
-            verified_evaluator = receipt_verifier(
-                receipt_root / f"{case_id}.evaluator.json"
-            )
+            verified_evaluator = receipt_verifier(receipt_root / f"{case_id}.evaluator.json")
             if (
                 verified_evaluator.sha256 != evaluator_sha
                 or verified_evaluator.case_id != case_id
                 or verified_evaluator.accepted is not value["accepted"]
                 or verified_evaluator.classification != value["classification"]
+                or verified_evaluator.candidate_sha256
+                != cast(dict[str, object], case_record["candidate"]).get("sha256")
+                or verified_evaluator.candidate_target
+                != (
+                    f"{cast(dict[str, object], case_record['candidate']).get('relative_path')}::"
+                    f"{cast(dict[str, object], case_record['candidate']).get('test_function')}"
+                )
+                or verified_evaluator.tool_git_sha != case_record.get("tool_git_sha")
+                or verified_evaluator.tool_git_sha != record.get("tool_git_sha")
             ):
                 raise _reject("Evaluator receipt differs from the live aggregate row.")
         bindings[case_id] = digest

@@ -396,6 +396,11 @@ def test_public_scored_api_derives_private_inputs_and_gold_targets(
         gold_target="tests/test_gold.py::test_gold",
     )
     fake = FakeExecutor()
+    monkeypatch.setattr(
+        evaluator,
+        "_executor_factory",
+        lambda _manifest, _case, policy: _factory(fake, policy),
+    )
 
     result = evaluator.evaluate_instance_candidate(
         evaluator_capability=authority,
@@ -413,7 +418,6 @@ def test_public_scored_api_derives_private_inputs_and_gold_targets(
         output_path=tmp_path / "public-receipt.json",
         executed_at="2026-07-11T01:02:03Z",
         tool_git_sha="9" * 40,
-        executor_factory=lambda _manifest, _case, policy: _factory(fake, policy),
     )
 
     assert result.accepted is True
@@ -423,6 +427,7 @@ def test_public_scored_api_derives_private_inputs_and_gold_targets(
     assert "hidden" not in parameters
     assert "gold_targets" not in parameters
     assert "verified_hidden" in parameters
+    assert "executor_factory" not in parameters
 
     with pytest.raises(TypeError, match="unexpected keyword argument 'hidden'"):
         evaluator.evaluate_instance_candidate(  # type: ignore[call-arg]
@@ -473,6 +478,7 @@ def test_pending_v021_amendment_rejects_before_hidden_resolution_or_executor(
         raise AssertionError("executor construction must not run")
 
     monkeypatch.setattr(evaluator, "_resolve_hidden_evaluator_inputs", forbidden_hidden)
+    monkeypatch.setattr(evaluator, "_executor_factory", forbidden_executor)
     output = tmp_path / "pending-v021.json"
     with pytest.raises(PolicyRejection, match="review is pending"):
         evaluator.evaluate_instance_candidate(
@@ -492,7 +498,6 @@ def test_pending_v021_amendment_rejects_before_hidden_resolution_or_executor(
             output_path=output,
             executed_at="2026-07-11T01:02:03Z",
             tool_git_sha="9" * 40,
-            executor_factory=forbidden_executor,  # type: ignore[arg-type]
         )
     assert hidden_calls == 0
     assert executor_calls == 0
