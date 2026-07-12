@@ -15,6 +15,7 @@ from reproassert.errors import ReproAssertError
 from reproassert.generator import (
     DEFAULT_OPENAI_MODEL,
     MAX_OPENAI_RESPONSE_BYTES,
+    PYTEST_CANDIDATE_PROFILE_V2,
     SYMPY_NATIVE_CANDIDATE_PROFILE,
     CommandGenerator,
     GenerationRequest,
@@ -118,6 +119,57 @@ def test_sympy_request_freezes_native_contract_and_instructions() -> None:
     assert "native SymPy" in instructions
     assert "Do not import pytest" in instructions
     assert "required zero-argument function" in instructions
+
+
+def test_successor_profile_matches_enforced_candidate_shape() -> None:
+    successor = GenerationRequest(
+        issue_url="https://github.com/o/r/issues/8",
+        issue_number=8,
+        issue_title="Widget doubles separators",
+        issue_body="The separator remains duplicated.",
+        source_sha="a" * 40,
+        source_context=SourceContext((), (), 0),
+        candidate_profile=PYTEST_CANDIDATE_PROFILE_V2,
+    )
+
+    contract = successor.to_dict()["candidate_contract"]
+
+    assert contract == {
+        "profile": "pytest-v2",
+        "required_test_function": "test_issue_8_reproduction",
+        "output_json_keys": ["test_content", "expected_symptom", "rationale"],
+        "one_test_only": True,
+        "production_edits_allowed": False,
+        "commands_allowed": False,
+        "network_allowed": False,
+        "unconditional_failures_allowed": False,
+        "pytest_import_allowed": True,
+        "fixtures_allowed": True,
+        "decorators_allowed": False,
+        "plain_assert_required": True,
+        "helper_functions_allowed": False,
+        "classes_allowed": False,
+        "linear_assignments_only": True,
+        "exactly_one_final_assert": True,
+        "literal_symptom_marker_required": True,
+        "buggy_base_must_fail": True,
+        "fixed_revision_must_pass": True,
+        "remote_data_helpers_allowed": False,
+    }
+    instructions = openai_instructions(successor)
+    assert "linear sequence of assignments" in instructions
+    assert "complete expected_symptom" in instructions
+    assert "fail on the reported buggy base" in instructions
+    assert "pytest.raises" in instructions
+
+
+def test_frozen_pytest_v1_contract_is_unchanged() -> None:
+    contract = request().to_dict()["candidate_contract"]
+
+    assert contract["profile"] == "pytest-v1"
+    assert contract["decorators_allowed"] is True
+    assert contract["plain_assert_required"] is False
+    assert "helper_functions_allowed" not in contract
 
 
 def test_command_generator_accepts_profile_specific_function(tmp_path: Path) -> None:

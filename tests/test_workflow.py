@@ -12,7 +12,7 @@ from jsonschema import Draft202012Validator
 import reproassert.workflow as workflow
 from reproassert.candidate import ValidatedCandidate, validate_candidate_payload
 from reproassert.errors import PolicyRejection
-from reproassert.generator import StaticGenerator
+from reproassert.generator import GenerationRequest, StaticGenerator
 from reproassert.intake import (
     ArchiveDownload,
     CommitTreeMetadata,
@@ -285,15 +285,27 @@ def test_issue_workflow_orchestrates_bounded_inputs_and_cleans(
     )
     monkeypatch.setattr(workflow, "_verify_and_write", lambda **_kwargs: final)
 
+    generator = StaticGenerator(candidate())
+    generated_requests: list[GenerationRequest] = []
+    original_generate = generator.generate
+
+    def record_generate(request: GenerationRequest) -> ValidatedCandidate:
+        generated_requests.append(request)
+        return original_generate(request)
+
+    monkeypatch.setattr(generator, "generate", record_generate)
+
     result = workflow.run_issue_workflow(
         issue.ref.url,
         requested_ref="HEAD",
-        generator=StaticGenerator(candidate()),
+        generator=generator,
         sandbox=sandbox,  # type: ignore[arg-type]
         run_base=run_base,
     )
 
     assert result is final
+    assert len(generated_requests) == 1
+    assert generated_requests[0].candidate_profile == "pytest-v2"
     assert sandbox.cleaned >= 1
     assert not archive_file.exists()
     assert not extraction.exists()

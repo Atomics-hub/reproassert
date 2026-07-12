@@ -4,7 +4,8 @@ Date: 2026-07-12
 
 Status: alpha with one complete, failed validation campaign: **20/20 evaluated, 0/20 accepted**.
 Exactly 20 frozen OpenAI calls cost $0.688111; 17 outputs failed the candidate contract and three
-failed deterministic attribution in Docker. The current profile missed the 6/20 continuation gate.
+failed deterministic attribution because an evaluator JUnit transport bug discarded tmpfs output
+after container exit. The current profile missed the 6/20 continuation gate.
 No L2, human-review, maintainer-demand, or revenue claim is supported; no outreach occurred.
 
 This roadmap is ordered by evidence, not feature count. A later phase does not begin because the earlier phase has more code; it begins when the earlier claim is reproducible and useful.
@@ -48,8 +49,8 @@ full denominator, exact requests, hidden-fix isolation, spend ledger, and fail-c
 0/20 result is now the baseline. The next evidence slice is:
 
 1. preserve the exact first-run artifacts and never reclassify or replace a failed case;
-2. analyze contract failures without hidden fixes to improve structured-output compliance;
-3. analyze the three unstable fingerprints without weakening JUnit or attribution requirements;
+2. analyze contract failures without hidden fixes to improve candidate-policy compliance;
+3. repair and regression-test the JUnit transport without retroactively changing v0.2.1;
 4. preregister any successor prompt/model/contract and a fresh capped budget before execution; and
 5. keep benchmark results separate from organic GitHub usage and maintainer-demand evidence.
 

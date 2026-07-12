@@ -5,7 +5,9 @@
 The first automated campaign is complete: 20/20 frozen requests executed for $0.688111 and 0/20
 were accepted at L1. Seventeen outputs were rejected by the frozen candidate contract. Cases 003,
 007, and 011 reached the exact-image evaluator, produced three base failures and three fixed passes
-each, but lacked one stable attributable failure fingerprint and were rejected. The automated path
+each, but an evaluator transport bug discarded JUnit files written to container tmpfs after exit.
+They correctly failed closed without an attributable fingerprint. The frozen v0.2.1 result remains
+unchanged; the repaired successor transport uses a bounded controller-owned result volume. The automated path
 does not issue L2, human-review, or maintainer-validation claims. The mapping/reviewer protocol below
 remains documented for a possible future L2 experiment; it was not used to upgrade this result.
 

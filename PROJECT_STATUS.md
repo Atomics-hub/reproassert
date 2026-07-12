@@ -6,8 +6,9 @@ Last updated: 2026-07-12
 
 **GO for the trustworthy local Python/pytest infrastructure; NO-GO for claiming benchmark accuracy
 or scaling the current generator unchanged. The v0.2.1 campaign completed all 20 frozen cases for
-$0.688111 and accepted 0/20. Seventeen candidates failed the strict output contract and three failed
-deterministic attribution after six-run Docker evaluation. No L2, human-review, maintainer-demand,
+$0.688111 and accepted 0/20. Seventeen candidates failed the strict candidate policy and three failed
+deterministic attribution after an evaluator JUnit transport defect discarded their tmpfs reports.
+The frozen score remains unchanged. No L2, human-review, maintainer-demand,
 hosted-product, or revenue claim is supported, and nobody has been contacted.**
 
 ## Verified now

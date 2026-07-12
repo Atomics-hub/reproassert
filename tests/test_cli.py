@@ -97,6 +97,69 @@ def test_doctor_and_sandbox_build_render_ready(monkeypatch: object) -> None:
     assert "sha256:built" in build.output
 
 
+def test_demo_runs_zero_key_public_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    result_value = WorkflowResult(
+        run_dir=tmp_path,
+        report_path=tmp_path / "reproassert-report.json",
+        patch_path=tmp_path / "candidate.patch",
+        claim_level="repeatable_base_failure",
+        outcome="repeatable_base_failure",
+        replay_command="reproassert replay report.json",
+    )
+    captured: dict[str, object] = {}
+
+    def fake_run(*args: object, **kwargs: object) -> WorkflowResult:
+        captured.update({"args": args, **kwargs})
+        return result_value
+
+    monkeypatch.setattr(cli, "DockerSandbox", ReadySandbox)  # type: ignore[attr-defined]
+    monkeypatch.setattr(cli, "run_issue_workflow", fake_run)
+    result = CliRunner().invoke(
+        main,
+        ["demo", "--run-base", str(tmp_path / "runs"), "--json-output"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["outcome"] == "repeatable_base_failure"
+    assert captured["args"] == ("https://github.com/Atomics-hub/reproassert/issues/1",)
+    assert captured["requested_ref"] == "7b03e8f7f4b7312f1785e7853892efa123e48699"
+    generator = captured["generator"]
+    assert isinstance(generator, cli.StaticGenerator)
+    assert generator.candidate.test_function == "test_issue_1_reproduction"
+
+
+def test_demo_builds_missing_sandbox_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    class BuildableSandbox(ReadySandbox):
+        builds = 0
+
+        def doctor(self) -> DockerDoctor:
+            return DockerDoctor(True, True, False, "1", None)
+
+        def build_image(self) -> str:
+            type(self).builds += 1
+            return "sha256:built"
+
+        def require_ready(self) -> DockerDoctor:
+            return DockerDoctor(True, True, True, "1", "sha256:built")
+
+    result_value = WorkflowResult(
+        run_dir=tmp_path,
+        report_path=tmp_path / "reproassert-report.json",
+        patch_path=tmp_path / "candidate.patch",
+        claim_level="repeatable_base_failure",
+        outcome="repeatable_base_failure",
+        replay_command="reproassert replay report.json",
+    )
+    monkeypatch.setattr(cli, "DockerSandbox", BuildableSandbox)  # type: ignore[attr-defined]
+    monkeypatch.setattr(cli, "run_issue_workflow", lambda *_args, **_kwargs: result_value)
+
+    result = CliRunner().invoke(main, ["demo", "--run-base", str(tmp_path / "runs")])
+
+    assert result.exit_code == 0, result.output
+    assert "first run only" in result.output
+    assert BuildableSandbox.builds == 1
+
+
 def test_sandbox_isolation_canary_renders_machine_receipt(monkeypatch: object) -> None:
     receipt = IsolationCanaryResult(
         version="reproassert-generator-evaluator-isolation-v1",

@@ -2,9 +2,34 @@
 
 > The test before the fix.
 
-ReproAssert turns a public GitHub issue into one candidate pytest regression test, then proves that
+[![CI](https://github.com/Atomics-hub/reproassert/actions/workflows/ci.yml/badge.svg)](https://github.com/Atomics-hub/reproassert/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-111827.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB.svg)](pyproject.toml)
+
+ReproAssert turns a public GitHub issue into a candidate pytest regression test, then proves that
 the test collects and fails consistently on the exact buggy commit inside a locked-down Docker
-sandbox.
+sandbox. It produces the test patch, a machine-readable evidence report, and one-command replay
+before anyone tries to fix the bug.
+
+## See it work
+
+You need Python 3.10+, [uv](https://docs.astral.sh/uv/), and a running Docker Engine or Docker
+Desktop. This command uses ReproAssert's public issue #1 and pinned buggy commit. It needs no API
+key, makes no model call, and builds the hash-locked verifier image automatically on first use.
+
+```console
+uvx --from git+https://github.com/Atomics-hub/reproassert.git reproassert demo
+```
+
+The proof ends with artifacts you can inspect and replay:
+
+```text
+claim    repeatable_base_failure
+outcome  repeatable_base_failure
+patch    .../candidate.patch
+report   .../reproassert-report.json
+replay   reproassert replay .../reproassert-report.json
+```
 
 ```text
 GitHub issue + exact commit
@@ -17,33 +42,28 @@ It never edits production code. It never silently falls back to running reposito
 host. Its strongest public CLI claim is deliberately narrow: **this test produced the same
 issue-marked failure on the pinned base revision across repeated sandboxed runs.**
 
-## Quick start
+## Install and use
 
 You need Python 3.10+, [uv](https://docs.astral.sh/uv/), and Docker Engine or Docker Desktop.
 
 ```console
 uv tool install git+https://github.com/Atomics-hub/reproassert.git
-
-reproassert sandbox build
-reproassert doctor
 ```
 
-Then run one issue against its buggy commit:
+For a current issue, `HEAD` is resolved and recorded as an exact 40-character SHA. Provider use is
+always explicit:
+
+```console
+export OPENAI_API_KEY="..."
+reproassert issue https://github.com/OWNER/REPOSITORY/issues/123 --provider openai
+```
+
+For a historical issue, pass the known buggy revision yourself; ReproAssert does not guess history:
 
 ```console
 reproassert issue https://github.com/OWNER/REPOSITORY/issues/123 \
   --commit <buggy-commit-sha> \
-  --generator-command ./your-trusted-adapter
-```
-
-A verified run ends with concrete, replayable evidence:
-
-```text
-claim    repeatable_base_failure
-outcome  repeatable_base_failure
-patch    .../candidate.patch
-report   .../reproassert-report.json
-replay   reproassert replay .../reproassert-report.json
+  --provider openai
 ```
 
 That result means the candidate collected and produced a stable, expected failure on the exact base
@@ -56,9 +76,7 @@ accepted by a maintainer.
 python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install git+https://github.com/Atomics-hub/reproassert.git
-
-reproassert sandbox build
-reproassert doctor
+reproassert demo
 ```
 
 The controller supports macOS and Linux. WSL is treated as Linux but is not yet independently
@@ -224,8 +242,9 @@ Measured results remain intentionally separate from product capability.
   boundary and exact Git object graph.
 - The v0.2.1 campaign evaluated the complete **20/20 denominator** and accepted **0/20** as L1
   deterministic reproductions. Seventeen outputs failed the frozen candidate contract; three
-  reached six-run Docker evaluation and were rejected for missing a stable attributable failure
-  fingerprint.
+  reached six-run Docker evaluation but their JUnit files were lost by an evaluator transport bug,
+  so they correctly failed closed without an attributable fingerprint. The v0.2.1 result remains
+  immutable and is not retroactively upgraded.
 - The frozen OpenAI run made exactly 20 calls for **$0.688111 total**, with a maximum case cost of
   **$0.051351**, under the approved $5 total / $0.25 per-case zero-overage limits. Cost per success
   is undefined because there were no successes.

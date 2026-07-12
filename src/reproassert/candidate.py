@@ -95,6 +95,20 @@ def candidate_function(issue_number: int) -> str:
     return f"test_issue_{issue_number}_reproduction"
 
 
+def strict_candidate_contract_fields() -> dict[str, bool]:
+    """Describe the AST shape enforced by :func:`validate_candidate_payload`."""
+
+    return {
+        "decorators_allowed": False,
+        "plain_assert_required": True,
+        "helper_functions_allowed": False,
+        "classes_allowed": False,
+        "linear_assignments_only": True,
+        "exactly_one_final_assert": True,
+        "literal_symptom_marker_required": True,
+    }
+
+
 def validate_candidate_payload(
     payload: Mapping[str, Any],
     *,
