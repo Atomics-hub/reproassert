@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Atomics-hub/reproassert/blob/main/schemas/benchmark-v021-generation-result.schema.json",
+  "title": "ReproAssert v0.2.1 generation result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["algorithm", "authorization_sha256", "benchmark_version", "call_id", "case_id", "claim_level", "input_sha256", "lineage_commitment_sha256", "outcome", "preregistration_sha256", "request_sha256", "response_sha256", "schema_version"],
+  "properties": {
+    "algorithm": {"const": "reproassert-v021-generation-result-v1"},
+    "schema_version": {"const": "1.0.0"},
+    "benchmark_version": {"const": "0.2.1"},
+    "authorization_sha256": {"$ref": "#/$defs/sha256"},
+    "preregistration_sha256": {"$ref": "#/$defs/sha256"},
+    "lineage_commitment_sha256": {"$ref": "#/$defs/sha256"},
+    "case_id": {"type": "string", "pattern": "^rk-v0\\.2-(00[1-9]|01[0-9]|020)$"},
+    "request_sha256": {"$ref": "#/$defs/sha256"},
+    "input_sha256": {"$ref": "#/$defs/sha256"},
+    "call_id": {"$ref": "#/$defs/sha256"},
+    "response_sha256": {"oneOf": [{"$ref": "#/$defs/sha256"}, {"type": "null"}]},
+    "outcome": {"enum": ["candidate_generated", "unknown_spend_halt"]},
+    "claim_level": {"enum": ["generation_only_unreviewed", "rejected"]}
+  },
+  "$defs": {"sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}
+}
