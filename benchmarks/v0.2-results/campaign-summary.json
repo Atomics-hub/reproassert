@@ -41,13 +41,16 @@
   "schema_version": "1.0.0",
   "spend": {
     "authorized_overage": false,
+    "ledger_file_sha256": "b83854480b3caad05242a1924f032a92ad873cc75fbbb56009362680da6bc770",
+    "ledger_head_event_sha256": "22e79e849c85717777719b1d35fd24622f4191084a1bc01247a5c6d33a31266f",
     "maximum_case_usd": "0.051351",
     "minimum_case_usd": "0.022471",
     "per_case_cap_usd": "0.25",
     "pricing_commitment_sha256": "bba98c7af8ea03023dcf1f14f07ffb127228ee60822817b731beb340182da715",
     "success_cost_usd": null,
     "total_cap_usd": "5.00",
-    "total_usd": "0.688111"
+    "total_usd": "0.688111",
+    "unknown_spend_cases": 0
   },
   "tool_git_sha": "d1905a25c93034fcfbc580a63e333026484ec959"
 }

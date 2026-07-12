@@ -75,6 +75,23 @@ class VerifiedV021SpendLedger:
         raise TypeError("VerifiedV021SpendLedger is verifier-issued only")
 
 
+@dataclass(frozen=True)
+class StructuralV021PublicSpendLedger:
+    """Public hash-chain evidence; never grants live reservation authority."""
+
+    path: Path
+    sha256: str
+    head_event_sha256: str
+    authorization_sha256: str
+    provider_calls: int
+    completed_cases: int
+    unknown_spend_cases: int
+    total_cost_usd: str
+    minimum_case_cost_usd: str
+    maximum_case_cost_usd: str
+    verification_scope: str = "structural_public_spend_only_no_live_authority"
+
+
 def claim_v021_spend_ledger(
     *, authorization: VerifiedV021ExecutionAuthorization, claimed_at: str
 ) -> VerifiedV021SpendLedger:
@@ -209,6 +226,112 @@ def verify_v021_spend_ledger(
     for name, value in values.items():
         object.__setattr__(issued, name, value)
     return issued
+
+
+def inspect_v021_public_spend_ledger(path: Path) -> StructuralV021PublicSpendLedger:
+    """Verify the publish-safe complete ledger without minting operational authority."""
+
+    ledger = Path(path)
+    raw = _read(ledger, MAX_BYTES, "public spend ledger")
+    events = _decode_events(raw)
+    if len(events) != 61:
+        raise _reject("Public spend ledger must contain one claim plus three events per case.")
+    expected_ids = tuple(f"rk-v0.2-{index:03d}" for index in range(1, 21))
+    event_fields = {
+        "algorithm",
+        "authorization_sha256",
+        "benchmark_version",
+        "case_id",
+        "event_sha256",
+        "event_type",
+        "ledger_identity_sha256",
+        "lineage_commitment_sha256",
+        "payload",
+        "preregistration_sha256",
+        "recorded_at",
+        "request_set_sha256",
+        "schema_version",
+        "sequence",
+    }
+    binding_names = (
+        "authorization_sha256",
+        "ledger_identity_sha256",
+        "lineage_commitment_sha256",
+        "preregistration_sha256",
+        "request_set_sha256",
+    )
+    bindings = {name: _sha(events[0].get(name)) for name in binding_names}
+    previous: str | None = None
+    previous_time: datetime | None = None
+    for sequence, event in enumerate(events, 1):
+        payload = event.get("payload")
+        if (
+            set(event) != event_fields
+            or not isinstance(payload, dict)
+            or set(payload) != _payload_fields(event.get("event_type"))
+            or event.get("algorithm") != ALGORITHM
+            or event.get("benchmark_version") != "0.2.1"
+            or event.get("schema_version") != SCHEMA_VERSION
+            or event.get("sequence") != sequence
+            or event.get("event_sha256") != _hash_without(event, "event_sha256")
+            or payload.get("previous_event_sha256") != previous
+            or any(event.get(name) != value for name, value in bindings.items())
+        ):
+            raise _reject("Public spend ledger hash chain or campaign binding is invalid.")
+        event_time = _time_value(_timestamp(event.get("recorded_at")))
+        if previous_time is not None and event_time < previous_time:
+            raise _reject("Public spend ledger chronology is invalid.")
+        previous_time = event_time
+        previous = _sha(event.get("event_sha256"))
+
+    claim = events[0]
+    claim_payload = cast(dict[str, object], claim["payload"])
+    _sha(claim_payload.get("claim_sha256"))
+    if claim.get("event_type") != "ledger_claimed" or claim.get("case_id") is not None:
+        raise _reject("Public spend ledger does not begin with one claim event.")
+
+    costs: list[Decimal] = []
+    for offset, case_id in enumerate(expected_ids):
+        reserved, response, completed = events[1 + offset * 3 : 4 + offset * 3]
+        reserved_payload = cast(dict[str, object], reserved["payload"])
+        response_payload = cast(dict[str, object], response["payload"])
+        completed_payload = cast(dict[str, object], completed["payload"])
+        request_sha = _sha(reserved_payload.get("request_sha256"))
+        call_id = _sha(reserved_payload.get("call_id"))
+        reservation_sha = _sha(reserved.get("event_sha256"))
+        response_sha = _sha(response_payload.get("response_sha256"))
+        if (
+            reserved.get("event_type") != "case_reserved"
+            or response.get("event_type") != "provider_response_durable"
+            or completed.get("event_type") != "case_completed"
+            or any(event.get("case_id") != case_id for event in (reserved, response, completed))
+            or reserved_payload.get("maximum_cost_usd") != PER_CASE_CAP_USD
+            or response_payload.get("request_sha256") != request_sha
+            or completed_payload.get("request_sha256") != request_sha
+            or response_payload.get("call_id") != call_id
+            or completed_payload.get("call_id") != call_id
+            or response_payload.get("reservation_event_sha256") != reservation_sha
+            or completed_payload.get("reservation_event_sha256") != reservation_sha
+            or completed_payload.get("response_sha256") != response_sha
+        ):
+            raise _reject("Public spend ledger case transaction is incomplete or cross-bound.")
+        _sha(completed_payload.get("result_sha256"))
+        costs.append(_cost(response_payload.get("actual_cost_usd"), PER_CASE_CAP_USD))
+    total = sum(costs, Decimal("0"))
+    if total > Decimal(TOTAL_CAP_USD):
+        raise _reject("Public spend ledger total exceeds its campaign cap.")
+    return StructuralV021PublicSpendLedger(
+        path=ledger,
+        sha256=hashlib.sha256(raw).hexdigest(),
+        head_event_sha256=cast(str, previous),
+        authorization_sha256=bindings["authorization_sha256"],
+        provider_calls=len(costs),
+        completed_cases=len(costs),
+        unknown_spend_cases=0,
+        total_cost_usd=_money(total),
+        minimum_case_cost_usd=_money(min(costs)),
+        maximum_case_cost_usd=_money(max(costs)),
+    )
 
 
 def _payload_fields(event_type: object) -> set[str]:

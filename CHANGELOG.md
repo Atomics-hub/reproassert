@@ -8,6 +8,8 @@ All notable changes to ReproAssert will be documented here. The format follows [
 
 - The complete public v0.2.1 result bundle: 20/20 frozen cases evaluated, 0/20 accepted, 17
   candidate-contract rejections, three exact-image evaluator rejections, and $0.688111 total spend.
+- A redacted 61-event public spend ledger and structural inspector that independently recompute the
+  complete hash chain, per-case response costs, min/max/total spend, caps, and zero unknown spend.
 - A bounded OpenAI campaign adapter, irreversible reservation/response/completion ledger, automated
   oracle-evidence authority, full-denominator evaluator, and structural public result inspector.
 

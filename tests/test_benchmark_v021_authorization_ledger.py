@@ -572,3 +572,24 @@ def test_public_and_packaged_schemas_match_and_validate_outputs(
         packaged = Path("src/reproassert/schemas") / name
         assert public.read_bytes() == packaged.read_bytes()
         Draft202012Validator(json.loads(public.read_bytes())).validate(value)
+
+
+def test_checked_in_public_spend_ledger_is_complete_and_tamper_evident(tmp_path: Path) -> None:
+    source = Path("benchmarks/v0.2-results/spend-ledger.jsonl")
+    checked = ledger_module.inspect_v021_public_spend_ledger(source)
+
+    assert checked.provider_calls == 20
+    assert checked.completed_cases == 20
+    assert checked.unknown_spend_cases == 0
+    assert checked.total_cost_usd == "0.688111"
+    assert checked.minimum_case_cost_usd == "0.022471"
+    assert checked.maximum_case_cost_usd == "0.051351"
+    assert checked.sha256 == "b83854480b3caad05242a1924f032a92ad873cc75fbbb56009362680da6bc770"
+    assert checked.head_event_sha256 == (
+        "22e79e849c85717777719b1d35fd24622f4191084a1bc01247a5c6d33a31266f"
+    )
+
+    tampered = tmp_path / "spend-ledger.jsonl"
+    tampered.write_bytes(source.read_bytes().replace(b'"0.040239"', b'"0.040238"', 1))
+    with pytest.raises(PolicyRejection, match="hash chain"):
+        ledger_module.inspect_v021_public_spend_ledger(tampered)
