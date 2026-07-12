@@ -2,7 +2,10 @@
 
 ReproAssert releases are deliberately tag-driven. A matching stable version tag runs the full quality, type, benchmark-contract, unit, coverage, and package checks before GitHub creates a release. The workflow produces a wheel and source distribution and records GitHub artifact attestations for both.
 
-The workflow does **not** publish to PyPI. Publishing requires a separately reviewed PyPI project, GitHub trusted-publisher configuration scoped to this repository and release workflow, and explicit maintainer approval. Do not add an API token or broad package credential to repository secrets as a shortcut.
+The workflow publishes to PyPI only after source verification, Docker and package checks, locked
+distribution building, checksum verification, and GitHub attestation succeed. PyPI trusts the exact
+`Atomics-hub/reproassert` repository, `.github/workflows/release.yml` workflow, and `pypi`
+environment through OIDC. The repository stores no PyPI API token or broad package credential.
 
 ## Before tagging
 
@@ -33,7 +36,7 @@ git tag -a vX.Y.Z -m "ReproAssert vX.Y.Z"
 git push origin vX.Y.Z
 ```
 
-Pushing the tag is the release authorization. A read-only verification job reruns locked Python checks, the Docker boundary, and the site contract. A separate read-only job builds with the checked-in uv lock and pinned setuptools backend, then uploads the distributions. Only a no-checkout attestation job receives job-scoped OIDC and attestation permissions; only after attestation passes does a no-checkout publishing job receive `contents: write`. Immediately before publication that job peels the current remote tag through GitHub's API and refuses the release unless it still resolves to the initiating `GITHUB_SHA`. The repository must also keep matching tag rules and immutable releases enabled; this workflow check narrows but does not replace those server-side controls. The workflow does not run on pull requests, does not use `pull_request_target`, use dependency caches in privileged jobs, or receive package registry credentials.
+Pushing the tag is the release authorization. A read-only verification job reruns locked Python checks, the Docker boundary, and the site contract. A separate read-only job builds with the checked-in uv lock and pinned setuptools backend, then uploads the distributions. Only a no-checkout attestation job receives job-scoped OIDC and attestation permissions. After attestation, the `pypi` environment grants a separate no-checkout job only `id-token: write`; that job checksum-verifies the artifact again and publishes only the wheel and source archive through PyPI trusted publishing. Only after PyPI succeeds does another no-checkout job receive `contents: write` for the GitHub release. Immediately before GitHub publication that job peels the current remote tag through GitHub's API and refuses the release unless it still resolves to the initiating `GITHUB_SHA`. The repository must also keep matching tag and environment rules plus immutable releases enabled; these workflow checks narrow but do not replace those server-side controls. The workflow does not run on pull requests, does not use `pull_request_target`, use dependency caches in privileged jobs, or receive package registry credentials.
 
 After completion:
 
@@ -48,6 +51,8 @@ After completion:
 
 3. Run the documented quickstart and Docker sandbox doctor from the installed artifact.
 4. Confirm the GitHub release notes make no benchmark, security, or maintainer-validation claim beyond checked evidence.
+5. Confirm `https://pypi.org/project/reproassert/` shows the exact release and that a clean
+   `uvx reproassert --version` resolves that version.
 
 If a release is wrong, publish a corrected patch release. Do not move or overwrite the public tag and do not replace assets under the same version.
 

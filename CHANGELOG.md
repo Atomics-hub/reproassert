@@ -4,6 +4,23 @@ All notable changes to ReproAssert will be documented here. The format follows [
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-07-12
+
+### Added
+
+- PyPI trusted publishing bound to the exact GitHub repository, release workflow, and `pypi`
+  deployment environment, with no stored package-registry token.
+
+### Changed
+
+- Made the shortest documented path `uvx reproassert demo` and required PyPI publication to finish
+  before the immutable GitHub release is created.
+
+### Security
+
+- Kept build, attestation, PyPI publication, and GitHub release privileges in separate no-checkout
+  jobs; the PyPI job re-verifies checksums and uploads only the wheel and source archive.
+
 ## [0.2.2] - 2026-07-12
 
 ### Added
